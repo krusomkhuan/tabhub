@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <div id="root"></div>
+  <script>var PARAMS = <?!= params ?>;</script>
+  <?!= include('SchedCore'); ?>
+  <?!= include('GridCore'); ?>
+  <?!= include('OtCore'); ?>
+  <?!= include('App'); ?>
+  <?!= include('OtApp'); ?>
+  <?!= include('Extra'); ?>
+  <script>appInit();</script>
+</body>
+</html>

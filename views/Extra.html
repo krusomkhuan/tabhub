@@ -1,0 +1,275 @@
+<script>
+/* ===================== รายงานการสอน / นิเทศฝึกงาน / งบหน้า (jQuery + Bootstrap 5) ===================== */
+(function ($j) {
+  var i = NAV.map(function (n) { return n.sec; }).indexOf('ค่าสอนเกินภาระงาน');
+  NAV.splice(i, 0,
+    { sec: 'รายงานการสอน' },
+    { id: 'teach-report', label: 'รายงานการสอนของฉัน', role: 'teacher' },
+    { id: 'teach-review', label: 'ตรวจรายงานการสอน', role: 'dept' },
+    { sec: 'นิเทศนักศึกษาฝึกงาน' },
+    { id: 'intern', label: 'นักศึกษาฝึกงาน / บันทึกนิเทศ', role: 'teacher' },
+    { id: 'intern-summary', label: 'สรุปการนิเทศ', role: 'dept' }
+  );
+  var at = NAV.map(function (n) { return n.id; }).indexOf('ot-summary');
+  NAV.splice(at + 1, 0, { id: 'ot-cover', label: 'งบหน้าแผนกวิชา', role: 'dept' });
+  $j.extend(NAV_ICON, { 'teach-report': '📝', 'teach-review': '✅', intern: '🏭', 'intern-summary': '📊', 'ot-cover': '📄' });
+
+  var STATUS = { draft: ['ร่าง', 'secondary'], submitted: ['รอตรวจ', 'warning'], approved: ['อนุมัติแล้ว', 'success'], returned: ['ส่งกลับแก้ไข', 'danger'] };
+  var KIND = { normal: '', sub: 'สอนแทน', makeup: 'สอนชดเชย' };
+  var pad = function (x) { return (x < 10 ? '0' : '') + x; };
+  var todayStr = function () { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+  var badge = function (s) { var v = STATUS[s] || ['ยังไม่รายงาน', 'light text-dark border']; return '<span class="badge text-bg-' + v[1].split(' ')[0] + '">' + v[0] + '</span>'; };
+  var safeLink = function (u, label) { return /^https?:\/\//i.test(u || '') ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(label || 'เปิดลิงก์') + '</a>' : ''; };
+  var courseLabel = function (id) { var c = courseOf(id); return esc(c.code + ' ' + c.name); };
+  var dayLabel = function (date) { var d = new Date(date + 'T00:00:00'); return (S.days[(d.getDay() + 6) % 7] || '') + ' ' + thDate(date); };
+  var periodLabel = function (st, len) { return 'คาบ ' + st + (Number(len) > 1 ? '–' + (Number(st) + Number(len) - 1) : ''); };
+  var teacherOptions = function (list, sel, blank) {
+    return (blank ? '<option value="">' + blank + '</option>' : '') + sortBy(list, function (t) { return t.name; }).map(function (t) {
+      return '<option value="' + esc(t.id) + '"' + (String(t.id) === String(sel) ? ' selected' : '') + '>' + esc(t.name) + '</option>';
+    }).join('');
+  };
+  var myTeachers = function () { return S.me.role === 'dept' ? S.D.Teachers.filter(function (t) { return String(t.department_id) === String(S.me.department_id); }) : S.D.Teachers; };
+  var deptSelect = function (id, sel, blank) {
+    if (S.me.role === 'dept') return '<input type="hidden" id="' + id + '" value="' + esc(S.me.department_id) + '">';
+    return '<select id="' + id + '" class="form-select form-select-sm w-auto">' + (blank ? '<option value="">' + blank + '</option>' : '') +
+      sortBy(S.D.Departments, function (d) { return d.name; }).map(function (d) { return '<option value="' + esc(d.id) + '"' + (String(d.id) === String(sel) ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('') + '</select>';
+  };
+  var val = function (sel) { return $j(sel).val(); };
+
+  /* ---------- รายงานการสอนของฉัน ---------- */
+  var TR = { date: todayStr(), teacher: '' };
+  VIEWS['teach-report'] = function (el) {
+    if (S.me.role === 'teacher') {
+      TR.teacher = S.me.teacher_id;
+      if (!TR.teacher) { el.innerHTML = '<div class="alert alert-warning">บัญชีนี้ยังไม่ได้ผูกกับรายชื่อครู กรุณาแจ้งผู้ดูแลระบบ</div>'; return; }
+    }
+    var list = myTeachers();
+    if (!TR.teacher && list.length) TR.teacher = sortBy(list, function (t) { return t.name; })[0].id;
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center">' +
+      (S.me.role !== 'teacher' ? '<select id="trT" class="form-select form-select-sm w-auto">' + teacherOptions(list, TR.teacher) + '</select>' : '') +
+      '<button class="btn sm" id="trPrev">‹ สัปดาห์ก่อน</button><input type="date" id="trD" class="form-control form-control-sm w-auto" value="' + esc(TR.date) + '"><button class="btn sm" id="trNext">สัปดาห์ถัดไป ›</button>' +
+      '<button class="btn sm" id="trNow">สัปดาห์นี้</button><span class="grow"></span><span id="trCount" class="small muted"></span></div></div><div id="trOut"></div>');
+    var shift = function (n) { var d = new Date(TR.date + 'T00:00:00'); d.setDate(d.getDate() + n); TR.date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); $j('#trD').val(TR.date); load(); };
+    function load() {
+      if (!TR.teacher) { $j('#trOut').html('<div class="card muted">ยังไม่มีครูในแผนก</div>'); return; }
+      api('teachReportSlots', S.token, S.sem, TR.teacher, TR.date).then(function (d) { draw(d); });
+    }
+    function draw(d) {
+      var rows = d.slots.filter(function (s) { return !s.replaced; });
+      var done = rows.filter(function (s) { return s.report && (s.report.status === 'submitted' || s.report.status === 'approved'); }).length;
+      $j('#trCount').text('ส่งแล้ว ' + done + ' จาก ' + rows.length + ' คาบ (' + thDate(d.from) + ' – ' + thDate(d.to) + ')');
+      if (!d.slots.length) { $j('#trOut').html('<div class="card muted">สัปดาห์นี้ไม่มีคาบสอนในภาคเรียนที่เลือก</div>'); return; }
+      $j('#trOut').html('<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th>วัน</th><th>คาบ</th><th>วิชา</th><th>กลุ่ม</th><th>หัวข้อที่สอน</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+        d.slots.map(function (s, n) {
+          var r = s.report;
+          if (s.replaced) return '<tr class="table-light"><td>' + esc(dayLabel(s.date)) + '</td><td>' + periodLabel(s.start, s.length) + '</td><td>' + courseLabel(s.course_id) + '</td><td>' + esc(groupCode(s.group_id)) + '</td><td colspan="3" class="muted small">มีผู้สอนแทนหรือย้ายไปสอนชดเชยแล้ว ไม่ต้องรายงานคาบนี้</td></tr>';
+          var future = s.date > d.today;
+          return '<tr><td class="text-nowrap">' + esc(dayLabel(s.date)) + '</td><td class="text-nowrap">' + periodLabel(s.start, s.length) + (KIND[s.kind] ? ' <span class="badge text-bg-info">' + KIND[s.kind] + '</span>' : '') + '</td><td>' + courseLabel(s.course_id) + '</td><td>' + esc(groupCode(s.group_id)) + '</td><td class="small">' + esc(r ? r.topic : '') +
+            (r && r.status === 'returned' && r.review_note ? '<div class="text-danger">เหตุผล: ' + esc(r.review_note) + '</div>' : '') + '</td><td>' + (r ? badge(r.status) : (future ? '<span class="small muted">ยังไม่ถึงวัน</span>' : badge(''))) + '</td><td class="text-end">' +
+            (future ? '' : '<button class="btn sm pri" data-n="' + n + '">' + (r ? (r.status === 'approved' ? 'ดู' : 'แก้ไข') : 'รายงาน') + '</button>') + '</td></tr>';
+        }).join('') + '</tbody></table></div></div>');
+      $j('#trOut [data-n]').on('click', function () { form(d.slots[Number($j(this).data('n'))]); });
+    }
+    function form(s) {
+      var r = s.report || {}, locked = r.status === 'approved' && S.me.role !== 'admin', g = IDX.Groups[s.group_id] || {};
+      var dis = locked ? ' disabled' : '';
+      var m = modal('<h3>รายงานการสอน</h3><p class="small muted mb-2">' + esc(dayLabel(s.date)) + ' · ' + periodLabel(s.start, s.length) + ' · ' + courseLabel(s.course_id) + ' · ' + esc(groupCode(s.group_id)) + '</p>' +
+        '<label class="form-label mb-1">หัวข้อที่สอน *</label><input id="rpT" class="form-control mb-2" maxlength="500"' + dis + '>' +
+        '<label class="form-label mb-1">กิจกรรมการเรียนการสอน</label><textarea id="rpA" class="form-control mb-2" rows="3"' + dis + '></textarea>' +
+        '<div class="d-flex gap-2 mb-2"><div class="flex-fill"><label class="form-label mb-1">นักเรียนมาเรียน (คน)</label><input id="rpP" type="number" min="0" class="form-control"' + dis + '></div><div class="flex-fill"><label class="form-label mb-1">ขาดเรียน (คน)</label><input id="rpB" type="number" min="0" class="form-control"' + dis + '></div></div>' +
+        '<label class="form-label mb-1">ปัญหา/ข้อเสนอแนะ</label><textarea id="rpQ" class="form-control mb-2" rows="2"' + dis + '></textarea>' +
+        '<label class="form-label mb-1">ลิงก์หลักฐาน (เช่น Google Drive, รูปภาพ)</label><input id="rpL" type="url" class="form-control" placeholder="https://"' + dis + '>' +
+        '<div class="actions"><button class="btn" onclick="closeModal()">ปิด</button>' + (locked ? '' : (r.id && r.status !== 'approved' ? '<button class="btn bad" id="rpDel">ลบ</button>' : '') + '<button class="btn" id="rpDraft">บันทึกร่าง</button><button class="btn pri" id="rpSend">ส่งรายงาน</button>') + '</div>', true);
+      $j('#rpT').val(r.topic || ''); $j('#rpA').val(r.activity || ''); $j('#rpP').val(r.students_present !== undefined && r.students_present !== '' ? r.students_present : (g.students || '')); $j('#rpB').val(r.students_absent || 0); $j('#rpQ').val(r.problems || ''); $j('#rpL').val(r.attachment_link || '');
+      var save = function (submit) {
+        api('teachReportSave', S.token, { semester_id: S.sem, teacher_id: TR.teacher, session_id: s.session_id, date: s.date, start: s.start, topic: val('#rpT'), activity: val('#rpA'), students_present: val('#rpP'), students_absent: val('#rpB'), problems: val('#rpQ'), attachment_link: val('#rpL') }, submit)
+          .then(function () { closeModal(); toast(submit ? 'ส่งรายงานแล้ว' : 'บันทึกร่างแล้ว'); load(); });
+      };
+      $j('#rpDraft', m).on('click', function () { save(false); });
+      $j('#rpSend', m).on('click', function () { save(true); });
+      $j('#rpDel', m).on('click', function () { if (confirm('ลบรายงานนี้?')) api('teachReportDelete', S.token, r.id).then(function () { closeModal(); load(); }); });
+    }
+    $j('#trT').on('change', function () { TR.teacher = this.value; load(); });
+    $j('#trD').on('change', function () { if (this.value) { TR.date = this.value; load(); } });
+    $j('#trPrev').on('click', function () { shift(-7); }); $j('#trNext').on('click', function () { shift(7); });
+    $j('#trNow').on('click', function () { TR.date = todayStr(); $j('#trD').val(TR.date); load(); });
+    load();
+  };
+
+  /* ---------- ตรวจรายงานการสอน ---------- */
+  var RV = { status: 'submitted', dept: '', from: '', to: '', tab: 'list' };
+  VIEWS['teach-review'] = function (el) {
+    if (!RV.from) { var d = new Date(), m = new Date(d); m.setDate(d.getDate() - ((d.getDay() + 6) % 7)); RV.from = m.getFullYear() + '-' + pad(m.getMonth() + 1) + '-' + pad(m.getDate()); RV.to = todayStr(); }
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center">' + deptSelect('rvD', RV.dept, 'ทุกแผนก') +
+      '<input type="date" id="rvF" class="form-control form-control-sm w-auto" value="' + esc(RV.from) + '"><span class="small">ถึง</span><input type="date" id="rvTo" class="form-control form-control-sm w-auto" value="' + esc(RV.to) + '">' +
+      '<select id="rvS" class="form-select form-select-sm w-auto"><option value="submitted">รอตรวจ</option><option value="approved">อนุมัติแล้ว</option><option value="returned">ส่งกลับแก้ไข</option><option value="draft">ร่าง</option><option value="">ทุกสถานะ</option></select>' +
+      '<button class="btn sm" id="rvSum">สรุปรายครู</button><button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div></div><div id="rvOut"></div>');
+    $j('#rvS').val(RV.status);
+    function read() { RV.dept = val('#rvD'); RV.from = val('#rvF'); RV.to = val('#rvTo'); RV.status = val('#rvS'); }
+    function list() {
+      read();
+      api('teachReportList', S.token, { semester_id: S.sem, department_id: RV.dept, status: RV.status, from: RV.from, to: RV.to }).then(function (rows) {
+        if (!rows.length) { $j('#rvOut').html('<div class="card muted">ไม่มีรายงานตามเงื่อนไข</div>'); return; }
+        $j('#rvOut').html('<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th>วัน/คาบ</th><th>ครู</th><th>วิชา / กลุ่ม</th><th>เนื้อหา</th><th>นักเรียน</th><th>สถานะ</th><th class="no-print"></th></tr></thead><tbody>' +
+          rows.map(function (r) {
+            return '<tr><td class="text-nowrap small">' + esc(dayLabel(r.date)) + '<br>' + periodLabel(r.start, r.length) + (KIND[r.kind] ? ' <span class="badge text-bg-info">' + KIND[r.kind] + '</span>' : '') + '</td><td>' + esc(nm('Teachers', r.teacher_id)) + '</td><td class="small">' + courseLabel(r.course_id) + '<br>' + esc(groupCode(r.group_id)) + '</td><td class="small"><b>' + esc(r.topic) + '</b><br>' + esc(r.activity) +
+              (r.problems ? '<div class="text-muted">ปัญหา: ' + esc(r.problems) + '</div>' : '') + (r.attachment_link ? '<div>' + safeLink(r.attachment_link, 'หลักฐาน') + '</div>' : '') + (r.review_note ? '<div class="text-danger">หมายเหตุ: ' + esc(r.review_note) + '</div>' : '') +
+              '</td><td class="small text-nowrap">มา ' + esc(r.students_present) + '<br>ขาด ' + esc(r.students_absent) + '</td><td>' + badge(r.status) + '</td><td class="no-print text-nowrap">' +
+              (r.status === 'submitted' ? '<button class="btn sm pri" data-ok="' + esc(r.id) + '">อนุมัติ</button> <button class="btn sm bad" data-back="' + esc(r.id) + '">ส่งกลับ</button>' : '') + '</td></tr>';
+          }).join('') + '</tbody></table></div></div>');
+        $j('#rvOut [data-ok]').on('click', function () { api('teachReportReview', S.token, $j(this).data('ok'), 'approve', '').then(list); });
+        $j('#rvOut [data-back]').on('click', function () { var n = prompt('เหตุผลที่ส่งกลับให้แก้ไข', ''); if (n) api('teachReportReview', S.token, $j(this).data('back'), 'return', n).then(list); });
+      });
+    }
+    function summary() {
+      read();
+      api('teachReportSummary', S.token, S.sem, RV.dept, RV.from, RV.to).then(function (rows) {
+        $j('#rvOut').html('<div class="card"><h3>สรุปการส่งรายงานการสอน ' + thDate(RV.from) + ' – ' + thDate(RV.to) + '</h3><div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0"><thead><tr><th>ครู</th><th class="text-end">คาบที่ต้องรายงาน</th><th class="text-end">อนุมัติแล้ว</th><th class="text-end">รอตรวจ</th><th class="text-end">ส่งกลับ</th><th class="text-end">ร่าง</th><th class="text-end">ยังไม่รายงาน</th></tr></thead><tbody>' +
+          (rows.length ? sortBy(rows, function (r) { return r.name; }).map(function (r) { return '<tr><td>' + esc(r.name) + '</td><td class="text-end">' + r.expected + '</td><td class="text-end">' + r.approved + '</td><td class="text-end">' + r.submitted + '</td><td class="text-end">' + r.returned + '</td><td class="text-end">' + r.draft + '</td><td class="text-end' + (r.missing ? ' text-danger fw-bold' : '') + '">' + r.missing + '</td></tr>'; }).join('') : '<tr><td colspan="7" class="muted">ไม่มีคาบสอนในช่วงนี้</td></tr>') + '</tbody></table></div></div>');
+      });
+    }
+    $j('#rvD,#rvF,#rvTo,#rvS').on('change', list);
+    $j('#rvSum').on('click', summary);
+    list();
+  };
+
+  /* ---------- นักศึกษาฝึกงาน + บันทึกนิเทศ ---------- */
+  VIEWS.intern = function (el) {
+    var canEdit = can('dept');
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><input id="inQ" class="form-control form-control-sm w-auto" placeholder="ค้นหาชื่อ / สถานประกอบการ"><span class="grow"></span>' +
+      (canEdit ? '<button class="btn sm" id="inBulk">วางจาก Excel</button><button class="btn sm pri" id="inAdd">+ เพิ่มนักศึกษา</button>' : '') + '</div></div><div id="inOut"></div>');
+    var rows = [];
+    function load() { api('internList', S.token, S.sem).then(function (r) { rows = r; draw(); }); }
+    function draw() {
+      var q = String(val('#inQ') || '').toLowerCase();
+      var show = rows.filter(function (r) { return !q || (r.student_name + ' ' + r.student_code + ' ' + r.company_name).toLowerCase().indexOf(q) >= 0; });
+      if (!show.length) { $j('#inOut').html('<div class="card muted">' + (rows.length ? 'ไม่พบตามคำค้น' : (canEdit ? 'ยังไม่มีข้อมูลนักศึกษาฝึกงานในภาคเรียนนี้ กด "เพิ่มนักศึกษา" เพื่อเริ่มต้น' : 'ยังไม่มีนักศึกษาที่ครูเป็นผู้นิเทศในภาคเรียนนี้')) + '</div>'); return; }
+      $j('#inOut').html('<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th>นักศึกษา</th><th>กลุ่ม</th><th>สถานประกอบการ</th><th>ช่วงฝึก</th><th>ครูนิเทศ</th><th class="text-end">นิเทศแล้ว</th><th class="no-print"></th></tr></thead><tbody>' +
+        sortBy(show, function (r) { return r.student_name; }).map(function (r) {
+          return '<tr><td>' + esc(r.student_name) + '<div class="small muted">' + esc(r.student_code) + '</div></td><td>' + esc(groupCode(r.group_id)) + '</td><td>' + esc(r.company_name) + '<div class="small muted">' + esc(r.mentor_name) + (r.company_phone ? ' · ' + esc(r.company_phone) : '') + '</div></td><td class="small text-nowrap">' + (r.start_date ? thDate(r.start_date) : '') + (r.end_date ? ' – ' + thDate(r.end_date) : '') + '</td><td>' + esc(nm('Teachers', r.supervisor_teacher_id)) + '</td><td class="text-end"><span class="badge text-bg-' + (r.visits_done ? 'success' : 'secondary') + '">' + r.visits_done + ' ครั้ง</span>' + (r.visits_planned ? ' <span class="badge text-bg-info">นัด ' + r.visits_planned + '</span>' : '') + '</td><td class="no-print text-end text-nowrap"><button class="btn sm pri" data-v="' + esc(r.id) + '">นิเทศ</button>' +
+            (canEdit ? ' <button class="btn sm" data-e="' + esc(r.id) + '">แก้ไข</button> <button class="btn sm bad" data-d="' + esc(r.id) + '">ลบ</button>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div></div>');
+      var find = function (id) { return rows.filter(function (x) { return x.id === id; })[0]; };
+      $j('#inOut [data-v]').on('click', function () { visits(find($j(this).data('v'))); });
+      $j('#inOut [data-e]').on('click', function () { edit(find($j(this).data('e'))); });
+      $j('#inOut [data-d]').on('click', function () { if (confirm('ลบนักศึกษาคนนี้และบันทึกนิเทศทั้งหมด?')) api('internDelete', S.token, $j(this).data('d')).then(load); });
+    }
+    var groupOpts = function (sel) { var g = S.me.role === 'dept' ? S.D.Groups.filter(function (x) { return String(x.department_id) === String(S.me.department_id); }) : S.D.Groups; return '<option value="">— เลือกกลุ่ม —</option>' + sortBy(g, function (x) { return x.code; }).map(function (x) { return '<option value="' + esc(x.id) + '"' + (String(x.id) === String(sel) ? ' selected' : '') + '>' + esc(x.code || x.name) + '</option>'; }).join(''); };
+    function edit(r) {
+      r = r || { status: 'active' };
+      var field = function (id, label, type) { return '<div><label class="form-label mb-1">' + label + '</label><input id="' + id + '" type="' + (type || 'text') + '" class="form-control"></div>'; };
+      var m = modal('<h3>' + (r.id ? 'แก้ไข' : 'เพิ่ม') + 'นักศึกษาฝึกงาน</h3><div class="form-grid">' + field('iC', 'รหัสนักศึกษา') + field('iN', 'ชื่อ-สกุล *') +
+        '<div><label class="form-label mb-1">กลุ่มเรียน</label><select id="iG" class="form-select">' + groupOpts(r.group_id) + '</select></div>' +
+        '<div><label class="form-label mb-1">ครูนิเทศ</label><select id="iS" class="form-select">' + teacherOptions(S.D.Teachers, r.supervisor_teacher_id, '— เลือกครู —') + '</select></div>' +
+        field('iCo', 'สถานประกอบการ *') + field('iM', 'ครูฝึก/พี่เลี้ยง') + field('iP', 'โทรศัพท์') + field('iA', 'ที่อยู่') + field('iF', 'เริ่มฝึก', 'date') + field('iT', 'สิ้นสุด', 'date') +
+        '<div><label class="form-label mb-1">สถานะ</label><select id="iSt" class="form-select"><option value="active">กำลังฝึก</option><option value="done">จบการฝึก</option><option value="cancelled">ยกเลิก</option></select></div>' + field('iNo', 'หมายเหตุ') +
+        '</div><div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="iSave">บันทึก</button></div>', true);
+      var map = { iC: 'student_code', iN: 'student_name', iCo: 'company_name', iM: 'mentor_name', iP: 'company_phone', iA: 'company_address', iF: 'start_date', iT: 'end_date', iSt: 'status', iNo: 'note' };
+      $j.each(map, function (k, f) { $j('#' + k).val(r[f] || ''); });
+      if (!r.status) $j('#iSt').val('active');
+      $j('#iSave', m).on('click', function () {
+        var o = { id: r.id || '', semester_id: S.sem, group_id: val('#iG'), supervisor_teacher_id: val('#iS') };
+        $j.each(map, function (k, f) { o[f] = val('#' + k); });
+        api('internSave', S.token, o).then(function () { closeModal(); toast('บันทึกแล้ว'); load(); });
+      });
+    }
+    function bulk() {
+      var m = modal('<h3>วางรายชื่อจาก Excel</h3><p class="small muted">วางทีละแถว เรียงคอลัมน์: <b>รหัส, ชื่อ-สกุล, รหัสกลุ่ม, สถานประกอบการ, ครูฝึก, โทรศัพท์, วันเริ่ม (ปปปป-ดด-วว), วันสิ้นสุด, ชื่อครูนิเทศ</b></p><textarea id="bT" class="form-control" rows="9"></textarea><div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="bGo">นำเข้า</button></div>', true);
+      $j('#bGo', m).on('click', function () {
+        var bad = [], list = $j.map(String(val('#bT')).split(/\r?\n/), function (l) {
+          if (!l.trim()) return null;
+          var a = l.split('\t').map(function (x) { return x.trim(); });
+          var g = S.D.Groups.filter(function (x) { return x.code === a[2]; })[0], t = S.D.Teachers.filter(function (x) { return x.name === a[8]; })[0];
+          if (a[2] && !g) bad.push('ไม่พบกลุ่ม ' + a[2]);
+          if (a[8] && !t) bad.push('ไม่พบครู ' + a[8]);
+          return { student_code: a[0] || '', student_name: a[1] || '', group_id: g ? g.id : '', company_name: a[3] || '', mentor_name: a[4] || '', company_phone: a[5] || '', start_date: a[6] || '', end_date: a[7] || '', supervisor_teacher_id: t ? t.id : '' };
+        });
+        if (bad.length) return toast(bad.slice(0, 3).join(', '), 1);
+        if (!list.length) return toast('ยังไม่มีข้อมูล', 1);
+        api('internBulkSave', S.token, S.sem, list).then(function (n) { closeModal(); toast('นำเข้าแล้ว ' + n + ' คน'); load(); });
+      });
+    }
+    function visits(r) {
+      var m = modal('<h3>บันทึกนิเทศ: ' + esc(r.student_name) + '</h3><p class="small muted mb-2">' + esc(r.company_name) + ' · ครูนิเทศ ' + esc(nm('Teachers', r.supervisor_teacher_id) || '-') + '</p><div id="vList" class="mb-3"></div><hr>' +
+        '<h3 id="vTitle" class="h6">เพิ่มการนิเทศ</h3><div class="form-grid"><div><label class="form-label mb-1">วันที่ *</label><input id="vD" type="date" class="form-control"></div>' +
+        '<div><label class="form-label mb-1">รูปแบบ</label><select id="vY" class="form-select"><option value="online">ออนไลน์</option><option value="onsite">ไปสถานประกอบการ</option></select></div>' +
+        '<div><label class="form-label mb-1">สถานะ</label><select id="vS" class="form-select"><option value="done">นิเทศแล้ว</option><option value="planned">นัดหมาย</option></select></div>' +
+        '<div><label class="form-label mb-1">ลิงก์ประชุมออนไลน์</label><input id="vM" type="url" class="form-control" placeholder="https://"></div>' +
+        '<div><label class="form-label mb-1">คะแนน (0–5)</label><input id="vC" type="number" min="0" max="5" step="0.5" class="form-control"></div>' +
+        '<div><label class="form-label mb-1">นิเทศครั้งถัดไป</label><input id="vN" type="date" class="form-control"></div></div>' +
+        '<label class="form-label mb-1 mt-2">หัวข้อ</label><input id="vT" class="form-control mb-2"><label class="form-label mb-1">ผลการนิเทศ *</label><textarea id="vF" class="form-control mb-2" rows="3"></textarea>' +
+        '<label class="form-label mb-1">ข้อเสนอแนะ</label><textarea id="vG" class="form-control mb-2" rows="2"></textarea><label class="form-label mb-1">ลิงก์หลักฐาน</label><input id="vE" type="url" class="form-control" placeholder="https://">' +
+        '<div class="actions"><button class="btn" onclick="closeModal()">ปิด</button><button class="btn pri" id="vSave">บันทึกการนิเทศ</button></div>', true);
+      var cur = '';
+      var reset = function () { cur = ''; $j('#vTitle').text('เพิ่มการนิเทศ'); $j('#vD').val(todayStr()); $j('#vY').val('online'); $j('#vS').val('done'); $j('#vM,#vC,#vN,#vT,#vF,#vG,#vE').val(''); };
+      function list() {
+        api('visitList', S.token, r.id).then(function (v) {
+          $j('#vList').html(v.length ? '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>วันที่</th><th>รูปแบบ</th><th>ผล</th><th>คะแนน</th><th></th></tr></thead><tbody>' + v.map(function (x) {
+            return '<tr><td class="text-nowrap small">' + thDate(x.visit_date) + (x.status === 'planned' ? ' <span class="badge text-bg-info">นัดหมาย</span>' : '') + '</td><td class="small">' + (x.visit_type === 'onsite' ? 'สถานประกอบการ' : 'ออนไลน์') + (x.meeting_link ? '<br>' + safeLink(x.meeting_link, 'เข้าประชุม') : '') + '</td><td class="small"><b>' + esc(x.topic) + '</b> ' + esc(x.findings) + (x.suggestions ? '<div class="text-muted">แนะนำ: ' + esc(x.suggestions) + '</div>' : '') + (x.evidence_link ? '<div>' + safeLink(x.evidence_link, 'หลักฐาน') + '</div>' : '') + '</td><td>' + esc(x.score) + '</td><td class="text-nowrap text-end"><button class="btn sm" data-ve="' + esc(x.id) + '">แก้ไข</button> <button class="btn sm bad" data-vd="' + esc(x.id) + '">ลบ</button></td></tr>';
+          }).join('') + '</tbody></table></div>' : '<div class="small muted">ยังไม่มีบันทึกนิเทศ</div>');
+          $j('#vList [data-ve]').on('click', function () {
+            var x = v.filter(function (i) { return i.id === $j(this).data('ve'); }.bind(this))[0];
+            cur = x.id; $j('#vTitle').text('แก้ไขการนิเทศ'); $j('#vD').val(x.visit_date); $j('#vY').val(x.visit_type); $j('#vS').val(x.status); $j('#vM').val(x.meeting_link); $j('#vC').val(x.score); $j('#vN').val(x.next_visit_date); $j('#vT').val(x.topic); $j('#vF').val(x.findings); $j('#vG').val(x.suggestions); $j('#vE').val(x.evidence_link);
+          });
+          $j('#vList [data-vd]').on('click', function () { if (confirm('ลบรายการนี้?')) api('visitDelete', S.token, $j(this).data('vd')).then(function () { list(); load(); }); });
+        });
+      }
+      $j('#vSave', m).on('click', function () {
+        api('visitSave', S.token, { id: cur, internship_id: r.id, visit_date: val('#vD'), visit_type: val('#vY'), status: val('#vS'), meeting_link: val('#vM'), score: val('#vC'), next_visit_date: val('#vN'), topic: val('#vT'), findings: val('#vF'), suggestions: val('#vG'), evidence_link: val('#vE') })
+          .then(function () { toast('บันทึกแล้ว'); reset(); list(); load(); });
+      });
+      reset(); list();
+    }
+    $j('#inQ').on('input', draw);
+    $j('#inAdd').on('click', function () { edit(); });
+    $j('#inBulk').on('click', bulk);
+    load();
+  };
+
+  /* ---------- สรุปการนิเทศ ---------- */
+  VIEWS['intern-summary'] = function (el) {
+    api('internList', S.token, S.sem).then(function (rows) {
+      var by = {};
+      rows.forEach(function (r) {
+        var k = r.supervisor_teacher_id || '-';
+        var b = by[k] = by[k] || { name: nm('Teachers', k) || 'ยังไม่กำหนดครูนิเทศ', students: 0, done: 0, none: [] };
+        b.students++; b.done += Number(r.visits_done) || 0;
+        if (!Number(r.visits_done)) b.none.push(r.student_name);
+      });
+      var list = sortBy(Object.keys(by).map(function (k) { return by[k]; }), function (b) { return b.name; });
+      $j(el).html('<div class="card no-print"><div class="d-flex gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + ' นักศึกษา ' + rows.length + ' คน</span><span class="grow"></span><button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div></div>' +
+        '<div class="card"><h3>สรุปการนิเทศนักศึกษาฝึกงาน</h3><div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0"><thead><tr><th>ครูนิเทศ</th><th class="text-end">นักศึกษา</th><th class="text-end">นิเทศแล้ว (ครั้ง)</th><th>ยังไม่ได้นิเทศ</th></tr></thead><tbody>' +
+        (list.length ? list.map(function (b) { return '<tr><td>' + esc(b.name) + '</td><td class="text-end">' + b.students + '</td><td class="text-end">' + b.done + '</td><td class="small' + (b.none.length ? ' text-danger' : '') + '">' + (b.none.length ? esc(b.none.join(', ')) : 'ครบทุกคน') + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="muted">ยังไม่มีข้อมูล</td></tr>') + '</tbody></table></div></div>');
+    });
+  };
+
+  /* ---------- งบหน้าแผนกวิชา ---------- */
+  var CV = { dept: '' };
+  VIEWS['ot-cover'] = function (el) {
+    if (!(S.D.OtRounds || []).length) { el.innerHTML = '<div class="card">ยังไม่มีรอบการเบิก</div>'; return; }
+    if (!CV.dept) CV.dept = S.me.department_id || (S.D.Departments[0] || {}).id;
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><select id="cvR" class="form-select form-select-sm w-auto">' + roundOptions() + '</select>' + deptSelect('cvD', CV.dept) + '<span class="grow"></span><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
+    function load() {
+      OT.round = val('#cvR'); CV.dept = val('#cvD');
+      api('otCoverSheet', S.token, OT.round, CV.dept).then(function (r) {
+        var s = S.settings, round = r.round;
+        var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(CV.dept) && String(t.is_dept_head) === 'true'; })[0];
+        var sign = function (name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
+        var num = function (v) { return '<td class="text-end">' + money(v) + '</td>'; };
+        $j('#cvOut').removeClass('muted').html('<div class="page"><h2 class="text-center">งบหน้าการเบิกค่าสอนเกินภาระงาน</h2><div class="sub text-center">' + esc(s.college_name) + ' · แผนกวิชา' + esc(deptName(CV.dept)) + '<br>' + esc(round.name) + ' ภาคเรียนที่ ' + esc(semLabel(round.semester_id)) + ' (' + thDate(round.start_date) + ' – ' + thDate(round.end_date) + ')</div>' +
+          (r.notLocked.length ? '<div class="alert alert-warning no-print py-2 small">ยังไม่ล็อกใบเบิก: ' + esc(r.notLocked.join(', ')) + ' — งบหน้านับเฉพาะใบที่ล็อกแล้ว</div>' : '') +
+          '<div class="table-responsive"><table class="table table-sm table-bordered align-middle"><thead class="text-center"><tr><th rowspan="2">ที่</th><th rowspan="2">ชื่อ-สกุล</th><th rowspan="2">ตำแหน่ง</th><th colspan="' + r.weeks.length + '">จำนวนเงินรายสัปดาห์ (บาท)</th><th rowspan="2">รวม (ชม.)</th><th rowspan="2">รวมเงิน (บาท)</th></tr><tr>' +
+          r.weeks.map(function (w) { return '<th title="' + thDate(w.from) + ' – ' + thDate(w.to) + '">' + w.index + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          (r.rows.length ? r.rows.map(function (x, i) { return '<tr><td class="text-center">' + (i + 1) + '</td><td>' + esc(x.name) + '</td><td class="small">' + esc(x.position) + '</td>' + r.weeks.map(function (w) { return num(x.week_amounts[w.index] || 0); }).join('') + '<td class="text-end">' + x.hours + '</td>' + num(x.amount) + '</tr>'; }).join('') : '<tr><td colspan="' + (r.weeks.length + 5) + '" class="text-center muted">ยังไม่มีใบเบิกที่ล็อกแล้ว</td></tr>') +
+          '<tr class="fw-bold"><td colspan="3" class="text-end">รวมทั้งสิ้น</td>' + r.weeks.map(function (w) { return num(r.weekTotals[w.index] || 0); }).join('') + '<td class="text-end">' + r.totals.hours + '</td>' + num(r.totals.amount) + '</tr>' +
+          '<tr><td colspan="' + (r.weeks.length + 5) + '" class="text-center">(' + esc(r.totalText) + ')</td></tr></tbody></table></div>' +
+          '<p class="small">ผู้มีสิทธิ์เบิก ' + r.rows.length + ' คน · ชั่วโมงรวม ปวช. ' + r.totals.vc + ' · ปวส. ' + r.totals.vs + ' · ปตรี. ' + r.totals.bd + ' · เบิกรายหัว ' + money(r.totals.perHeadAmount) + ' บาท</p>' +
+          '<div class="signs">' + sign(head && head.name, 'หัวหน้าแผนกวิชา<br>ผู้จัดทำ') + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ<br>ผู้ตรวจสอบ') + '</div>' +
+          '<div class="signs">' + sign(s.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_director, 'ผู้อำนวยการวิทยาลัย<br>ผู้อนุมัติ') + '</div></div>');
+      });
+    }
+    $j('#cvR,#cvD').on('change', load);
+    load();
+  };
+})(jQuery);
+</script>

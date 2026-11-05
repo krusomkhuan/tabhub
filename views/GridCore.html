@@ -1,0 +1,112 @@
+<script>
+/* ฟังก์ชันวาดตารางเรียน ใช้ร่วมกันทั้งหน้าระบบและหน้าสาธารณะ */
+var Grid = (function () {
+  var PALETTE = ['#dbe7ff', '#ffe3d6', '#dff5e3', '#f5e1ff', '#fff2c7', '#d9f3f6', '#ffdbe6', '#e7e9ff', '#e6f4d4', '#fde4c8', '#d8ecff', '#f0e0d6'];
+
+  function esc(s) { return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  function colorFor(key) {
+    var h = 0; key = String(key || ''); for (var i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+    return PALETTE[Math.abs(h) % PALETTE.length];
+  }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  function periodTimes(st) {
+    var n = Number(st.periods_per_day || 12), out = [];
+    try { var pt = st.period_times ? JSON.parse(st.period_times) : null; if (pt && pt.length >= n) return pt.slice(0, n); } catch (e) {}
+    var t = String(st.period_start || '08:00').split(':'), m = Number(t[0]) * 60 + Number(t[1] || 0), d = Number(st.period_minutes || 60);
+    for (var i = 0; i < n; i++) { out.push([pad(Math.floor(m / 60)) + '.' + pad(m % 60), pad(Math.floor((m + d) / 60)) + '.' + pad((m + d) % 60)]); m += d; }
+    return out;
+  }
+
+  function lockedMap(locked, days) {
+    var m = {};
+    (locked || []).forEach(function (l) {
+      if (String(l.day) === '' || l.day === '*') days.forEach(function (d) { m[d + '-' + l.period] = l.label || 'ล็อก'; });
+      else m[l.day + '-' + l.period] = l.label || 'ล็อก';
+    });
+    return m;
+  }
+
+  /**
+   * opt: { settings, dayNames, sessions, label(s)->html, colorKey(s), locked:[], editable(s)->bool, conflictIds:{} }
+   */
+  function render(opt) {
+    var st = opt.settings, n = Number(st.periods_per_day || 12);
+    var days = String(st.days || '0,1,2,3,4').split(',').map(Number);
+    var lunch = String(st.lunch_period || '').split(',').map(Number);
+    var times = periodTimes(st), lk = lockedMap(opt.locked, days);
+    var h = '<div class="tt-wrap"><table class="tt"><thead><tr><th style="width:74px">วัน / คาบ</th>';
+    for (var p = 1; p <= n; p++) h += '<th>' + p + '<span class="tm">' + times[p - 1][0] + '-' + times[p - 1][1] + '</span></th>';
+    h += '</tr></thead><tbody>';
+    days.forEach(function (d) {
+      h += '<tr><td class="day">' + esc(opt.dayNames[d]) + '</td>';
+      var list = opt.sessions.filter(function (s) { return Number(s.day) === d; })
+        .sort(function (a, b) { return a.start - b.start; });
+      // รวมคาบที่ทับกันเป็นกลุ่มเดียว
+      var clusters = [];
+      list.forEach(function (s) {
+        var a = Number(s.start), b = a + Number(s.length) - 1, last = clusters[clusters.length - 1];
+        if (last && a <= last.end) { last.items.push(s); last.end = Math.max(last.end, b); }
+        else clusters.push({ start: a, end: b, items: [s] });
+      });
+      var p = 1;
+      while (p <= n) {
+        var c = clusters.filter(function (x) { return x.start === p; })[0];
+        if (c) {
+          var span = Math.min(c.end, n) - p + 1;
+          var slots = {}; c.items.forEach(function (s) { slots[s.start + '-' + s.length] = 1; });
+          var clash = Object.keys(slots).length > 1;
+          h += '<td class="cell" colspan="' + span + '" data-day="' + d + '" data-period="' + p + '">';
+          // คาบเรียนร่วม (วัน/คาบเดียวกัน) แสดงรวม
+          c.items.forEach(function (s) {
+            var ed = opt.editable && opt.editable(s);
+            var cls = 'ss' + (ed ? ' edit' : '') + (String(s.locked) === 'true' ? ' locked' : '') +
+              ((clash || (opt.conflictIds && opt.conflictIds[s.id])) ? ' conflict' : '');
+            h += '<div class="' + cls + '" data-sid="' + esc(s.id) + '"' + (ed ? ' draggable="true"' : '') +
+              ' style="background:' + colorFor(opt.colorKey ? opt.colorKey(s) : s.course_id) + '">' + opt.label(s) + '</div>';
+          });
+          h += '</td>';
+          p += span;
+        } else {
+          var key = d + '-' + p;
+          if (lunch.indexOf(p) >= 0) h += '<td class="cell lunch" data-day="' + d + '" data-period="' + p + '">พัก</td>';
+          else if (lk[key]) h += '<td class="cell lock" data-day="' + d + '" data-period="' + p + '">' + esc(lk[key]) + '</td>';
+          else h += '<td class="cell" data-day="' + d + '" data-period="' + p + '"></td>';
+          p++;
+        }
+      }
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    return h;
+  }
+
+  /** รายการวิชาใต้ตาราง */
+  function courseList(sessions, lookup) {
+    var by = {};
+    sessions.forEach(function (s) {
+      var k = s.course_id + '|' + s.group_id;
+      if (!by[k]) by[k] = { s: s, n: 0 };
+      by[k].n += Number(s.length);
+    });
+    var rows = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) {
+      var ca = lookup.course(a.s.course_id), cb = lookup.course(b.s.course_id);
+      return String(ca.code).localeCompare(String(cb.code));
+    });
+    if (!rows.length) return '';
+    var h = '<table class="data" style="margin-top:10px"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>ท-ป-น</th><th>กลุ่ม</th><th>ครูผู้สอน</th><th style="text-align:right">คาบ/สัปดาห์</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var c = lookup.course(r.s.course_id);
+      h += '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + '</td><td>' + esc([c.theory, c.practice, c.credits].filter(function (x) { return x !== '' && x !== undefined; }).join('-')) +
+        '</td><td>' + esc(lookup.group(r.s.group_id)) + '</td><td>' + esc(lookup.teachers(r.s.teacher_ids)) + '</td><td style="text-align:right">' + r.n + '</td></tr>';
+    });
+    var total = rows.reduce(function (a, r) { return a + r.n; }, 0);
+    h += '<tr><td colspan="5" style="text-align:right"><b>รวม</b></td><td style="text-align:right"><b>' + total + '</b></td></tr></tbody></table>';
+    return h;
+  }
+
+  return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap };
+})();
+</script>

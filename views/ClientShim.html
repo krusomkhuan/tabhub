@@ -1,0 +1,31 @@
+<link rel="stylesheet" href="assets/bootstrap.min.css">
+<script src="assets/jquery.min.js"></script>
+<script src="assets/bootstrap.bundle.min.js" defer></script>
+<script>
+/* หน้าเว็บมีฟังก์ชัน $ ของตัวเอง จึงเรียก jQuery ผ่านชื่อ jQuery */
+jQuery.noConflict();
+(function ($j) {
+  function call(name, args, ok, fail) {
+    $j.ajax({
+      url: 'api/' + encodeURIComponent(name), method: 'POST', contentType: 'application/json', dataType: 'json',
+      headers: { 'X-Page-Url': location.origin + location.pathname },
+      data: JSON.stringify({ args: args })
+    }).done(function (d) {
+      if (d && d.error) { if (fail) fail(new Error(d.error)); } else if (ok) ok(d ? d.result : null);
+    }).fail(function (xhr) {
+      var d = xhr.responseJSON;
+      if (d && d.error) { if (fail) fail(new Error(d.error)); return; }
+      if (fail) fail(new Error(xhr.status ? 'เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (' + xhr.status + ')' : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง'));
+    });
+  }
+  function runner(ok, fail) {
+    return new Proxy({}, { get: function (_, name) {
+      if (name === 'withSuccessHandler') return function (f) { return runner(f, fail); };
+      if (name === 'withFailureHandler') return function (f) { return runner(ok, f); };
+      if (name === 'withUserObject') return function () { return runner(ok, fail); };
+      return function () { call(name, [].slice.call(arguments), ok, fail); };
+    } });
+  }
+  window.google = { script: { run: runner(null, null) } };
+})(jQuery);
+</script>

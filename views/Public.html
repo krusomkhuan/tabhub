@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <div class="content" style="max-width:1300px;margin:0 auto">
+    <div class="card no-print">
+      <div class="row" style="margin-bottom:10px"><h2 style="margin:0" class="grow" id="pTitle">ตารางเรียน / ตารางสอน</h2><select id="pSem" style="width:auto"></select></div>
+      <div class="row" id="pTabs" style="gap:6px;margin-bottom:10px"></div>
+      <div class="row"><select id="pDept" style="width:auto"></select><select id="pItem" style="width:auto;min-width:240px"></select>
+        <button class="btn pri" onclick="window.print()">🖨 พิมพ์ / PDF</button><button class="btn" id="pLink">คัดลอกลิงก์ตารางนี้</button></div>
+    </div>
+    <div id="pOut" class="muted">กำลังโหลด…</div>
+  </div>
+  <script>var PARAMS = <?!= params ?>;</script>
+  <?!= include('GridCore'); ?>
+  <script>
+  var P = { type: PARAMS.teacher ? 'teacher' : PARAMS.room ? 'room' : 'group', id: PARAMS.group || PARAMS.teacher || PARAMS.room || '', dept: '' };
+  var D = null, IX = {}, BASE = '';
+  var esc = Grid.esc;
+
+  function load(sem) {
+    document.getElementById('pOut').textContent = 'กำลังโหลด…';
+    google.script.run.withSuccessHandler(function (d) {
+      D = d; IX = {};
+      ['groups', 'teachers', 'rooms', 'courses', 'departments', 'buildings'].forEach(function (k) { IX[k] = {}; d[k].forEach(function (x) { IX[k][x.id] = x; }); });
+      document.getElementById('pTitle').textContent = 'ตารางเรียน / ตารางสอน · ' + d.settings.college_name;
+      document.getElementById('pSem').innerHTML = d.semesters.map(function (s) { return '<option value="' + esc(s.id) + '"' + (String(s.id) === String(d.semester_id) ? ' selected' : '') + '>ภาคเรียน ' + esc(s.label) + '</option>'; }).join('');
+      if (P.id && P.type === 'group' && IX.groups[P.id]) P.dept = IX.groups[P.id].department_id;
+      if (P.id && P.type === 'teacher' && IX.teachers[P.id]) P.dept = IX.teachers[P.id].department_id;
+      ui();
+    }).withFailureHandler(function (e) { document.getElementById('pOut').innerHTML = '<div class="card">' + esc(e.message) + '</div>'; }).getPublicData(sem || PARAMS.sem || '');
+  }
+
+  function sortTh(a, f) { return a.slice().sort(function (x, y) { return String(f(x)).localeCompare(String(f(y)), 'th', { numeric: true }); }); }
+
+  function ui() {
+    document.getElementById('pTabs').innerHTML = [['group', 'ตารางเรียน (กลุ่มเรียน)'], ['teacher', 'ตารางสอน (ครู)'], ['room', 'ตารางใช้ห้อง']].map(function (t) {
+      return '<button class="btn sm' + (P.type === t[0] ? ' pri' : '') + '" data-t="' + t[0] + '">' + t[1] + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (b) { b.onclick = function () { P.type = b.dataset.t; P.id = ''; ui(); }; });
+    var dsel = document.getElementById('pDept');
+    dsel.style.display = P.type === 'room' ? 'none' : '';
+    dsel.innerHTML = '<option value="">ทุกแผนก</option>' + D.departments.map(function (d) { return '<option value="' + esc(d.id) + '"' + (String(d.id) === String(P.dept) ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('');
+    dsel.onchange = function () { P.dept = this.value; P.id = ''; ui(); };
+    var items;
+    if (P.type === 'group') items = sortTh(D.groups.filter(function (g) { return !P.dept || String(g.department_id) === String(P.dept); }), function (g) { return g.code; }).map(function (g) { return [g.id, g.code]; });
+    else if (P.type === 'teacher') items = sortTh(D.teachers.filter(function (t) { return !P.dept || String(t.department_id) === String(P.dept); }), function (t) { return t.name; }).map(function (t) { return [t.id, t.name]; });
+    else items = sortTh(D.rooms, function (r) { return (IX.buildings[r.building_id] || {}).name + r.name; }).map(function (r) { return [r.id, r.name + ' · ' + ((IX.buildings[r.building_id] || {}).name || '')]; });
+    var isel = document.getElementById('pItem');
+    isel.innerHTML = '<option value="">— เลือก —</option>' + items.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(P.id) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('');
+    isel.onchange = function () { P.id = this.value; draw(); };
+    draw();
+  }
+
+  function tNames(ids) { return String(ids || '').split(',').filter(String).map(function (t) { return (IX.teachers[t] || {}).name || ''; }).join(', '); }
+  function course(id) { return IX.courses[id] || { code: '', name: '' }; }
+  function gcode(id) { return (IX.groups[id] || {}).code || ''; }
+
+  function draw() {
+    var out = document.getElementById('pOut');
+    if (!P.id) { out.innerHTML = '<div class="card muted">เลือกรายการด้านบนเพื่อดูตาราง</div>'; return; }
+    var ss, title;
+    if (P.type === 'group') { ss = D.sessions.filter(function (s) { return String(s.group_id) === String(P.id); }); title = 'ตารางเรียน กลุ่ม ' + gcode(P.id); }
+    else if (P.type === 'teacher') { ss = D.sessions.filter(function (s) { return String(s.teacher_ids).split(',').indexOf(String(P.id)) >= 0; }); title = 'ตารางสอน ' + (IX.teachers[P.id] || {}).name; }
+    else { ss = D.sessions.filter(function (s) { return String(s.room_id) === String(P.id); }); title = 'ตารางใช้ห้อง ' + (IX.rooms[P.id] || {}).name; }
+    var sem = D.semesters.filter(function (s) { return String(s.id) === String(D.semester_id); })[0];
+    var total = ss.reduce(function (a, s) { return a + Number(s.length); }, 0);
+    out.innerHTML = '<div class="page"><h2>' + esc(title) + '</h2><div class="sub">' + esc(D.settings.college_name) + ' · ภาคเรียนที่ ' + esc(sem ? sem.label : '') + ' · ' + total + ' คาบ/สัปดาห์</div>' +
+      Grid.render({ settings: D.settings, dayNames: D.days, sessions: ss, locked: D.locked || [],
+        label: function (s) {
+          var c = course(s.course_id);
+          return '<b>' + esc(c.code) + '</b><span>' + esc(String(c.name).slice(0, 34)) + '</span>' +
+            (P.type !== 'group' ? '<span><b>' + esc(gcode(s.group_id)) + '</b></span>' : '') +
+            (P.type !== 'teacher' ? '<span>' + esc(tNames(s.teacher_ids)) + '</span>' : '') +
+            (P.type !== 'room' && s.room_id ? '<span>ห้อง ' + esc((IX.rooms[s.room_id] || {}).name) + '</span>' : '');
+        } }) +
+      Grid.courseList(ss, { course: course, group: gcode, teachers: tNames }) + '</div>';
+  }
+
+  document.getElementById('pSem').onchange = function () { load(this.value); };
+  document.getElementById('pLink').onclick = function () {
+    var u = BASE + '?page=public&sem=' + encodeURIComponent(D.semester_id) + (P.id ? '&' + P.type + '=' + encodeURIComponent(P.id) : '');
+    if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { alert('คัดลอกลิงก์แล้ว:\n' + u); }, function () { prompt('คัดลอกลิงก์นี้', u); });
+    else prompt('คัดลอกลิงก์นี้', u);
+  };
+  google.script.run.withSuccessHandler(function (u) { BASE = u; }).getWebAppUrl();
+  load();
+  </script>
+</body>
+</html>
