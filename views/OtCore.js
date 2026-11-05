@@ -186,16 +186,17 @@ var Ot = (function () {
     var res = { byLevel: {}, errors: [], warnings: [], amount: 0, claimHours: 0, perHeadAmount: 0, paid: {} };
     LEVELS.forEach(function (l) { res.byLevel[l] = { taught: 0, load: 0, claim: 0, perhead: 0 }; });
     var subUsed = {};
+    var pno = function (p) { return Grid.periodNo(S.settings, p); };
     items.forEach(function (it) {
       var v = sel[it.key] || '';
       var B = res.byLevel[it.level];
       if (!it.absent) B.taught++;
       if (!v) return;
-      if (it.blocked) { res.errors.push(it.date + ' คาบ ' + it.period + ': ' + it.blocked + ' — เลือกไม่ได้'); return; }
-      if (it.absent) { res.errors.push(it.date + ' คาบ ' + it.period + ': ' + it.absent + ' — ไม่นับเป็นชั่วโมงสอน'); return; }
+      if (it.blocked) { res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.blocked + ' — เลือกไม่ได้'); return; }
+      if (it.absent) { res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.absent + ' — ไม่นับเป็นชั่วโมงสอน'); return; }
       if (v === 'L') B.load++;
       if (v === 'C') {
-        if (it.pending) res.errors.push(it.date + ' คาบ ' + it.period + ': ' + it.pending + ' (ระเบียบข้อ 8)');
+        if (it.pending) res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.pending + ' (ระเบียบข้อ 8)');
         if (it.sub === 'sub') subUsed[it.sub_id] = (subUsed[it.sub_id] || 0) + 1;
         var rule = ph && ph[it.course_id + '|' + it.group_id] ? perHeadRule(it, ctx && ctx.perHead, ctx && ctx.courses && ctx.courses[it.course_id]) : null;
         if (rule) { B.perhead++; res.perHeadAmount += it.students * n(rule.rate_per_head); }

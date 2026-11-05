@@ -1,0 +1,66 @@
+  <link rel="manifest" href="<?!= manifest ?>">
+  <meta name="theme-color" content="#235789">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ตารางสอน">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <script>
+  /* โหมดกลางคืน: ตั้งค่าก่อนหน้าแสดงผลเพื่อไม่ให้หน้าจอกะพริบ จำค่าไว้ในเครื่องนี้ */
+  var Theme = (function () {
+    var root = document.documentElement;
+    function set(dark) {
+      if (dark) { root.setAttribute('data-theme', 'dark'); root.setAttribute('data-bs-theme', 'dark'); }
+      else { root.removeAttribute('data-theme'); root.removeAttribute('data-bs-theme'); }
+      try { localStorage.setItem('tt_theme', dark ? 'dark' : 'light'); } catch (e) {}
+    }
+    var saved = null;
+    try { saved = localStorage.getItem('tt_theme'); } catch (e) {}
+    if (saved === 'dark' || (saved === null && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches)) { root.setAttribute('data-theme', 'dark'); root.setAttribute('data-bs-theme', 'dark'); }
+    return { toggle: function () { set(root.getAttribute('data-theme') !== 'dark'); } };
+  })();
+  </script>
+  <script>
+  /* เว็บแอป: ติดตั้งลงหน้าจอมือถือ ใช้ร่วมกันทั้งหน้าระบบและหน้าเผยแพร่ */
+  var PWA = (function () {
+    var deferred = null;
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; });
+    window.addEventListener('appinstalled', function () { deferred = null; });
+    // service worker ใช้ได้เฉพาะ HTTPS หรือ localhost
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+    }
+    function installed() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+    function steps() {
+      var ua = navigator.userAgent || '';
+      var ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+      if (ios) return ['เปิดหน้านี้ด้วย Safari', 'แตะปุ่มแชร์ ที่เป็นรูปสี่เหลี่ยมมีลูกศรชี้ขึ้น', 'เลือก "เพิ่มไปยังหน้าจอโฮม"', 'แตะ "เพิ่ม" ไอคอนจะอยู่บนหน้าจอโฮม'];
+      if (/Android/.test(ua)) return ['เปิดหน้านี้ด้วย Chrome', 'แตะปุ่มเมนู ⋮ มุมขวาบน', 'เลือก "เพิ่มลงในหน้าจอหลัก" หรือ "ติดตั้งแอป"', 'แตะ "เพิ่ม" ไอคอนจะอยู่บนหน้าจอหลัก'];
+      return ['เปิดหน้านี้บนสมาร์ทโฟน แล้วกดปุ่มนี้อีกครั้ง', 'หรือคัดลอกลิงก์ด้านล่างส่งเข้ามือถือ'];
+    }
+    function help() {
+      var old = document.getElementById('pwaHelp'); if (old) old.remove();
+      var bg = document.createElement('div'); bg.id = 'pwaHelp'; bg.className = 'modal-bg';
+      var box = document.createElement('div'); box.className = 'modal pwa-help';
+      var h = document.createElement('h3'); h.textContent = 'เพิ่มไอคอนลงมือถือ';
+      var img = document.createElement('img'); img.src = 'assets/icon-192.png'; img.alt = ''; img.width = 64; img.height = 64;
+      var ol = document.createElement('ol'); steps().forEach(function (s) { var li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
+      var link = document.createElement('input'); link.readOnly = true; link.value = location.href.split('#')[0]; link.onclick = function () { link.select(); };
+      var acts = document.createElement('div'); acts.className = 'actions';
+      var close = document.createElement('button'); close.className = 'btn pri'; close.textContent = 'ปิด'; close.onclick = function () { bg.remove(); };
+      acts.appendChild(close);
+      [img, h, ol, link, acts].forEach(function (x) { box.appendChild(x); });
+      bg.appendChild(box); bg.onclick = function (e) { if (e.target === bg) bg.remove(); };
+      document.body.appendChild(bg);
+    }
+    /** กดครั้งเดียว: ถ้าเบราว์เซอร์ติดตั้งให้ได้ก็เปิดหน้าต่างติดตั้ง ไม่เช่นนั้นแสดงขั้นตอน */
+    function add() {
+      if (!deferred) return help();
+      var d = deferred; deferred = null;
+      d.prompt();
+      d.userChoice.then(function (c) { if (c.outcome !== 'accepted') deferred = d; }, function () {});
+    }
+    return { add: add, installed: installed };
+  })();
+  </script>

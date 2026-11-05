@@ -192,7 +192,7 @@ function api_bootstrap($token = '', $semesterId = '') {
   foreach ($sems as $x) if (js_true($semesterId) && (string)$x['id'] === (string)$semesterId) $known = true;
   $sem = $known ? $semesterId : (js_true($s['default_semester_id'] ?? '') ? $s['default_semester_id'] : ($sems ? $sems[count($sems) - 1]['id'] : ''));
   $data = [];
-  foreach (['Semesters', 'Departments', 'Majors', 'Teachers', 'Buildings', 'Rooms', 'Courses', 'Groups', 'LockedSlots', 'Windows', 'OtSchemes', 'OtPerHead', 'OtRounds', 'OtBlocked'] as $t) $data[$t] = readTable($t);
+  foreach (['Semesters', 'Departments', 'Majors', 'Teachers', 'Buildings', 'Rooms', 'Courses', 'Groups', 'LockedSlots', 'PlcSlots', 'ColorGroups', 'Windows', 'OtSchemes', 'OtPerHead', 'OtRounds', 'OtBlocked'] as $t) $data[$t] = readTable($t);
   $data['Teachers'] = teachers_for($me, $data['Teachers']);
   return [
     'sem' => $sem,
@@ -234,6 +234,14 @@ function api_saveRow($token = '', $name = '', $row = []) {
       assert_claim_open($row['round_id'] ?? '', $row['teacher_id'] ?? '');
       $row['created_by'] = $me['name'];
     }
+    if ($name === 'PlcSlots') {
+      if ($i !== null) assert_plc_can_edit($me, $rows[$i]);
+      if ($me['role'] === 'dept') $row['department_id'] = $me['department_id']; // ตัวแทนแผนกกำหนดได้เฉพาะแผนกตัวเอง
+      assert_plc_can_edit($me, $row);
+      if (!js_true($row['department_id'] ?? '') && !js_true($row['teacher_id'] ?? '')) throw new Exception('กรุณาเลือกแผนกหรือครู');
+      if (num($row['start'] ?? 0) < 1) throw new Exception('กรุณาเลือกคาบเริ่ม');
+      if ((string)($row['day'] ?? '') === '') throw new Exception('กรุณาเลือกวัน');
+    }
     if ($i === null) { $rows[] = ['id' => new_id()]; $i = count($rows) - 1; }
     foreach (SCHEMA[$name] as $h) if ($h !== 'id' && array_key_exists($h, $row)) $rows[$i][$h] = $row[$h];
     $cur = $rows[$i];
@@ -257,6 +265,7 @@ function api_deleteRow($token = '', $name = '', $id = '') {
     if ($i === null) return false;
     $target = $rows[$i];
     if ($name === 'OtAbsences') { assert_ot_teacher($me, $target['teacher_id']); assert_claim_open($target['round_id'], $target['teacher_id']); }
+    if ($name === 'PlcSlots') assert_plc_can_edit($me, $target);
     if ($name === 'Plans') {
       if ($me['role'] === 'dept') assert_dept_can_edit($me, $target['group_id'], $target['semester_id']);
       writeTable('Sessions', array_values(array_filter(readTable('Sessions'), fn($s) => (string)$s['plan_id'] !== str($id))));
@@ -288,6 +297,12 @@ function api_bulkImport($token = '', $name = '', $rows = [], $mode = '') {
 function api_saveSettings($token = '', $obj = []) {
   $me = auth_user($token, 'admin');
   $obj = (array)$obj;
+  if (array_key_exists('site_url', $obj)) {
+    $url = trim(str($obj['site_url']));
+    if ($url !== '' && !preg_match('#^https?://[^\s"\'<>]+$#i', $url)) throw new Exception('URL ต้องขึ้นต้นด้วย http:// หรือ https:// และไม่มีช่องว่าง');
+    if ($url !== '') $url = rtrim($url, '/') . '/';
+    $obj['site_url'] = $url;
+  }
   return with_lock(function () use ($me, $obj) {
     foreach ($obj as $k => $v) saveSetting((string)$k, $v);
     log_action($me, 'saveSettings', implode(',', array_keys($obj)));
@@ -311,6 +326,17 @@ function api_copyPlans($token = '', $from = '', $to = '') {
 }
 
 // ======================= คิวจัดตารางของแผนก =======================
+/** คาบ PLC: ผู้ดูแลระบบแก้ได้ทุกแผนก ตัวแทนแผนกแก้ได้เฉพาะแผนกและครูในแผนกตัวเอง */
+function assert_plc_can_edit(array $me, array $row): void {
+  if ($me['role'] === 'admin') return;
+  $dept = (string)$me['department_id'];
+  if ($me['role'] !== 'dept' || $dept === '' || (string)($row['department_id'] ?? '') !== $dept) throw new Exception('กำหนดคาบ PLC ได้เฉพาะแผนกตัวเอง');
+  $tid = (string)($row['teacher_id'] ?? '');
+  if ($tid === '') return;
+  foreach (readTable('Teachers') as $t) if ((string)$t['id'] === $tid && (string)$t['department_id'] === $dept) return;
+  throw new Exception('กำหนดคาบ PLC รายบุคคลได้เฉพาะครูในแผนกตัวเอง');
+}
+
 function assert_dept_can_edit(array $me, $groupId, $semesterId): void {
   if ($me['role'] === 'admin') return;
   if ($me['role'] !== 'dept') throw new Exception('ไม่มีสิทธิ์จัดตาราง');

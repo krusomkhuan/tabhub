@@ -3,17 +3,23 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
+  <?!= include('PwaHead'); ?>
   <?!= include('Styles'); ?>
 </head>
 <body>
-  <div class="content" style="max-width:1300px;margin:0 auto">
-    <div class="card no-print">
-      <div class="row" style="margin-bottom:10px"><h2 style="margin:0" class="grow" id="pTitle">ตารางเรียน / ตารางสอน</h2><select id="pSem" style="width:auto"></select></div>
-      <div class="row" id="pTabs" style="gap:6px;margin-bottom:10px"></div>
-      <div class="row"><select id="pDept" style="width:auto"></select><select id="pItem" style="width:auto;min-width:240px"></select>
-        <button class="btn pri" onclick="window.print()">🖨 พิมพ์ / PDF</button><button class="btn" id="pLink">คัดลอกลิงก์ตารางนี้</button></div>
+  <div class="content pub-wrap">
+    <header class="pub-hero no-print">
+      <img src="assets/icon-192.png" alt="" width="64" height="64">
+      <div class="pub-hero-text"><h1 id="pTitle">ตารางเรียน / ตารางสอน</h1><p id="pCollege"></p></div>
+      <label class="pub-sem"><span>ภาคเรียน</span><select id="pSem"></select></label><button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>
+    </header>
+    <div class="pub-tabs no-print" id="pTabs"></div>
+    <div class="card pub-controls no-print">
+      <select id="pDept"></select><select id="pItem"></select>
+      <div class="pub-actions"><button class="btn pri" id="pShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button><button class="btn" id="pLink">🔗 คัดลอกลิงก์</button><button class="btn pwa-add" onclick="PWA.add()">📲 เพิ่มไอคอนลงมือถือ</button></div>
     </div>
     <div id="pOut" class="muted">กำลังโหลด…</div>
+    <p class="app-ver no-print">เวอร์ชัน <span id="pVer"></span> · <a href="?page=pdpa">นโยบายคุ้มครองข้อมูลส่วนบุคคล</a></p>
   </div>
   <script>var PARAMS = <?!= params ?>;</script>
   <?!= include('GridCore'); ?>
@@ -27,8 +33,8 @@
     google.script.run.withSuccessHandler(function (d) {
       D = d; IX = {};
       ['groups', 'teachers', 'rooms', 'courses', 'departments', 'buildings'].forEach(function (k) { IX[k] = {}; d[k].forEach(function (x) { IX[k][x.id] = x; }); });
-      document.getElementById('pTitle').textContent = 'ตารางเรียน / ตารางสอน · ' + d.settings.college_name;
-      document.getElementById('pSem').innerHTML = d.semesters.map(function (s) { return '<option value="' + esc(s.id) + '"' + (String(s.id) === String(d.semester_id) ? ' selected' : '') + '>ภาคเรียน ' + esc(s.label) + '</option>'; }).join('');
+      document.getElementById('pCollege').textContent = d.settings.college_name;
+      document.getElementById('pSem').innerHTML = d.semesters.map(function (s) { return '<option value="' + esc(s.id) + '"' + (String(s.id) === String(d.semester_id) ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('');
       if (P.id && P.type === 'group' && IX.groups[P.id]) P.dept = IX.groups[P.id].department_id;
       if (P.id && P.type === 'teacher' && IX.teachers[P.id]) P.dept = IX.teachers[P.id].department_id;
       ui();
@@ -38,8 +44,8 @@
   function sortTh(a, f) { return a.slice().sort(function (x, y) { return String(f(x)).localeCompare(String(f(y)), 'th', { numeric: true }); }); }
 
   function ui() {
-    document.getElementById('pTabs').innerHTML = [['group', 'ตารางเรียน (กลุ่มเรียน)'], ['teacher', 'ตารางสอน (ครู)'], ['room', 'ตารางใช้ห้อง']].map(function (t) {
-      return '<button class="btn sm' + (P.type === t[0] ? ' pri' : '') + '" data-t="' + t[0] + '">' + t[1] + '</button>';
+    document.getElementById('pTabs').innerHTML = [['group', '🎓', 'ตารางเรียน', 'กลุ่มเรียน', D.groups.length], ['teacher', '🧑‍🏫', 'ตารางสอน', 'ครู', D.teachers.length], ['room', '🚪', 'ตารางใช้ห้อง', 'ห้อง', D.rooms.length]].map(function (t) {
+      return '<button class="pub-tab pub-' + t[0] + (P.type === t[0] ? ' on' : '') + '" data-t="' + t[0] + '" aria-pressed="' + (P.type === t[0]) + '"><span class="pub-tab-ic">' + t[1] + '</span><span class="pub-tab-text"><b>' + t[2] + '</b><small>' + t[4] + ' ' + t[3] + '</small></span></button>';
     }).join('');
     Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (b) { b.onclick = function () { P.type = b.dataset.t; P.id = ''; ui(); }; });
     var dsel = document.getElementById('pDept');
@@ -47,12 +53,13 @@
     dsel.innerHTML = '<option value="">ทุกแผนก</option>' + D.departments.map(function (d) { return '<option value="' + esc(d.id) + '"' + (String(d.id) === String(P.dept) ? ' selected' : '') + '>' + esc(d.name) + '</option>'; }).join('');
     dsel.onchange = function () { P.dept = this.value; P.id = ''; ui(); };
     var items;
-    if (P.type === 'group') items = sortTh(D.groups.filter(function (g) { return !P.dept || String(g.department_id) === String(P.dept); }), function (g) { return g.code; }).map(function (g) { return [g.id, g.code]; });
-    else if (P.type === 'teacher') items = sortTh(D.teachers.filter(function (t) { return !P.dept || String(t.department_id) === String(P.dept); }), function (t) { return t.name; }).map(function (t) { return [t.id, t.name]; });
-    else items = sortTh(D.rooms, function (r) { return (IX.buildings[r.building_id] || {}).name + r.name; }).map(function (r) { return [r.id, r.name + ' · ' + ((IX.buildings[r.building_id] || {}).name || '')]; });
+    if (P.type === 'group') items = sortTh(D.groups.filter(function (g) { return !P.dept || String(g.department_id) === String(P.dept); }), function (g) { return g.code; }).map(function (g) { return [g.id, g.code, (IX.departments[g.department_id] || {}).name || 'ไม่ระบุแผนก']; });
+    else if (P.type === 'teacher') items = sortTh(D.teachers.filter(function (t) { return !P.dept || String(t.department_id) === String(P.dept); }), function (t) { return t.name; }).map(function (t) { return [t.id, t.name, (IX.departments[t.department_id] || {}).name || 'ไม่ระบุแผนก']; });
+    else items = sortTh(D.rooms, function (r) { return (IX.buildings[r.building_id] || {}).name + r.name; }).map(function (r) { return [r.id, r.name + ' · ' + ((IX.buildings[r.building_id] || {}).name || ''), (IX.buildings[r.building_id] || {}).name || 'ไม่ระบุอาคาร', r.name]; });
     var isel = document.getElementById('pItem');
-    isel.innerHTML = '<option value="">— เลือก —</option>' + items.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(P.id) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('');
+    isel.innerHTML = '<option value="">— เลือกรายการ —</option>' + items.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(P.id) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('');
     isel.onchange = function () { P.id = this.value; draw(); };
+    P.items = items;
     draw();
   }
 
@@ -60,24 +67,58 @@
   function course(id) { return IX.courses[id] || { code: '', name: '' }; }
   function gcode(id) { return (IX.groups[id] || {}).code || ''; }
 
+  /* เลือกจากชิปได้ในคลิกเดียว แยกตามแผนกหรืออาคาร */
+  function pickerHtml() {
+    var groups = {}, order = [];
+    (P.items || []).forEach(function (x) { if (!groups[x[2]]) { groups[x[2]] = []; order.push(x[2]); } groups[x[2]].push(x); });
+    order.sort(function (a, b) { return a.localeCompare(b, 'th'); });
+    var hint = { group: 'เลือกกลุ่มเรียนเพื่อดูตารางเรียน', teacher: 'เลือกครูเพื่อดูตารางสอน', room: 'เลือกห้องเพื่อดูตารางใช้ห้อง' }[P.type];
+    if (!order.length) return '<div class="card muted">ไม่พบรายการ</div>';
+    return '<div class="card pub-picker pub-' + P.type + '"><h2>' + hint + '</h2>' + order.map(function (name) {
+      return '<section><h3>' + esc(name) + '<span>' + groups[name].length + '</span></h3><div class="pub-chips">' + groups[name].map(function (x) {
+        return '<button class="pub-chip" data-pick="' + esc(x[0]) + '">' + esc(P.type === 'room' ? x[3] : x[1]) + '</button>';
+      }).join('') + '</div></section>';
+    }).join('') + '</div>';
+  }
+  function bindPicker(out) {
+    Array.prototype.forEach.call(out.querySelectorAll('[data-pick]'), function (b) {
+      b.onclick = function () { P.id = b.dataset.pick; document.getElementById('pItem').value = P.id; draw(); window.scrollTo(0, 0); };
+    });
+  }
+
   function draw() {
     var out = document.getElementById('pOut');
-    if (!P.id) { out.innerHTML = '<div class="card muted">เลือกรายการด้านบนเพื่อดูตาราง</div>'; return; }
+    if (!P.id) { out.className = ''; out.innerHTML = pickerHtml(); bindPicker(out); return; }
+    out.className = '';
     var ss, title;
     if (P.type === 'group') { ss = D.sessions.filter(function (s) { return String(s.group_id) === String(P.id); }); title = 'ตารางเรียน กลุ่ม ' + gcode(P.id); }
     else if (P.type === 'teacher') { ss = D.sessions.filter(function (s) { return String(s.teacher_ids).split(',').indexOf(String(P.id)) >= 0; }); title = 'ตารางสอน ' + (IX.teachers[P.id] || {}).name; }
     else { ss = D.sessions.filter(function (s) { return String(s.room_id) === String(P.id); }); title = 'ตารางใช้ห้อง ' + (IX.rooms[P.id] || {}).name; }
     var sem = D.semesters.filter(function (s) { return String(s.id) === String(D.semester_id); })[0];
+    P.title = title + (sem ? ' ภาคเรียน ' + sem.label : '');
+    if (P.type === 'teacher') {
+      var t = IX.teachers[P.id] || {};
+      var head = D.teachers.filter(function (x) { return String(x.department_id) === String(t.department_id) && String(x.is_dept_head) === 'true'; })[0];
+      out.innerHTML = Grid.teacherSheet({
+        settings: D.settings, dayNames: D.days, locked: D.locked || [], teacher: t, teacherId: P.id, sessions: D.sessions, groups: D.groups,
+        hourType: function (s) { return s.hour_type || 'in'; }, plc: D.plc || [],
+        course: course, group: gcode, room: function (id) { return (IX.rooms[id] || {}).name || ''; },
+        deptName: (IX.departments[t.department_id] || {}).name || '', semLabel: sem ? sem.label : '', sign: Grid.signBlock(D.settings, head && head.name)
+      });
+      return;
+    }
     var total = ss.reduce(function (a, s) { return a + Number(s.length); }, 0);
     out.innerHTML = '<div class="page"><h2>' + esc(title) + '</h2><div class="sub">' + esc(D.settings.college_name) + ' · ภาคเรียนที่ ' + esc(sem ? sem.label : '') + ' · ' + total + ' คาบ/สัปดาห์</div>' +
       Grid.render({ settings: D.settings, dayNames: D.days, sessions: ss, locked: D.locked || [],
-        label: function (s) {
-          var c = course(s.course_id);
-          return '<b>' + esc(c.code) + '</b><span>' + esc(String(c.name).slice(0, 34)) + '</span>' +
-            (P.type !== 'group' ? '<span><b>' + esc(gcode(s.group_id)) + '</b></span>' : '') +
-            (P.type !== 'teacher' ? '<span>' + esc(tNames(s.teacher_ids)) + '</span>' : '') +
-            (P.type !== 'room' && s.room_id ? '<span>ห้อง ' + esc((IX.rooms[s.room_id] || {}).name) + '</span>' : '');
-        } }) +
+        label: function (s, list) {
+          var c = course(s.course_id), parts = [];
+          var h = '<b>' + esc(c.code) + '</b><span>' + esc(c.name) + '</span>' + (P.type !== 'teacher' ? '<span>' + esc(tNames((list || [s]).map(function (x) { return x.teacher_ids; }).join(',').split(',').filter(function (t, i, a) { return t && a.indexOf(t) === i; }).join(','))) + '</span>' : '');
+          if (list && list.length > 1) parts.push(list.map(function (x) { return gcode(x.group_id); }).join(' - ') + ' (เรียนรวม)');
+          else if (P.type !== 'group') parts.push(gcode(s.group_id));
+          if (P.type !== 'room' && s.room_id) parts.push((IX.rooms[s.room_id] || {}).name);
+          return h + (parts.length ? '<span>' + esc(parts.join(' · ')) + '</span>' : '');
+        },
+        color: function (s) { var c = course(s.course_id); return Grid.sessionColor({ settings: D.settings, groups: D.color_groups || [], course_id: s.course_id, color: c.color, course_type: c.course_type, name: c.name, teacher_ids: s.teacher_ids, room_id: s.room_id, room: (IX.rooms[s.room_id] || {}).name, department_id: (IX.groups[s.group_id] || {}).department_id, workplace: s.workplace }); } }) +
       Grid.courseList(ss, { course: course, group: gcode, teachers: tNames }) + '</div>';
   }
 
@@ -87,6 +128,9 @@
     if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { alert('คัดลอกลิงก์แล้ว:\n' + u); }, function () { prompt('คัดลอกลิงก์นี้', u); });
     else prompt('คัดลอกลิงก์นี้', u);
   };
+  Grid.bindShareButton(document.getElementById('pShare'), function () { return P.id ? document.querySelectorAll('#pOut .page') : []; }, function () { return P.title; }, function (msg) { alert(msg); });
+  document.getElementById('pVer').textContent = APP_VERSION + ' · ผู้พัฒนา: ' + APP_DEVELOPERS;
+  if (PWA.installed()) document.querySelector('.pwa-add').style.display = 'none';
   google.script.run.withSuccessHandler(function (u) { BASE = u; }).getWebAppUrl();
   load();
   </script>

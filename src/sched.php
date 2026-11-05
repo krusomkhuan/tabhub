@@ -27,6 +27,10 @@ function sched_ctx(array $o): array {
   foreach ($o['teachers'] ?? [] as $t) {
     $un = [];
     foreach (sched_ids($t['unavailable'] ?? '') as $x) $un[str_replace(':', '-', $x)] = 1; // รูปแบบ "วัน-คาบ"
+    // คาบ PLC ถือเป็นเวลาที่ครูไม่ว่าง: คาบรายบุคคลใช้แทนคาบของแผนก
+    $own = array_filter($o['plc'] ?? [], fn($x) => (string)($x['teacher_id'] ?? '') === (string)$t['id']);
+    $plc = $own ?: array_filter($o['plc'] ?? [], fn($x) => !js_true($x['teacher_id'] ?? '') && (string)($x['department_id'] ?? '') === (string)($t['department_id'] ?? ''));
+    foreach ($plc as $x) for ($k = 0, $n = num($x['length'] ?? 1) ?: 1; $k < $n; $k++) $un[$x['day'] . '-' . (num($x['start']) + $k)] = 1;
     $ctx['teachers'][$t['id']] = ['name' => $t['name'], 'max' => num($t['max_per_day'] ?? 0), 'un' => $un];
   }
   foreach ($o['rooms'] ?? [] as $r) $ctx['rooms'][$r['id']] = ['name' => $r['name'], 'shareable' => (string)$r['shareable'] === 'true'];
@@ -34,6 +38,25 @@ function sched_ctx(array $o): array {
   foreach ($o['courses'] ?? [] as $c) $ctx['courses'][$c['id']] = $c;
   foreach ($o['plans'] ?? [] as $p) $ctx['plans'][$p['id']] = $p;
   return $ctx;
+}
+
+/**
+ * กันลงคาบเกินแผน ตรวจทุกแผนที่เรียนร่วมกัน เมื่อสร้างคาบใหม่หรือเพิ่มจำนวนคาบ
+ * การย้ายหรือลดคาบไม่ถูกบล็อก เพื่อให้แก้ข้อมูลเดิมที่เกินอยู่แล้วได้
+ * $sessions และ $moving ต้องใช้คีย์ชุดเดียวกัน คืนรายการปัญหา หรือ null ถ้าไม่เกิน
+ */
+function sched_over_problem(array $plans, array $sessions, array $moving, int $len, ?array $existing, array $ctx): ?array {
+  if ($existing && $len <= num($existing['length'])) return null;
+  foreach ($plans as $p) {
+    $used = 0;
+    foreach ($sessions as $k => $s) if (!isset($moving[$k]) && (string)$s['plan_id'] === (string)$p['id']) $used += num($s['length']);
+    $max = sched_plan_periods($p, $ctx);
+    if ($used + $len > $max) {
+      $group = $ctx['groups'][$p['group_id']]['code'] ?? '';
+      return ['type' => 'over', 'msg' => 'ลงคาบเกินจำนวนชั่วโมงในแผน' . ($group !== '' ? ' กลุ่ม ' . $group : '') . ' (ลงแล้ว ' . $used . ' จาก ' . $max . ' คาบ)', 'hard' => true];
+    }
+  }
+  return null;
 }
 
 function sched_overlap(array $a, array $b): bool {
@@ -65,8 +88,8 @@ function sched_check(array $cand, array $sessions, array $ctx): array {
   if (!in_array($day, $ctx['days'], true)) $out[] = ['type' => 'day', 'msg' => 'วันนี้ไม่ได้เปิดให้จัดตาราง', 'hard' => true];
   if ($start < 1 || $start + $len - 1 > $ctx['periods']) $out[] = ['type' => 'range', 'msg' => 'เกินจำนวนคาบต่อวัน', 'hard' => true];
   for ($p = $start; $p < $start + $len; $p++) {
-    if (in_array($p, $ctx['lunch'], true)) { $out[] = ['type' => 'lunch', 'msg' => 'ทับคาบพักเที่ยง (คาบ ' . $p . ')', 'hard' => true]; break; }
-    if (isset($ctx['locked'][$day . '-' . $p])) { $out[] = ['type' => 'locked', 'msg' => 'ทับชั่วโมงที่ล็อก: ' . $ctx['locked'][$day . '-' . $p] . ' (คาบ ' . $p . ')', 'hard' => true]; break; }
+    if (in_array($p, $ctx['lunch'], true)) { $out[] = ['type' => 'lunch', 'msg' => 'ทับเวลาพักเที่ยง', 'hard' => true]; break; }
+    if (isset($ctx['locked'][$day . '-' . $p])) { $out[] = ['type' => 'locked', 'msg' => 'ทับชั่วโมงที่ล็อก: ' . $ctx['locked'][$day . '-' . $p] . ' (คาบ ' . period_no($p) . ')', 'hard' => true]; break; }
   }
   $cj = sched_joint($cand, $ctx);
   $cTeachers = sched_ids($cand['teacher_ids'] ?? '');

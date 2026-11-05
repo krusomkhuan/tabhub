@@ -261,7 +261,7 @@ function tab_import_semester($tabSid): array {
         if (js_true($periods) && !js_true($p0->periods)) $p0->periods = $periods;
         return $p0;
       }
-      $p = (object)['id' => new_id(), 'semester_id' => $semId, 'group_id' => $groupId, 'course_id' => $courseId, 'teacher_ids' => implode(',', $teacherIds), 'room_id' => '', 'periods' => js_true($periods) ? $periods : '', 'split' => '', 'joint_key' => '', 'workplace' => '', 'note' => ''];
+      $p = (object)['id' => new_id(), 'semester_id' => $semId, 'group_id' => $groupId, 'course_id' => $courseId, 'teacher_ids' => implode(',', $teacherIds), 'room_id' => '', 'periods' => js_true($periods) ? $periods : '', 'split' => '', 'joint_key' => '', 'workplace' => '', 'note' => '', 'hour_type' => ''];
       $plans[] = $p; $planKey[$k] = $p;
       return $p;
     };

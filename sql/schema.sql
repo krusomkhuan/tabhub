@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS `Teachers` (
   `unavailable` TEXT NULL,
   `email` TEXT NULL,
   `tab_id` VARCHAR(64) NULL,
+  `is_dept_academic` TEXT NULL,
   PRIMARY KEY (`_seq`),
   KEY `ix_id` (`id`),
   KEY `ix_department_id` (`department_id`)
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS `Courses` (
   `course_type` TEXT NULL,
   `kind` TEXT NULL,
   `subject_group` TEXT NULL,
+  `color` TEXT NULL,
   PRIMARY KEY (`_seq`),
   KEY `ix_id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -139,6 +141,7 @@ CREATE TABLE IF NOT EXISTS `Plans` (
   `joint_key` TEXT NULL,
   `workplace` TEXT NULL,
   `note` TEXT NULL,
+  `hour_type` TEXT NULL,
   PRIMARY KEY (`_seq`),
   KEY `ix_id` (`id`),
   KEY `ix_semester_id` (`semester_id`),
@@ -189,6 +192,20 @@ CREATE TABLE IF NOT EXISTS `Windows` (
   KEY `ix_id` (`id`),
   KEY `ix_semester_id` (`semester_id`),
   KEY `ix_department_id` (`department_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `PlcSlots` (
+  `_seq` BIGINT NOT NULL AUTO_INCREMENT,
+  `id` VARCHAR(64) NULL,
+  `department_id` VARCHAR(64) NULL,
+  `teacher_id` VARCHAR(64) NULL,
+  `day` TEXT NULL,
+  `start` TEXT NULL,
+  `length` TEXT NULL,
+  PRIMARY KEY (`_seq`),
+  KEY `ix_id` (`id`),
+  KEY `ix_department_id` (`department_id`),
+  KEY `ix_teacher_id` (`teacher_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `Users` (
@@ -399,34 +416,12 @@ CREATE TABLE IF NOT EXISTS `TeachReports` (
   KEY `ix_group_id` (`group_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `Internships` (
-  `_seq` BIGINT NOT NULL AUTO_INCREMENT,
-  `id` VARCHAR(64) NULL,
-  `semester_id` VARCHAR(64) NULL,
-  `student_code` TEXT NULL,
-  `student_name` TEXT NULL,
-  `group_id` VARCHAR(64) NULL,
-  `company_name` TEXT NULL,
-  `company_address` TEXT NULL,
-  `company_phone` TEXT NULL,
-  `mentor_name` TEXT NULL,
-  `start_date` TEXT NULL,
-  `end_date` TEXT NULL,
-  `supervisor_teacher_id` VARCHAR(64) NULL,
-  `status` TEXT NULL,
-  `note` TEXT NULL,
-  `created_by` TEXT NULL,
-  `created_at` TEXT NULL,
-  PRIMARY KEY (`_seq`),
-  KEY `ix_id` (`id`),
-  KEY `ix_semester_id` (`semester_id`),
-  KEY `ix_group_id` (`group_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS `SupervisionVisits` (
   `_seq` BIGINT NOT NULL AUTO_INCREMENT,
   `id` VARCHAR(64) NULL,
-  `internship_id` VARCHAR(64) NULL,
+  `semester_id` VARCHAR(64) NULL,
+  `unit_key` TEXT NULL,
+  `company_name` TEXT NULL,
   `visit_date` TEXT NULL,
   `visit_type` TEXT NULL,
   `meeting_link` TEXT NULL,
@@ -440,7 +435,8 @@ CREATE TABLE IF NOT EXISTS `SupervisionVisits` (
   `created_by` TEXT NULL,
   `created_at` TEXT NULL,
   PRIMARY KEY (`_seq`),
-  KEY `ix_id` (`id`)
+  KEY `ix_id` (`id`),
+  KEY `ix_semester_id` (`semester_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `_kv` (

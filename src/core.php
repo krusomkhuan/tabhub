@@ -5,6 +5,9 @@
  */
 date_default_timezone_set('Asia/Bangkok');
 define('APP_ROOT', dirname(__DIR__));
+// เวอร์ชันของเว็บ: เปลี่ยนทุกครั้งที่ปล่อยงานใหม่ มือถือจะล้างไฟล์ที่เก็บไว้ตามเลขนี้
+const APP_VERSION = '1.0.0';
+const APP_DEVELOPERS = 'ครูสมควร สากำ และครูปฎิภาน พานทอง ครูประจำแผนกวิชาเทคโนโลยีธุรกิจดิจิทัล';
 
 const SCHEMA = [
   'Settings'     => ['key', 'value'],
@@ -12,16 +15,20 @@ const SCHEMA = [
   'Departments'  => ['id', 'name', 'sort'],
   'Majors'       => ['id', 'department_id', 'name', 'level', 'sort'],
   'Teachers'     => ['id', 'code', 'name', 'department_id', 'major_id', 'position', 'employment', 'is_dept_head', 'is_unit_head', 'service_start',
-                     'award_bonus', 'award_note', 'ot_enabled', 'ot_scheme_ids', 'education', 'special_duty', 'max_per_day', 'unavailable', 'email', 'tab_id'],
+                     'award_bonus', 'award_note', 'ot_enabled', 'ot_scheme_ids', 'education', 'special_duty', 'max_per_day', 'unavailable', 'email', 'tab_id', 'is_dept_academic'],
   'Buildings'    => ['id', 'name'],
   'Rooms'        => ['id', 'building_id', 'name', 'type', 'capacity', 'shareable', 'tab_id'],
-  'Courses'      => ['id', 'code', 'name', 'theory', 'practice', 'credits', 'level', 'course_type', 'kind', 'subject_group'],
+  'Courses'      => ['id', 'code', 'name', 'theory', 'practice', 'credits', 'level', 'course_type', 'kind', 'subject_group', 'color'],
   'Groups'       => ['id', 'code', 'name', 'level', 'year_level', 'major_id', 'department_id', 'students', 'room_id', 'advisor_id', 'student_code', 'tab_id'],
-  'Plans'        => ['id', 'semester_id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'periods', 'split', 'joint_key', 'workplace', 'note'],
+  'Plans'        => ['id', 'semester_id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'periods', 'split', 'joint_key', 'workplace', 'note', 'hour_type'],
   'Sessions'     => ['id', 'semester_id', 'plan_id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length', 'locked', 'updated_by', 'updated_at'],
   'LockedSlots'  => ['id', 'day', 'period', 'label'],
   'Windows'      => ['id', 'semester_id', 'department_id', 'start_date', 'end_date', 'sort'],
+  // คาบ PLC: ไม่ระบุ teacher_id = ทั้งแผนก, ระบุ teacher_id = เฉพาะครูคนนั้น และใช้แทนคาบของแผนก
+  'PlcSlots'     => ['id', 'department_id', 'teacher_id', 'day', 'start', 'length'],
   'Users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active'],
+  'ColorGroups'  => ['id', 'category', 'name', 'color', 'items', 'sort'],
+  'IssueReports' => ['id', 'title', 'category', 'detail', 'status', 'reply', 'replied_by', 'reporter_id', 'reporter_name', 'created_at', 'updated_at'],
   'Log'          => ['time', 'user', 'action', 'detail'],
   'OtSchemes'    => ['id', 'name', 'group', 'total_cap', 'cap_method', 'sort',
                      'vc_enabled', 'vc_load', 'vc_min', 'vc_max', 'vc_rate', 'vs_enabled', 'vs_load', 'vs_min', 'vs_max', 'vs_rate',
@@ -36,11 +43,10 @@ const SCHEMA = [
   'OtSubmissions'=> ['id', 'round_id', 'department_id', 'status', 'note', 'snapshot', 'created_by', 'created_at'],
   // ---- รายงานการสอนออนไลน์ ----
   'TeachReports' => ['id', 'semester_id', 'teacher_id', 'session_id', 'group_id', 'course_id', 'date', 'start', 'length', 'kind', 'topic', 'activity',
-                     'students_present', 'students_absent', 'problems', 'attachment_link', 'status', 'created_at', 'submitted_at', 'reviewed_by', 'reviewed_at', 'review_note'],
-  // ---- นิเทศนักศึกษาฝึกงาน ----
-  'Internships'  => ['id', 'semester_id', 'student_code', 'student_name', 'group_id', 'company_name', 'company_address', 'company_phone', 'mentor_name',
-                     'start_date', 'end_date', 'supervisor_teacher_id', 'status', 'note', 'created_by', 'created_at'],
-  'SupervisionVisits' => ['id', 'internship_id', 'visit_date', 'visit_type', 'meeting_link', 'topic', 'findings', 'suggestions', 'score', 'evidence_link',
+                     'students_present', 'students_absent', 'problems', 'attachment_link', 'status', 'created_at', 'submitted_at', 'reviewed_by', 'reviewed_at', 'review_note',
+                     'group_ids', 'media', 'evaluation', 'assignment', 'attendance', 'images', 'memo_no', 'memo_date', 'memo_reason'],
+  // ---- นิเทศออนไลน์: วิชาที่สอนในสถานประกอบการ (unit_key = J:รหัสเรียนร่วม หรือ P:รหัสแผน) ----
+  'SupervisionVisits' => ['id', 'semester_id', 'unit_key', 'company_name', 'visit_date', 'visit_type', 'meeting_link', 'topic', 'findings', 'suggestions', 'score', 'evidence_link',
                      'next_visit_date', 'status', 'created_by', 'created_at'],
 ];
 
@@ -48,7 +54,7 @@ const SCHEMA = [
 const EDITABLE = [
   'Semesters' => 'admin', 'Departments' => 'admin', 'Majors' => 'admin', 'Teachers' => 'admin',
   'Buildings' => 'admin', 'Rooms' => 'admin', 'Courses' => 'admin', 'Groups' => 'admin',
-  'Plans' => 'dept', 'LockedSlots' => 'admin', 'Windows' => 'admin',
+  'Plans' => 'dept', 'LockedSlots' => 'admin', 'Windows' => 'admin', 'PlcSlots' => 'dept', 'ColorGroups' => 'admin',
   'OtSchemes' => 'admin', 'OtPerHead' => 'admin', 'OtRounds' => 'admin', 'OtBlocked' => 'admin', 'OtAbsences' => 'dept',
 ];
 
@@ -60,14 +66,15 @@ const DEFAULT_SETTINGS = [
   'signer_curriculum' => '', 'signer_deputy' => '', 'signer_director' => '', 'default_semester_id' => '',
   'signer_finance' => '', 'signer_admin_deputy' => '', 'ot_max_cap' => '12',
   'ot_contract_caps' => '0-3:6,4-6:7,7-9:8,10-99:8', 'ot_makeup_report_days' => '7', 'public_enabled' => 'true',
+  'color_default' => '#cfe2f3', 'color_workplace' => '#fb8ca6',
 ];
 
 const DAY_NAMES = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
 
 // ======================= ค่าตั้งค่า (.env) =======================
-function env_file(): array {
+function env_file(bool $reload = false): array {
   static $vars = null;
-  if ($vars !== null) return $vars;
+  if ($vars !== null && !$reload) return $vars;
   $vars = [];
   $file = APP_ROOT . '/.env';
   if (!is_file($file)) return $vars;
@@ -145,6 +152,18 @@ function db_migrate(): void {
     foreach ($cols as $c) if (!in_array($c, $have, true)) $pdo->exec('ALTER TABLE ' . q($name) . ' ADD COLUMN ' . q($c) . ' ' . col_type($c));
   }
   $pdo->exec(KV_SQL);
+}
+
+/* อัปเดตตารางอัตโนมัติเมื่อโครงสร้างในโค้ดเปลี่ยน โดยไม่ต้องรันคำสั่ง และไม่ลบคอลัมน์หรือข้อมูลเดิม */
+function schema_hash_file(): string { return APP_ROOT . '/data/schema.hash'; }
+function schema_mark_synced(): void {
+  if (!is_dir(APP_ROOT . '/data')) @mkdir(APP_ROOT . '/data', 0775, true);
+  @file_put_contents(schema_hash_file(), md5(json_encode(SCHEMA)));
+}
+function schema_sync(): void {
+  if (@file_get_contents(schema_hash_file()) === md5(json_encode(SCHEMA))) return;
+  try { db_migrate(); schema_mark_synced(); }
+  catch (Throwable $e) { error_log('[schema sync] ' . $e->getMessage()); } // ลองใหม่ในคำขอถัดไป
 }
 
 // ======================= อ่าน/เขียนตาราง =======================
@@ -269,6 +288,15 @@ function readSettings(): array {
   $o = [];
   foreach (readTable('Settings') as $r) $o[$r['key']] = (string)$r['value'];
   return $o;
+}
+
+/** เลขคาบที่แสดงให้ผู้ใช้เห็น: คาบพักไม่นับเลข ฐานข้อมูลยังเก็บลำดับช่องเดิม เช่น ช่อง 6 คือคาบ 5 */
+function period_no($p): int {
+  static $lunch = null;
+  if ($lunch === null) $lunch = array_map('intval', array_filter(array_map('trim', explode(',', readSettings()['lunch_period'] ?? ''))));
+  $n = 0;
+  for ($i = 1; $i <= (int)$p; $i++) if (!in_array($i, $lunch, true)) $n++;
+  return $n;
 }
 
 function saveSetting(string $k, $v): void {

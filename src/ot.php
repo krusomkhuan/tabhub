@@ -197,11 +197,11 @@ function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, arr
     $lv = $it['level'];
     if (!js_true($it['absent'])) $res['byLevel'][$lv]['taught']++;
     if (!js_true($v)) continue;
-    if (js_true($it['blocked'])) { $res['errors'][] = $it['date'] . ' คาบ ' . $it['period'] . ': ' . $it['blocked'] . ' — เลือกไม่ได้'; continue; }
-    if (js_true($it['absent'])) { $res['errors'][] = $it['date'] . ' คาบ ' . $it['period'] . ': ' . $it['absent'] . ' — ไม่นับเป็นชั่วโมงสอน'; continue; }
+    if (js_true($it['blocked'])) { $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['blocked'] . ' — เลือกไม่ได้'; continue; }
+    if (js_true($it['absent'])) { $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['absent'] . ' — ไม่นับเป็นชั่วโมงสอน'; continue; }
     if ($v === 'L') $res['byLevel'][$lv]['load']++;
     if ($v === 'C') {
-      if (js_true($it['pending'] ?? '')) $res['errors'][] = $it['date'] . ' คาบ ' . $it['period'] . ': ' . $it['pending'] . ' (ระเบียบข้อ 8)';
+      if (js_true($it['pending'] ?? '')) $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['pending'] . ' (ระเบียบข้อ 8)';
       if ($it['sub'] === 'sub') $subUsed[$it['sub_id']] = ($subUsed[$it['sub_id']] ?? 0) + 1;
       $rule = !empty($ph[$it['course_id'] . '|' . $it['group_id']]) ? ot_per_head_rule($it, $ctx['perHead'] ?? [], $ctx['courses'][$it['course_id']] ?? null) : null;
       if ($rule) { $res['byLevel'][$lv]['perhead']++; $res['perHeadAmount'] += $it['students'] * num($rule['rate_per_head']); }

@@ -12,7 +12,7 @@ function with_home_room(array $plans): array {
 }
 
 function sched_ctx_now(): array {
-  return sched_ctx(['settings' => readSettings(), 'locked' => readTable('LockedSlots'), 'teachers' => readTable('Teachers'),
+  return sched_ctx(['settings' => readSettings(), 'locked' => readTable('LockedSlots'), 'plc' => readTable('PlcSlots'), 'teachers' => readTable('Teachers'),
     'rooms' => readTable('Rooms'), 'groups' => readTable('Groups'), 'courses' => readTable('Courses'), 'plans' => readTable('Plans')]);
 }
 
@@ -22,7 +22,7 @@ function sem_sessions($semesterId): array {
 
 function sched_describe(array $s, array $ctx): string {
   $g = $ctx['groups'][$s['group_id']] ?? null; $c = $ctx['courses'][$s['course_id']] ?? null;
-  return ($c ? $c['code'] . ' ' . $c['name'] : '') . ' · ' . ($g ? $g['code'] : '') . ' · ' . (DAY_NAMES[num($s['day'])] ?? '') . ' คาบ ' . $s['start'] . '-' . (num($s['start']) + num($s['length']) - 1);
+  return ($c ? $c['code'] . ' ' . $c['name'] : '') . ' · ' . ($g ? $g['code'] : '') . ' · ' . (DAY_NAMES[num($s['day'])] ?? '') . ' คาบ ' . period_no($s['start']) . '-' . period_no(num($s['start']) + num($s['length']) - 1);
 }
 
 function api_getSchedule($token = '', $semesterId = '') {
@@ -79,13 +79,9 @@ function api_placeSession($token = '', $payload = []) {
     foreach ($cands as $c) $problems = array_merge($problems, sched_check($c, $others, $ctx));
     $hard = array_filter($problems, fn($x) => $x['hard']);
     if ($hard && !(js_true($payload['force'] ?? false) && $me['role'] === 'admin')) return ['ok' => false, 'problems' => $problems];
-    // จำนวนคาบไม่เกินแผน (เฉพาะคาบใหม่)
-    if (!$existing) {
-      $used = 0;
-      foreach ($sem as $s) if ((string)$s['plan_id'] === (string)$plan['id']) $used += num($s['length']);
-      $max = sched_plan_periods($plan, $ctx);
-      if ($used + $len > $max) return ['ok' => false, 'problems' => [['type' => 'over', 'msg' => 'ลงคาบเกินจำนวนชั่วโมงในแผน (' . $max . ' คาบ)', 'hard' => true]]];
-    }
+    // จำนวนคาบไม่เกินแผน ผู้ดูแลระบบก็บังคับวางเกินไม่ได้
+    $over = sched_over_problem($plans, $sem, $moving, $len, $existing, $ctx);
+    if ($over) return ['ok' => false, 'problems' => [$over]];
     writeTable('Sessions', array_merge(array_values(array_diff_key($all, $moving)), $cands));
     log_action($me, $existing ? 'ย้ายคาบ' : 'สร้างคาบ', sched_describe($cands[0], $ctx));
     return ['ok' => true, 'problems' => $problems, 'sessions' => sem_sessions($plan['semester_id'])];
@@ -229,22 +225,29 @@ function api_getPublicData($semesterId = '') {
   $sems = readTable('Semesters');
   $sem = js_true($semesterId) ? $semesterId : (js_true($s['default_semester_id'] ?? '') ? $s['default_semester_id'] : ($sems ? $sems[count($sems) - 1]['id'] : ''));
   $pick = fn(array $rows, array $cols) => array_map(fn($r) => array_intersect_key($r, array_flip($cols)), $rows);
+  $ctx = sched_ctx_now();
+  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)($ctx['plans'][$x['plan_id']]['hour_type'] ?? '')], sem_sessions($sem));
   return [
     'settings' => [
       'college_name' => $s['college_name'] ?? null, 'periods_per_day' => $s['periods_per_day'] ?? null, 'period_start' => $s['period_start'] ?? null,
       'period_minutes' => $s['period_minutes'] ?? null, 'lunch_period' => $s['lunch_period'] ?? null, 'days' => $s['days'] ?? null, 'period_times' => $s['period_times'] ?? '',
+      'color_default' => $s['color_default'] ?? '', 'color_workplace' => $s['color_workplace'] ?? '',
+      'signer_curriculum' => $s['signer_curriculum'] ?? '', 'signer_deputy' => $s['signer_deputy'] ?? '', 'signer_director' => $s['signer_director'] ?? '',
     ],
     'days' => DAY_NAMES,
     'semester_id' => $sem,
     'semesters' => array_map(fn($x) => ['id' => $x['id'], 'label' => js_true($x['label']) ? $x['label'] : $x['term'] . '/' . $x['year']], $sems),
     'departments' => $pick(readTable('Departments'), ['id', 'name']),
-    'groups' => $pick(readTable('Groups'), ['id', 'code', 'name', 'level', 'department_id', 'room_id']),
-    'teachers' => $pick(readTable('Teachers'), ['id', 'name', 'department_id']),
+    'groups' => $pick(readTable('Groups'), ['id', 'code', 'name', 'level', 'department_id', 'room_id', 'advisor_id']),
+    // วุฒิการศึกษาและหน้าที่พิเศษ แสดงในแบบฟอร์มตารางสอนตามที่วิทยาลัยกำหนด
+    'teachers' => $pick(readTable('Teachers'), ['id', 'name', 'department_id', 'is_dept_head', 'education', 'special_duty']),
     'rooms' => $pick(readTable('Rooms'), ['id', 'name', 'building_id']),
     'buildings' => readTable('Buildings'),
     'locked' => readTable('LockedSlots'),
-    'courses' => $pick(readTable('Courses'), ['id', 'code', 'name', 'theory', 'practice', 'credits']),
-    'sessions' => $pick(sem_sessions($sem), ['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length']),
+    'plc' => readTable('PlcSlots'),
+    'color_groups' => readTable('ColorGroups'),
+    'courses' => $pick(readTable('Courses'), ['id', 'code', 'name', 'theory', 'practice', 'credits', 'color', 'course_type']),
+    'sessions' => $sessions,
   ];
 }
 
@@ -296,7 +299,7 @@ function api_exportToSheet($token = '', $semesterId = '') {
     $g = $ctx['groups'][$s['group_id']] ?? []; $c = $ctx['courses'][$s['course_id']] ?? [];
     $rows[] = [$g['code'] ?? '', $c['code'] ?? '', $c['name'] ?? '',
       implode(', ', array_map(fn($t) => $ctx['teachers'][$t]['name'] ?? $t, sched_ids($s['teacher_ids']))),
-      $ctx['rooms'][$s['room_id']]['name'] ?? '', DAY_NAMES[num($s['day'])] ?? '', num($s['start']), num($s['length'])];
+      $ctx['rooms'][$s['room_id']]['name'] ?? '', DAY_NAMES[num($s['day'])] ?? '', period_no($s['start']), num($s['length'])];
   }
   $label = str($semesterId);
   foreach (readTable('Semesters') as $x) if ((string)$x['id'] === $label) { $label = $x['label']; break; }

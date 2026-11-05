@@ -23,6 +23,11 @@ var Sched = (function () {
     (o.teachers || []).forEach(function (t) {
       var un = {};
       ids(t.unavailable).forEach(function (x) { un[x.replace(':', '-')] = 1; }); // รูปแบบ "วัน-คาบ" เช่น 0-1,0-2
+      // คาบ PLC ถือเป็นเวลาที่ครูไม่ว่าง: คาบรายบุคคลใช้แทนคาบของแผนก
+      var slots = o.plc || [], own = slots.filter(function (x) { return String(x.teacher_id || '') === String(t.id); });
+      (own.length ? own : slots.filter(function (x) { return !x.teacher_id && String(x.department_id || '') === String(t.department_id || ''); })).forEach(function (x) {
+        for (var k = 0, n = Number(x.length) || 1; k < n; k++) un[x.day + '-' + (Number(x.start) + k)] = 1;
+      });
       ctx.teachers[t.id] = { name: t.name, max: Number(t.max_per_day) || 0, un: un };
     });
     (o.rooms || []).forEach(function (r) { ctx.rooms[r.id] = { name: r.name, shareable: String(r.shareable) === 'true' }; });
@@ -53,8 +58,8 @@ var Sched = (function () {
     if (ctx.days.indexOf(day) < 0) out.push({ type: 'day', msg: 'วันนี้ไม่ได้เปิดให้จัดตาราง', hard: true });
     if (start < 1 || start + len - 1 > ctx.periods) out.push({ type: 'range', msg: 'เกินจำนวนคาบต่อวัน', hard: true });
     for (var p = start; p < start + len; p++) {
-      if (ctx.lunch.indexOf(p) >= 0) { out.push({ type: 'lunch', msg: 'ทับคาบพักเที่ยง (คาบ ' + p + ')', hard: true }); break; }
-      if (ctx.locked[day + '-' + p]) { out.push({ type: 'locked', msg: 'ทับชั่วโมงที่ล็อก: ' + ctx.locked[day + '-' + p] + ' (คาบ ' + p + ')', hard: true }); break; }
+      if (ctx.lunch.indexOf(p) >= 0) { out.push({ type: 'lunch', msg: 'ทับเวลาพักเที่ยง', hard: true }); break; }
+      if (ctx.locked[day + '-' + p]) { out.push({ type: 'locked', msg: 'ทับชั่วโมงที่ล็อก: ' + ctx.locked[day + '-' + p], hard: true }); break; }
     }
     var cj = jointOf(cand, ctx);
     var cTeachers = ids(cand.teacher_ids);

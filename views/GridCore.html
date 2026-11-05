@@ -20,6 +20,63 @@ var Grid = (function () {
     return out;
   }
 
+  /* เลขคาบที่แสดง: คาบพักไม่นับเลข เช่น 1-4, พัก, 5-11 ส่วนฐานข้อมูลยังเก็บลำดับช่องเดิม */
+  function lunchOf(st) { return String(st.lunch_period || '').split(',').map(function (x) { return Number(x); }).filter(Boolean); }
+  function periodNo(st, p) {
+    var l = lunchOf(st), n = 0; p = Number(p);
+    if (l.indexOf(p) >= 0) return 'พัก';
+    for (var i = 1; i <= p; i++) if (l.indexOf(i) < 0) n++;
+    return n;
+  }
+  function periodRange(st, start, len) {
+    var a = periodNo(st, start), b = periodNo(st, Number(start) + Number(len) - 1);
+    return a === b ? String(a) : a + '–' + b;
+  }
+  /** แปลงเลขคาบที่แสดงกลับเป็นลำดับช่องที่เก็บในฐานข้อมูล */
+  function periodFromNo(st, no) {
+    var n = Number(st.periods_per_day || 12);
+    for (var p = 1; p <= n; p++) if (periodNo(st, p) === Number(no)) return p;
+    return '';
+  }
+  function clock(x) { return String(x).replace('.', ':'); }
+  function periodOptions(st, sel) {
+    var n = Number(st.periods_per_day || 12), times = periodTimes(st), h = '';
+    for (var p = 1; p <= n; p++) {
+      if (lunchOf(st).indexOf(p) >= 0) continue;
+      h += '<option value="' + p + '"' + (String(sel) === String(p) ? ' selected' : '') + '>คาบ ' + periodNo(st, p) + ' · ' + clock(times[p - 1][0]) + '-' + clock(times[p - 1][1]) + '</option>';
+    }
+    return h;
+  }
+  /** กิจกรรมหน้าเสาธง 20 นาทีก่อนคาบแรก */
+  function flagTime(st) {
+    var t = clock(periodTimes(st)[0][0]).split(':'), end = Number(t[0]) * 60 + Number(t[1] || 0), start = end - 20;
+    var f = function (m) { return pad(Math.floor(m / 60)) + ':' + pad(m % 60); };
+    return f(start) + ' - ' + f(end);
+  }
+
+  /* สีของคาบ เรียงจากเจาะจงมากไปน้อย: กลุ่มสีรายวิชา → สถานประกอบการ → สีประจำวิชา → ครู → ห้อง → โฮมรูม/กิจกรรม → แผนก → สีเริ่มต้น */
+  function validColor(c, fallback) { return /^#[0-9a-f]{6}$/i.test(c || '') ? c : fallback; }
+  function sessionColor(o) {
+    var st = o.settings || {}, groups = o.groups || [];
+    var pick = function (category, ids) {
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        if (g.category !== category || !validColor(g.color)) continue;
+        if (ids === true) return g.color;
+        var items = String(g.items || '').split(',');
+        if (ids.some(function (x) { return x !== '' && items.indexOf(String(x)) >= 0; })) return g.color;
+      }
+      return null;
+    };
+    var hit = pick('course', [o.course_id]);
+    if (hit) return hit;
+    if (o.workplace || /สถานประกอบการ/.test((o.room || '') + ' ' + (o.name || ''))) return validColor(st.color_workplace, '#fb8ca6');
+    if (validColor(o.color)) return o.color;
+    hit = pick('teacher', String(o.teacher_ids || '').split(',')) || pick('room', [o.room_id]);
+    if (!hit && (o.course_type === 'activity' || /กิจกรรม|โฮมรูม/.test(o.name || ''))) hit = pick('activity', true);
+    return hit || pick('department', [o.department_id]) || validColor(st.color_default, '#cfe2f3');
+  }
+
   function lockedMap(locked, days) {
     var m = {};
     (locked || []).forEach(function (l) {
@@ -29,19 +86,34 @@ var Grid = (function () {
     return m;
   }
 
+  /** รวมคาบที่เรียนด้วยกัน: วิชา ห้อง และเวลาเดียวกัน แม้คนละครู คืนค่าเป็นรายการของชุดคาบ */
+  function mergeItems(items) {
+    var by = {}, out = [];
+    items.forEach(function (s) {
+      var k = [s.course_id, s.room_id, s.day, s.start, s.length].join('|');
+      var list = by[k];
+      if (!list) { by[k] = [s]; out.push(by[k]); }
+      else if (list.some(function (x) { return String(x.group_id) === String(s.group_id); })) out.push([s]); // กลุ่มเดิมซ้ำคือการชน ต้องเห็นแยกกัน
+      else list.push(s);
+    });
+    return out;
+  }
+
   /**
-   * opt: { settings, dayNames, sessions, label(s)->html, colorKey(s), locked:[], editable(s)->bool, conflictIds:{} }
+   * opt: { settings, dayNames, sessions, label(s, list)->html, color(s)->css, locked:[], editable(s, list)->bool, conflictIds:{} }
+   * list คือคาบทั้งหมดที่รวมอยู่ในช่องเดียวกัน
    */
   function render(opt) {
     var st = opt.settings, n = Number(st.periods_per_day || 12);
     var days = String(st.days || '0,1,2,3,4').split(',').map(Number);
-    var lunch = String(st.lunch_period || '').split(',').map(Number);
-    var times = periodTimes(st), lk = lockedMap(opt.locked, days);
-    var h = '<div class="tt-wrap"><table class="tt"><thead><tr><th style="width:74px">วัน / คาบ</th>';
-    for (var p = 1; p <= n; p++) h += '<th>' + p + '<span class="tm">' + times[p - 1][0] + '-' + times[p - 1][1] + '</span></th>';
+    var lunch = lunchOf(st);
+    var times = periodTimes(st), lk = lockedMap((opt.locked || []).concat(opt.extraLocked || []), days);
+    var h = '<div class="tt-wrap"><table class="tt"><thead><tr><th style="width:74px">วัน / คาบ</th><th style="width:62px"><span class="tm">' + flagTime(st).replace(' - ', '-') + '</span></th>';
+    for (var p = 1; p <= n; p++) h += '<th>' + periodNo(st, p) + '<span class="tm">' + clock(times[p - 1][0]) + '-' + clock(times[p - 1][1]) + '</span></th>';
     h += '</tr></thead><tbody>';
-    days.forEach(function (d) {
+    days.forEach(function (d, di) {
       h += '<tr><td class="day">' + esc(opt.dayNames[d]) + '</td>';
+      if (di === 0) h += '<td class="tt-flag" rowspan="' + days.length + '"><span>กิจกรรมหน้าเสาธง</span></td>';
       var list = opt.sessions.filter(function (s) { return Number(s.day) === d; })
         .sort(function (a, b) { return a.start - b.start; });
       // รวมคาบที่ทับกันเป็นกลุ่มเดียว
@@ -59,20 +131,22 @@ var Grid = (function () {
           var slots = {}; c.items.forEach(function (s) { slots[s.start + '-' + s.length] = 1; });
           var clash = Object.keys(slots).length > 1;
           h += '<td class="cell" colspan="' + span + '" data-day="' + d + '" data-period="' + p + '">';
-          // คาบเรียนร่วม (วัน/คาบเดียวกัน) แสดงรวม
-          c.items.forEach(function (s) {
-            var ed = opt.editable && opt.editable(s);
-            var cls = 'ss' + (ed ? ' edit' : '') + (String(s.locked) === 'true' ? ' locked' : '') +
-              ((clash || (opt.conflictIds && opt.conflictIds[s.id])) ? ' conflict' : '');
+          // คาบเรียนร่วม (วิชา ห้อง ครู เวลาเดียวกัน) แสดงรวมในช่องเดียว
+          mergeItems(c.items).forEach(function (list) {
+            var s = list[0];
+            var ed = opt.editable && opt.editable(s, list);
+            var isLocked = list.some(function (x) { return String(x.locked) === 'true'; });
+            var isConflict = clash || list.some(function (x) { return opt.conflictIds && opt.conflictIds[x.id]; });
+            var cls = 'ss' + (ed ? ' edit' : '') + (isLocked ? ' locked' : '') + (isConflict ? ' conflict' : '');
             h += '<div class="' + cls + '" data-sid="' + esc(s.id) + '"' + (ed ? ' draggable="true"' : '') +
-              ' style="background:' + colorFor(opt.colorKey ? opt.colorKey(s) : s.course_id) + '">' + opt.label(s) + '</div>';
+              ' style="background:' + (opt.color ? opt.color(s) : colorFor(s.course_id)) + '">' + opt.label(s, list) + '</div>';
           });
           h += '</td>';
           p += span;
         } else {
           var key = d + '-' + p;
-          if (lunch.indexOf(p) >= 0) h += '<td class="cell lunch" data-day="' + d + '" data-period="' + p + '">พัก</td>';
-          else if (lk[key]) h += '<td class="cell lock" data-day="' + d + '" data-period="' + p + '">' + esc(lk[key]) + '</td>';
+          if (lunch.indexOf(p) >= 0) h += '<td class="cell lunch" data-day="' + d + '" data-period="' + p + '">🔒 พักเที่ยง</td>';
+          else if (lk[key]) h += '<td class="cell lock" data-day="' + d + '" data-period="' + p + '">🔒 ' + esc(lk[key]) + '</td>';
           else h += '<td class="cell" data-day="' + d + '" data-period="' + p + '"></td>';
           p++;
         }
@@ -107,6 +181,306 @@ var Grid = (function () {
     return h;
   }
 
-  return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap };
+  /* ===== สร้างไฟล์ PDF จากตาราง: วาดหน้าเป็นภาพ เพื่อให้สระและวรรณยุกต์ไทยเหมือนที่เห็นบนจอ ===== */
+  var PDF_WIDTH = 1062, PDF_SCALE = 2; // กว้างเท่าหน้า A4 แนวนอน หักขอบกระดาษ และวาดละเอียด 2 เท่า
+
+  function paintText(ctx, node, cs, ox, oy) {
+    var text = node.nodeValue;
+    if (!text || !text.trim()) return;
+    ctx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    ctx.fillStyle = cs.color;
+    ctx.textBaseline = 'middle';
+    var range = document.createRange();
+    if (cs.writingMode.indexOf('vertical') === 0) {
+      // ข้อความแนวตั้งในตาราง อ่านจากล่างขึ้นบน
+      range.selectNodeContents(node);
+      var v = range.getBoundingClientRect();
+      ctx.save();
+      ctx.translate(v.left + v.width / 2 - ox, v.top + v.height / 2 - oy);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillText(text.trim(), 0, 0);
+      ctx.restore();
+      return;
+    }
+    // แยกข้อความตามบรรทัดที่เบราว์เซอร์ตัดไว้จริง
+    var lines = [], cur = null;
+    for (var i = 0; i < text.length; i++) {
+      range.setStart(node, i); range.setEnd(node, i + 1);
+      var r = range.getClientRects()[0];
+      if (!r) continue;
+      if (r.width > 0 && (!cur || Math.abs(r.top - cur.top) > 3)) { cur = { top: r.top, bottom: r.bottom, left: r.left, text: '' }; lines.push(cur); }
+      if (cur) cur.text += text[i];
+    }
+    ctx.textAlign = 'left';
+    lines.forEach(function (l) { if (l.text.trim()) ctx.fillText(l.text.replace(/\s+$/, ''), l.left - ox, (l.top + l.bottom) / 2 - oy); });
+  }
+
+  function paintBox(ctx, el, cs, ox, oy) {
+    var r = el.getBoundingClientRect(), x = r.left - ox, y = r.top - oy, w = r.width, h = r.height;
+    var radius = parseFloat(cs.borderTopLeftRadius) || 0;
+    function shape() {
+      ctx.beginPath();
+      if (radius && ctx.roundRect) ctx.roundRect(x, y, w, h, radius); else ctx.rect(x, y, w, h);
+    }
+    if (cs.backgroundColor && !/rgba\(\d+, \d+, \d+, 0\)|transparent/.test(cs.backgroundColor)) { ctx.fillStyle = cs.backgroundColor; shape(); ctx.fill(); }
+    if (cs.backgroundImage.indexOf('repeating-linear-gradient') === 0) {
+      // ลายทางของช่องที่ล็อก
+      ctx.save(); shape(); ctx.clip();
+      ctx.fillStyle = '#f3f6fa'; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#dbe5ef'; ctx.lineWidth = 8;
+      for (var s = -h; s < w + h; s += 22) { ctx.beginPath(); ctx.moveTo(x + s, y + h); ctx.lineTo(x + s + h, y); ctx.stroke(); }
+      ctx.restore();
+    }
+    [['Top', x, y, x + w, y], ['Right', x + w, y, x + w, y + h], ['Bottom', x, y + h, x + w, y + h], ['Left', x, y, x, y + h]].forEach(function (b) {
+      var bw = parseFloat(cs['border' + b[0] + 'Width']);
+      var style = cs['border' + b[0] + 'Style'];
+      if (!bw || style === 'none' || radius) return;
+      ctx.strokeStyle = cs['border' + b[0] + 'Color']; ctx.lineWidth = bw;
+      ctx.setLineDash(style === 'dotted' ? [1.5, 2.5] : style === 'dashed' ? [5, 4] : []);
+      ctx.beginPath(); ctx.moveTo(b[1], b[2]); ctx.lineTo(b[3], b[4]); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    if (el.tagName === 'IMG' && el.complete && el.naturalWidth) ctx.drawImage(el, x, y, w, h);
+  }
+
+  function paintTree(ctx, el, ox, oy) {
+    var cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || el.classList.contains('no-print')) return;
+    paintBox(ctx, el, cs, ox, oy);
+    Array.prototype.forEach.call(el.childNodes, function (n) {
+      if (n.nodeType === 3) paintText(ctx, n, cs, ox, oy);
+      else if (n.nodeType === 1) paintTree(ctx, n, ox, oy);
+    });
+  }
+
+  /** วาดหนึ่งหน้าบนสำเนาที่กว้างเท่ากระดาษ ผลจึงเหมือนกันทั้งมือถือและคอมพิวเตอร์ */
+  function pageToJpeg(pageEl) {
+    var host = document.createElement('div');
+    host.className = 'pdf-host';
+    var width = Number(pageEl.getAttribute('data-pdf-width')) || PDF_WIDTH; // หน้าแนวตั้งกำหนดความกว้างเอง
+    host.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + width + 'px;background:#fff;';
+    var clone = pageEl.cloneNode(true);
+    clone.style.cssText += ';border:0;margin:0;box-shadow:none;width:' + width + 'px;';
+    host.appendChild(clone); document.body.appendChild(host);
+    var imgs = Array.prototype.map.call(clone.querySelectorAll('img'), function (i) { return i.decode ? i.decode().catch(function () {}) : Promise.resolve(); });
+    return Promise.all(imgs).then(function () {
+      var box = clone.getBoundingClientRect();
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(box.width * PDF_SCALE); canvas.height = Math.ceil(box.height * PDF_SCALE);
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(PDF_SCALE, PDF_SCALE);
+      paintTree(ctx, clone, box.left, box.top);
+      var data = canvas.toDataURL('image/jpeg', 0.92).split(',')[1], bin = atob(data), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return { bytes: bytes, width: canvas.width, height: canvas.height, portrait: pageEl.hasAttribute('data-pdf-width') };
+    }).then(function (img) { host.remove(); return img; }, function (e) { host.remove(); throw e; });
+  }
+
+  /** เขียนไฟล์ PDF: หน้าละหนึ่งภาพ ขนาด A4 แนวนอนหรือแนวตั้งตามสัดส่วนภาพ */
+  function imagesToPdf(images) {
+    var M = 22, parts = [], offsets = [], size = 0;
+    var enc = function (s) { var b = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
+    var put = function (x) { var b = typeof x === 'string' ? enc(x) : x; parts.push(b); size += b.length; };
+    var obj = function (n, body) { offsets[n] = size; put(n + ' 0 obj\n' + body + '\nendobj\n'); };
+    put('%PDF-1.4\n');
+    var kids = images.map(function (_, i) { return (3 + i * 3) + ' 0 R'; }).join(' ');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    obj(2, '<< /Type /Pages /Count ' + images.length + ' /Kids [' + kids + '] >>');
+    images.forEach(function (img, i) {
+      var page = 3 + i * 3, content = page + 1, xobj = page + 2, tall = img.portrait || img.height > img.width, W = tall ? 595.28 : 841.89, H = tall ? 841.89 : 595.28;
+      var s = Math.min((W - 2 * M) / img.width, (H - 2 * M) / img.height), dw = img.width * s, dh = img.height * s;
+      var cmd = 'q ' + dw.toFixed(2) + ' 0 0 ' + dh.toFixed(2) + ' ' + ((W - dw) / 2).toFixed(2) + ' ' + (H - M - dh).toFixed(2) + ' cm /Im Do Q';
+      obj(page, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im ' + xobj + ' 0 R >> >> /Contents ' + content + ' 0 R >>');
+      obj(content, '<< /Length ' + cmd.length + ' >>\nstream\n' + cmd + '\nendstream');
+      offsets[xobj] = size;
+      put(xobj + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + img.width + ' /Height ' + img.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.bytes.length + ' >>\nstream\n');
+      put(img.bytes); put('\nendstream\nendobj\n');
+    });
+    var count = 3 + images.length * 3, xref = size, table = 'xref\n0 ' + count + '\n0000000000 65535 f \n';
+    for (var n = 1; n < count; n++) table += ('0000000000' + offsets[n]).slice(-10) + ' 00000 n \n';
+    put(table + 'trailer\n<< /Size ' + count + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+    return new Blob(parts, { type: 'application/pdf' });
+  }
+
+  function buildPdf(pages) {
+    var ready = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    // เอกสารใช้สีสว่างเสมอ แม้ผู้ใช้เปิดโหมดกลางคืนอยู่
+    var root = document.documentElement, theme = root.getAttribute('data-theme');
+    var restore = function () { if (theme) root.setAttribute('data-theme', theme); };
+    return ready.then(function () {
+      root.removeAttribute('data-theme');
+      // ทำทีละหน้า เพื่อไม่ให้มือถือหน่วยความจำเต็ม
+      var images = [], chain = Promise.resolve();
+      Array.prototype.forEach.call(pages, function (p) { chain = chain.then(function () { return pageToJpeg(p); }).then(function (i) { images.push(i); }); });
+      return chain.then(function () { restore(); return imagesToPdf(images); }, function (e) { restore(); throw e; });
+    });
+  }
+
+  /** แชร์ผ่านเมนูของเครื่อง ถ้าเครื่องแชร์ไฟล์ไม่ได้ให้ดาวน์โหลดแทน คืน 'shared', 'cancelled' หรือ 'downloaded' */
+  function sharePdf(pages, title) {
+    var name = String(title || 'ตาราง').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim() + '.pdf';
+    return buildPdf(pages).then(function (blob) {
+      function download() {
+        var url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+        return 'downloaded';
+      }
+      var file = typeof File === 'function' ? new File([blob], name, { type: 'application/pdf' }) : null;
+      if (file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+        // เบราว์เซอร์อาจปฏิเสธการแชร์ได้ ไฟล์สร้างเสร็จแล้วจึงดาวน์โหลดแทน ยกเว้นผู้ใช้ปิดเมนูแชร์เอง
+        return navigator.share({ files: [file], title: title }).then(function () { return 'shared'; }, function (e) {
+          return e && e.name === 'AbortError' ? 'cancelled' : download();
+        });
+      }
+      return download();
+    });
+  }
+
+  /** ผูกปุ่มแชร์: แสดงสถานะระหว่างสร้างไฟล์ และกันการกดซ้ำ */
+  function bindShareButton(btn, getPages, getTitle, notify) {
+    btn.onclick = function () {
+      var pages = getPages();
+      if (!pages || !pages.length) return notify('กรุณาเลือกตารางก่อน', true);
+      var label = btn.textContent;
+      btn.disabled = true; btn.textContent = 'กำลังสร้าง PDF…';
+      sharePdf(pages, getTitle()).then(function (how) {
+        if (how === 'downloaded') notify('ดาวน์โหลดไฟล์ PDF แล้ว ส่งต่อจากไฟล์ที่ดาวน์โหลดได้เลย');
+      }).catch(function () { notify('สร้างไฟล์ PDF ไม่สำเร็จ กรุณาลองใหม่', true); }).then(function () { btn.disabled = false; btn.textContent = label; });
+    };
+  }
+
+  /** คาบ PLC ของครู: คาบรายบุคคลใช้แทนคาบของแผนก */
+  function plcFor(teacherId, departmentId, slots) {
+    slots = slots || [];
+    var own = slots.filter(function (x) { return String(x.teacher_id || '') === String(teacherId); });
+    return own.length ? own : slots.filter(function (x) { return !x.teacher_id && String(x.department_id || '') === String(departmentId || ''); });
+  }
+
+  /** ช่องลงนามท้ายตาราง */
+  function signBlock(st, headName) {
+    function one(name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
+    return '<div class="signs">' + one(headName, 'หัวหน้าแผนกวิชา') + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ') +
+      one(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + one(st.signer_director, 'ผู้อำนวยการ') + '</div>';
+  }
+
+  /**
+   * แบบฟอร์มตารางสอนครู: หัวกระดาษ รายวิชา 2 ชุด ตารางสอน และผู้ลงนาม
+   * o: { settings, dayNames, locked, teacher, teacherId, sessions, groups, course(id), group(id), room(id), hourType(s), deptName, semLabel, sign }
+   * hourType คืน 'in' (คาบใน), 'out' (คาบนอก) หรือ 'none' (ไม่นับ)
+   */
+  function teacherSheet(o) {
+    var st = o.settings, t = o.teacher || {}, n = Number(st.periods_per_day || 12), id = o.teacherId;
+    var days = String(st.days || '0,1,2,3,4').split(',').map(Number), lunch = lunchOf(st);
+    var times = periodTimes(st), locks = lockedMap(o.locked, days);
+    var ids = function (x) { return String(x || '').split(',').map(function (v) { return v.trim(); }).filter(String); };
+    var sessions = o.sessions.filter(function (s) { return ids(s.teacher_ids).indexOf(String(id)) >= 0; });
+    var covers = function (s, p) { return Number(s.start) <= p && p < Number(s.start) + Number(s.length); };
+    var isLunchBar = function (p) { return lunch.indexOf(p) >= 0 && !sessions.some(function (s) { return covers(s, p); }); };
+    var isHomeRoom = function (label) { return /โฮมรูม|home\s*room/i.test(label || ''); };
+    var cmp = function (a, b) { return String(a).localeCompare(String(b), 'th', { numeric: true }); };
+    var advisees = o.groups.filter(function (g) { return String(g.advisor_id) === String(id); }).map(function (g) { return o.group(g.id); }).sort(cmp);
+
+    /* รายวิชา: คาบเรียนร่วมเวลาเดียวกันนับเป็นชั่วโมงสอนเดียว */
+    var byCourse = {};
+    sessions.forEach(function (s) {
+      var r = byCourse[s.course_id] || (byCourse[s.course_id] = { c: o.course(s.course_id), slots: {} });
+      r.slots[s.day + '-' + s.start + '-' + s.length] = Number(s.length) || 0;
+    });
+    var rows = Object.keys(byCourse).map(function (k) {
+      var r = byCourse[k], h = Object.keys(r.slots).reduce(function (a, x) { return a + r.slots[x]; }, 0);
+      return { code: r.c.code, name: r.c.name, t: r.c.theory, p: r.c.practice, u: r.c.credits, h: h };
+    }).sort(function (a, b) { return cmp(a.code, b.code); });
+    var homeRooms = 0;
+    if (advisees.length) days.forEach(function (d) {
+      for (var p = 1; p <= n; p++) if (isHomeRoom(locks[d + '-' + p]) && !sessions.some(function (s) { return Number(s.day) === d && covers(s, p); })) homeRooms++;
+    });
+    if (homeRooms) rows.push({ code: 'Home Room', name: 'กิจกรรมโฮมรูม (ชั่วโมงพบครูที่ปรึกษา)', t: '', p: '', u: '', h: homeRooms });
+    /* คาบ PLC: แสดงเฉพาะช่องที่ไม่มีคาบสอนหรือชั่วโมงล็อก นับในช่อง ช. แต่ไม่นับรวมใน/รวมนอก */
+    var plcCells = {}, plcHours = 0;
+    plcFor(id, t.department_id, o.plc).forEach(function (x) {
+      for (var k = 0, len = Number(x.length) || 1; k < len; k++) {
+        var pp = Number(x.start) + k, dd = Number(x.day), key = dd + '-' + pp;
+        if (pp > n || plcCells[key] || lunch.indexOf(pp) >= 0 || locks[key] || sessions.some(function (s) { return Number(s.day) === dd && covers(s, pp); })) continue;
+        plcCells[key] = 1; plcHours++;
+      }
+    });
+    if (plcHours) rows.push({ code: 'PLC', name: 'ชุมชนการเรียนรู้ทางวิชาชีพ (PLC)', t: '', p: '', u: '', h: plcHours });
+    var sum = function (k) { return rows.reduce(function (a, r) { return a + (Number(r[k]) || 0); }, 0); };
+    /* คาบเรียนร่วมนับเป็นคาบนอกหรือไม่นับ เมื่อทุกกลุ่มในช่องตั้งแบบเดียวกัน นอกนั้นนับเป็นคาบใน */
+    var hoursIn = 0, hoursOut = 0;
+    mergeItems(sessions).forEach(function (list) {
+      var every = function (x) { return list.every(function (s) { return o.hourType(s) === x; }); }, len = Number(list[0].length) || 0;
+      if (every('none')) return;
+      if (every('out')) hoursOut += len; else hoursIn += len;
+    });
+    var rowCount = Math.max(9, Math.ceil(rows.length / 2));
+    var courseCells = function (r) {
+      r = r || {};
+      return '<td>' + esc(r.code) + '</td><td class="ts-l">' + esc(r.name) + '</td><td>' + esc(r.t) + '</td><td>' + esc(r.p) + '</td><td>' + esc(r.u) + '</td><td>' + esc(r.h) + '</td>';
+    };
+    var courseRows = '';
+    for (var i = 0; i < rowCount; i++) courseRows += '<tr>' + courseCells(rows[i]) + courseCells(rows[i + rowCount]) + '</tr>';
+    var info = function (label, val, cls) { return '<div class="ts-info"><b>' + label + '</b><span' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(val) + '</span></div>'; };
+    var courseHead = '<th>รหัสวิชา</th><th>ชื่อรายวิชา</th><th>ท.</th><th>ป.</th><th>น.</th><th>ช.</th>';
+    var head = '<table class="ts-head"><colgroup><col style="width:26.6%">' + new Array(3).join('<col style="width:6.7%"><col style="width:22.6%"><col style="width:1.65%"><col style="width:1.65%"><col style="width:1.65%"><col style="width:1.65%">') + '</colgroup>' +
+      '<tr><td class="ts-who" rowspan="' + (rowCount + 2) + '"><img src="assets/college-seal.png" alt="ตราวิทยาลัย"><div class="ts-college">' + esc(st.college_name) + '</div>' +
+      info('ภาคเรียน', o.semLabel) + info('ผู้สอน', t.name) + (t.education === undefined ? '' : info('วุฒิการศึกษา', t.education)) + info('แผนกวิชา', o.deptName) + info('หน้าที่พิเศษ', t.special_duty, 'ts-duty') + '</td>' + courseHead + courseHead + '</tr>' +
+      courseRows + '<tr class="ts-total"><td></td><td class="ts-r"><b>รวม</b></td><td>' + sum('t') + '</td><td>' + sum('p') + '</td><td>' + sum('u') + '</td><td>' + sum('h') + '</td><td class="ts-sum" colspan="6">(รวมใน: ' + hoursIn + ') (รวมนอก: ' + hoursOut + ')</td></tr></table>';
+
+    /* ตารางสอน: คาบพักไม่นับเลขคาบ เช่น 1-4, พัก, 5-11 */
+    var timeRow = '<tr><td>เวลา</td><td>' + esc(flagTime(st)) + '</td>', numRow = '<tr><td>วัน/คาบ</td><td class="ts-bar" rowspan="' + (days.length + 1) + '"><span>กิจกรรมหน้าเสาธง</span></td>';
+    for (var p = 1; p <= n; p++) {
+      timeRow += '<td>' + esc(clock(times[p - 1][0])) + ' - ' + esc(clock(times[p - 1][1])) + '</td>';
+      if (isLunchBar(p)) numRow += '<td class="ts-bar" rowspan="' + (days.length + 1) + '"><span>พักกลางวัน</span></td>';
+      else numRow += '<td>' + periodNo(st, p) + '</td>';
+    }
+    var body = days.map(function (d) {
+      var list = sessions.filter(function (s) { return Number(s.day) === d; }).sort(function (a, b) { return Number(a.start) - Number(b.start); });
+      var clusters = [];
+      list.forEach(function (s) {
+        var a = Number(s.start), b = Math.min(a + Number(s.length) - 1, n), last = clusters[clusters.length - 1];
+        if (last && a <= last.end) { last.items.push(s); last.end = Math.max(last.end, b); } else clusters.push({ start: a, end: b, items: [s] });
+      });
+      /* คาบที่คร่อมพักกลางวันต้องแยกเป็นสองช่อง เพราะคอลัมน์พักรวมทุกวัน */
+      var segments = {};
+      clusters.forEach(function (c) {
+        var from = null;
+        for (var q = c.start; q <= c.end + 1; q++) {
+          if (q > c.end || isLunchBar(q)) { if (from !== null) segments[from] = { end: q - 1, items: c.items }; from = null; }
+          else if (from === null) from = q;
+        }
+      });
+      var h = '<tr><td class="ts-day">วัน' + esc(o.dayNames[d]) + '</td>';
+      for (var q = 1; q <= n; q++) {
+        if (isLunchBar(q)) continue;
+        var seg = segments[q];
+        if (seg) {
+          h += '<td colspan="' + (seg.end - q + 1) + '">' + mergeItems(seg.items).map(function (group) {
+            var s = group[0];
+            return '<div class="ts-s"><div>' + esc(o.course(s.course_id).code) + '</div><div>' + esc(s.room_id ? o.room(s.room_id) : '') + '</div><div>' + esc(group.map(function (x) { return o.group(x.group_id); }).join(',')) + '</div></div>';
+          }).join('') + '</td>';
+          q = seg.end;
+        } else {
+          var lock = locks[d + '-' + q];
+          if (plcCells[d + '-' + q]) {
+            var plcEnd = q;
+            while (plcCells[d + '-' + (plcEnd + 1)]) plcEnd++;
+            h += '<td class="ts-plc" colspan="' + (plcEnd - q + 1) + '">PLC</td>';
+            q = plcEnd;
+          }
+          else if (isHomeRoom(lock) && advisees.length) h += '<td><div class="ts-s"><div>Home Room</div><div></div><div>' + esc(advisees.join(', ')) + ' **</div></div></td>';
+          else h += '<td class="ts-lock">' + esc(lock || '') + '</td>';
+        }
+      }
+      return h + '</tr>';
+    }).join('');
+    return '<div class="page ts-page"><div class="ts-wrap"><div class="ts-sheet">' + head + '<table class="ts-grid"><tbody>' + timeRow + '</tr>' + numRow + '</tr>' + body + '</tbody></table>' + o.sign + '</div></div></div>';
+  }
+
+  return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap, mergeItems: mergeItems,
+    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, teacherSheet: teacherSheet, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
 })();
 </script>

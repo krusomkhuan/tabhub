@@ -1,5 +1,5 @@
 <?php
-/** รายงานการสอนออนไลน์, นิเทศนักศึกษาฝึกงาน และงบหน้าแผนกวิชา */
+/** รายงานการสอนออนไลน์, นิเทศวิชาที่สอนในสถานประกอบการ และงบหน้าแผนกวิชา */
 
 function valid_date($s): bool { return is_string($s) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $s) && checkdate((int)substr($s, 5, 2), (int)substr($s, 8, 2), (int)substr($s, 0, 4)); }
 
@@ -58,11 +58,23 @@ function teacher_slots($semesterId, string $tid, string $from, string $to): arra
       if ((string)$r['teacher_id'] !== $tid || substr((string)$r['date'], 0, 10) !== $date) continue;
       $s = $all[$r['session_id']] ?? null;
       if ($s && (string)$s['semester_id'] !== str($semesterId)) continue;
-      $slots[] = ['date' => $date, 'session_id' => $r['session_id'], 'group_id' => $r['group_id'], 'course_id' => $r['course_id'], 'room_id' => $s['room_id'] ?? '', 'start' => num($r['start']), 'length' => num($r['length']), 'kind' => $r['type'], 'replaced' => false];
+      $slots[] = ['date' => $date, 'session_id' => $r['session_id'], 'group_id' => $r['group_id'], 'course_id' => $r['course_id'], 'room_id' => $s['room_id'] ?? '', 'start' => num($r['start']), 'length' => num($r['length']), 'kind' => $r['type'], 'replaced' => false, 'sub' => sub_summary($r, $s)];
     }
   }
-  usort($slots, fn($a, $b) => [$a['date'], $a['start']] <=> [$b['date'], $b['start']]);
-  return $slots;
+  usort($slots, fn($a, $b) => [$a['date'], $a['start'], (string)$a['session_id']] <=> [$b['date'], $b['start'], (string)$b['session_id']]);
+  // คาบที่เรียนด้วยกัน (วิชา ห้อง เวลาเดียวกัน) รายงานใบเดียว ตามแบบฟอร์มของวิทยาลัย
+  $merged = [];
+  foreach ($slots as $s) {
+    $k = implode('|', [$s['date'], $s['course_id'], $s['room_id'], $s['start'], $s['length'], $s['kind'], (int)$s['replaced']]);
+    if (!isset($merged[$k])) { $s['group_ids'] = [$s['group_id']]; $merged[$k] = $s; }
+    elseif (!in_array($s['group_id'], $merged[$k]['group_ids'], true)) $merged[$k]['group_ids'][] = $s['group_id'];
+  }
+  return array_values($merged);
+}
+
+/** ข้อมูลของรายการสอนแทน/ชดเชย ที่เอกสารรายงานต้องใช้ */
+function sub_summary(array $r, ?array $s): array {
+  return ['id' => $r['id'], 'reason' => $r['reason'], 'note' => $r['note'] ?? '', 'original_teacher_id' => $r['original_teacher_id'], 'original_date' => substr((string)$r['original_date'], 0, 10), 'original_start' => $s ? num($s['start']) : '', 'original_length' => $s ? num($s['length']) : ''];
 }
 
 function teach_report_index($semesterId, string $tid): array {
@@ -88,7 +100,7 @@ function api_teachReportSlots($token = '', $semesterId = '', $teacherId = '', $a
   return ['from' => $from, 'to' => $to, 'today' => date('Y-m-d'), 'slots' => $slots];
 }
 
-/** rec: {semester_id, teacher_id, session_id, date, start, topic, activity, students_present, students_absent, problems, attachment_link} */
+/** rec: {semester_id, teacher_id, session_id, date, start, topic, activity, media, evaluation, assignment, attendance:[{group_id,total,present,absent,numbers}], memo_no, memo_date, memo_reason, problems, attachment_link} */
 function api_teachReportSave($token = '', $rec = [], $submit = false) {
   $me = auth_user($token);
   $rec = (array)$rec;
@@ -100,15 +112,25 @@ function api_teachReportSave($token = '', $rec = [], $submit = false) {
   $topic = clean_text($rec['topic'] ?? '', 500);
   if (js_true($submit) && $topic === '') throw new Exception('กรุณาระบุหัวข้อที่สอน');
   $link = clean_link($rec['attachment_link'] ?? '');
-  $present = num($rec['students_present'] ?? 0); $absent = num($rec['students_absent'] ?? 0);
-  if ($present < 0 || $absent < 0) throw new Exception('จำนวนนักเรียนต้องไม่ติดลบ');
+  if (js_true($rec['memo_date'] ?? '') && !valid_date($rec['memo_date'])) throw new Exception('วันที่ของบันทึกข้อความไม่ถูกต้อง');
   $sem = $rec['semester_id'] ?? '';
-  return with_lock(function () use ($me, $rec, $tid, $date, $topic, $link, $present, $absent, $sem, $submit) {
+  return with_lock(function () use ($me, $rec, $tid, $date, $topic, $link, $sem, $submit) {
     $slot = null;
     foreach (teacher_slots($sem, $tid, $date, $date) as $s) {
       if ((string)$s['session_id'] === str($rec['session_id'] ?? '') && (string)$s['start'] === str($rec['start'] ?? '') && !$s['replaced']) { $slot = $s; break; }
     }
     if (!$slot) throw new Exception('คาบนี้ไม่อยู่ในตารางสอนของครูในวันที่เลือก');
+    // จำนวนผู้เรียนแยกรายห้อง รับเฉพาะกลุ่มที่อยู่ในคาบนี้
+    $attendance = []; $present = 0; $absent = 0;
+    foreach ((array)($rec['attendance'] ?? []) as $a) {
+      $a = (array)$a;
+      if (!in_array(str($a['group_id'] ?? ''), array_map('strval', $slot['group_ids']), true)) continue;
+      $t = num($a['total'] ?? 0); $p = num($a['present'] ?? 0); $b = num($a['absent'] ?? 0); $l = num($a['leave'] ?? 0);
+      if ($t < 0 || $p < 0 || $b < 0 || $l < 0) throw new Exception('จำนวนผู้เรียนต้องไม่ติดลบ');
+      if ($t > 0 && $p + $b + $l > $t) throw new Exception('จำนวนเข้าเรียน ลา และขาดเรียนรวมกันเกินจำนวนผู้เรียนทั้งหมด');
+      $attendance[] = ['group_id' => str($a['group_id']), 'total' => $t, 'present' => $p, 'leave' => $l, 'absent' => $b, 'numbers' => clean_text($a['numbers'] ?? '', 500)];
+      $present += $p; $absent += $b;
+    }
     $rows = readTable('TeachReports');
     $i = null;
     foreach ($rows as $k => $r) {
@@ -120,6 +142,8 @@ function api_teachReportSave($token = '', $rec = [], $submit = false) {
       'semester_id' => $sem, 'teacher_id' => $tid, 'session_id' => $slot['session_id'], 'group_id' => $slot['group_id'], 'course_id' => $slot['course_id'],
       'date' => $date, 'start' => $slot['start'], 'length' => $slot['length'], 'kind' => $slot['kind'], 'topic' => $topic, 'activity' => clean_text($rec['activity'] ?? ''),
       'students_present' => $present, 'students_absent' => $absent, 'problems' => clean_text($rec['problems'] ?? ''), 'attachment_link' => $link,
+      'group_ids' => implode(',', $slot['group_ids']), 'media' => clean_text($rec['media'] ?? ''), 'evaluation' => clean_text($rec['evaluation'] ?? ''), 'assignment' => clean_text($rec['assignment'] ?? ''),
+      'attendance' => json_encode($attendance, JSON_UNESCAPED_UNICODE), 'memo_no' => clean_text($rec['memo_no'] ?? '', 50), 'memo_date' => js_true($rec['memo_date'] ?? '') ? $rec['memo_date'] : date('Y-m-d'), 'memo_reason' => clean_text($rec['memo_reason'] ?? '', 3000),
     ]);
     if (js_true($submit)) { $rows[$i]['status'] = 'submitted'; $rows[$i]['submitted_at'] = now_dt(); }
     $id = $rows[$i]['id']; $status = $rows[$i]['status'];
@@ -147,6 +171,16 @@ function api_teachReportList($token = '', $filter = []) {
     return true;
   }));
   usort($rows, fn($a, $b) => [$b['date'], $a['start']] <=> [$a['date'], $b['start']]);
+  // รายงานสอนแทน/ชดเชย ต้องรู้เหตุผลและครูผู้สอนเดิมเพื่อออกเอกสาร
+  $subs = array_filter(readTable('OtSubs'), fn($x) => $x['status'] !== 'cancelled');
+  $sessions = idx_table('Sessions');
+  foreach ($rows as &$r) {
+    if (($r['kind'] ?? 'normal') === 'normal') continue;
+    foreach ($subs as $x) {
+      if ((string)$x['teacher_id'] === (string)$r['teacher_id'] && substr((string)$x['date'], 0, 10) === $r['date'] && (string)$x['session_id'] === (string)$r['session_id'] && (string)$x['start'] === (string)$r['start']) { $r['sub'] = sub_summary($x, $sessions[$x['session_id']] ?? null); break; }
+    }
+  }
+  unset($r);
   return $rows;
 }
 
@@ -177,9 +211,82 @@ function api_teachReportDelete($token = '', $id = '') {
     if ($i === null) throw new Exception('ไม่พบรายงาน');
     assert_teacher_scope($me, $rows[$i]['teacher_id']);
     if ($rows[$i]['status'] === 'approved' && $me['role'] !== 'admin') throw new Exception('รายงานนี้อนุมัติแล้ว ลบไม่ได้');
+    foreach (report_image_names($rows[$i]) as $n) @unlink(report_image_dir() . '/' . $n);
     array_splice($rows, $i, 1);
     writeTable('TeachReports', $rows);
     log_action($me, 'ลบรายงานการสอน', $id);
+    return true;
+  });
+}
+
+// ----- รูปประกอบรายงาน: เห็นหน้าและชื่อนักเรียน จึงเก็บใน data/ ซึ่งเปิดตรงจากเว็บไม่ได้ และส่งผ่าน API ที่ตรวจสิทธิ์ -----
+const REPORT_MAX_IMAGES = 4;
+const REPORT_MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+function report_image_dir(): string {
+  $d = APP_ROOT . '/data/teach_images';
+  if (!is_dir($d)) @mkdir($d, 0775, true);
+  return $d;
+}
+function report_image_names(array $r): array {
+  $list = json_decode((string)($r['images'] ?? ''), true);
+  return is_array($list) ? array_values(array_filter($list, fn($n) => is_string($n) && preg_match('/^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/', $n))) : [];
+}
+function report_row(array $me, $id, array &$rows, bool $forEdit): int {
+  $rows = readTable('TeachReports');
+  $i = find_row($rows, str($id));
+  if ($i === null) throw new Exception('ไม่พบรายงาน');
+  assert_teacher_scope($me, $rows[$i]['teacher_id']);
+  if ($forEdit && $rows[$i]['status'] === 'approved' && $me['role'] !== 'admin') throw new Exception('รายงานนี้อนุมัติแล้ว แก้ไขไม่ได้');
+  return $i;
+}
+
+function api_teachReportImageAdd($token = '', $id = '', $base64 = '') {
+  $me = auth_user($token);
+  $bytes = base64_decode(str($base64), true);
+  if ($bytes === false || $bytes === '') throw new Exception('อ่านไฟล์รูปไม่สำเร็จ');
+  if (strlen($bytes) > REPORT_MAX_IMAGE_BYTES) throw new Exception('รูปมีขนาดใหญ่เกิน 4 MB');
+  // ตรวจจากเนื้อไฟล์จริง ไม่เชื่อชื่อไฟล์หรือชนิดที่ส่งมา
+  $info = @getimagesizefromstring($bytes);
+  $ext = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png'][$info[2] ?? 0] ?? '';
+  if ($ext === '') throw new Exception('รองรับเฉพาะรูป JPG และ PNG');
+  return with_lock(function () use ($me, $id, $bytes, $ext) {
+    $rows = [];
+    $i = report_row($me, $id, $rows, true);
+    $names = report_image_names($rows[$i]);
+    if (count($names) >= REPORT_MAX_IMAGES) throw new Exception('แนบรูปได้ไม่เกิน ' . REPORT_MAX_IMAGES . ' รูปต่อรายงาน');
+    $name = strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string)$rows[$i]['id'])) . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
+    if (file_put_contents(report_image_dir() . '/' . $name, $bytes) !== strlen($bytes)) throw new Exception('บันทึกรูปไม่สำเร็จ');
+    $names[] = $name;
+    $rows[$i]['images'] = json_encode($names);
+    writeTable('TeachReports', $rows);
+    log_action($me, 'แนบรูปรายงานการสอน', (string)$rows[$i]['id']);
+    return $name;
+  });
+}
+
+function api_teachReportImages($token = '', $id = '') {
+  $me = auth_user($token);
+  $rows = [];
+  $i = report_row($me, $id, $rows, false);
+  $out = [];
+  foreach (report_image_names($rows[$i]) as $n) {
+    $p = report_image_dir() . '/' . $n;
+    if (is_file($p)) $out[] = ['name' => $n, 'url' => 'data:image/' . (str_ends_with($n, '.png') ? 'png' : 'jpeg') . ';base64,' . base64_encode((string)file_get_contents($p))];
+  }
+  return $out;
+}
+
+function api_teachReportImageDelete($token = '', $id = '', $name = '') {
+  $me = auth_user($token);
+  return with_lock(function () use ($me, $id, $name) {
+    $rows = [];
+    $i = report_row($me, $id, $rows, true);
+    $names = report_image_names($rows[$i]);
+    if (!in_array(str($name), $names, true)) throw new Exception('ไม่พบรูป');
+    @unlink(report_image_dir() . '/' . str($name));
+    $rows[$i]['images'] = json_encode(array_values(array_diff($names, [str($name)])));
+    writeTable('TeachReports', $rows);
     return true;
   });
 }
@@ -206,126 +313,85 @@ function api_teachReportSummary($token = '', $semesterId = '', $deptId = '', $fr
   return $out;
 }
 
-// ======================= นิเทศนักศึกษาฝึกงาน =======================
-function intern_scope(array $me, array $in): void {
-  if ($me['role'] === 'admin') return;
-  if ($me['role'] === 'teacher') {
-    if ((string)$in['supervisor_teacher_id'] === (string)$me['teacher_id']) return;
-    throw new Exception('ดูได้เฉพาะนักศึกษาที่ครูเป็นผู้นิเทศ');
+// ======================= นิเทศออนไลน์: วิชาที่สอนในสถานประกอบการ =======================
+/** เกณฑ์เดียวกับสีแดงในตาราง: ตั้งค่าในแผนการเรียน ประเภทวิชา หรือมีคำว่า สถานประกอบการ ในชื่อวิชา/ห้อง */
+function supervise_is_workplace(array $plan, array $sessions, array $ctx): bool {
+  if (sched_is_workplace($plan, $ctx)) return true;
+  $word = 'สถานประกอบการ';
+  if (mb_strpos((string)($ctx['courses'][$plan['course_id']]['name'] ?? ''), $word) !== false) return true;
+  $rooms = array_merge([$plan['room_id'] ?? ''], array_column($sessions, 'room_id'));
+  foreach ($rooms as $r) if (mb_strpos((string)($ctx['rooms'][$r]['name'] ?? ''), $word) !== false) return true;
+  return false;
+}
+
+/** รายการที่ต้องนิเทศของภาคเรียน วิชาเรียนร่วมนับเป็นรายการเดียว */
+function supervise_units($semesterId): array {
+  $ctx = sched_ctx_now();
+  $byPlan = [];
+  foreach (sem_sessions($semesterId) as $s) $byPlan[$s['plan_id']][] = $s;
+  $units = [];
+  foreach (readTable('Plans') as $p) {
+    if ((string)$p['semester_id'] !== str($semesterId)) continue;
+    $sessions = $byPlan[$p['id']] ?? [];
+    if (!supervise_is_workplace($p, $sessions, $ctx)) continue;
+    $key = js_true($p['joint_key'] ?? '') ? 'J:' . $p['joint_key'] : 'P:' . $p['id'];
+    $u = &$units[$key];
+    $u ??= ['key' => $key, 'course_id' => $p['course_id'], 'group_ids' => [], 'teacher_ids' => [], 'slots' => [], 'hours' => 0];
+    if (!in_array($p['group_id'], $u['group_ids'], true)) $u['group_ids'][] = $p['group_id'];
+    foreach (sched_ids($p['teacher_ids'] ?? '') as $t) if (!in_array($t, $u['teacher_ids'], true)) $u['teacher_ids'][] = $t;
+    foreach ($sessions as $s) {
+      $slot = $s['day'] . '-' . $s['start'] . '-' . $s['length'];
+      if (isset($u['slots'][$slot])) continue;
+      $u['hours'] += num($s['length']);
+      $a = period_no($s['start']); $b = period_no(num($s['start']) + num($s['length']) - 1);
+      $u['slots'][$slot] = (DAY_NAMES[num($s['day'])] ?? '') . ' คาบ ' . ($a === $b ? $a : $a . '–' . $b);
+    }
+    unset($u);
   }
-  $g = idx_table('Groups')[$in['group_id']] ?? null;
-  $t = idx_table('Teachers')[$in['supervisor_teacher_id']] ?? null;
-  if (($g && (string)$g['department_id'] === (string)$me['department_id']) || ($t && (string)$t['department_id'] === (string)$me['department_id'])) return;
-  throw new Exception('จัดการได้เฉพาะนักศึกษาของแผนกตัวเอง');
+  return $units;
 }
 
-function intern_clean(array $me, array $r): array {
-  $name = clean_text($r['student_name'] ?? '', 200);
-  $company = clean_text($r['company_name'] ?? '', 300);
-  if ($name === '') throw new Exception('กรุณาระบุชื่อนักศึกษา');
-  if ($company === '') throw new Exception('กรุณาระบุสถานประกอบการ (' . $name . ')');
-  foreach (['start_date', 'end_date'] as $f) if (js_true($r[$f] ?? '') && !valid_date($r[$f])) throw new Exception('วันที่ไม่ถูกต้อง (' . $name . ')');
-  if (js_true($r['start_date'] ?? '') && js_true($r['end_date'] ?? '') && $r['start_date'] > $r['end_date']) throw new Exception('วันเริ่มฝึกต้องไม่หลังวันสิ้นสุด (' . $name . ')');
-  $groups = idx_table('Groups');
-  $gid = str($r['group_id'] ?? '');
-  if ($gid !== '' && !isset($groups[$gid])) throw new Exception('ไม่พบกลุ่มเรียน (' . $name . ')');
-  if ($me['role'] === 'dept' && ($gid === '' || (string)$groups[$gid]['department_id'] !== (string)$me['department_id'])) throw new Exception('เพิ่มได้เฉพาะกลุ่มเรียนของแผนกตัวเอง (' . $name . ')');
-  $sup = str($r['supervisor_teacher_id'] ?? '');
-  if ($sup !== '' && !isset(idx_table('Teachers')[$sup])) throw new Exception('ไม่พบครูนิเทศ (' . $name . ')');
-  $st = $r['status'] ?? 'active';
-  return [
-    'student_code' => clean_text($r['student_code'] ?? '', 50), 'student_name' => $name, 'group_id' => $gid, 'company_name' => $company,
-    'company_address' => clean_text($r['company_address'] ?? '', 500), 'company_phone' => clean_text($r['company_phone'] ?? '', 50), 'mentor_name' => clean_text($r['mentor_name'] ?? '', 200),
-    'start_date' => $r['start_date'] ?? '', 'end_date' => $r['end_date'] ?? '', 'supervisor_teacher_id' => $sup,
-    'status' => in_array($st, ['active', 'done', 'cancelled'], true) ? $st : 'active', 'note' => clean_text($r['note'] ?? '', 1000),
-  ];
-}
-
-function api_internList($token = '', $semesterId = '') {
-  $me = auth_user($token);
+function supervise_can_see(array $me, array $u): bool {
+  if ($me['role'] === 'admin') return true;
+  if ($me['role'] === 'teacher') return in_array((string)$me['teacher_id'], array_map('strval', $u['teacher_ids']), true);
+  $dept = (string)$me['department_id'];
   $groups = idx_table('Groups'); $teachers = idx_table('Teachers');
+  foreach ($u['group_ids'] as $g) if ((string)($groups[$g]['department_id'] ?? '') === $dept) return true;
+  foreach ($u['teacher_ids'] as $t) if ((string)($teachers[$t]['department_id'] ?? '') === $dept) return true;
+  return false;
+}
+
+function supervise_unit(array $me, $semesterId, $key): array {
+  $u = supervise_units($semesterId)[str($key)] ?? null;
+  if (!$u) throw new Exception('ไม่พบวิชาที่สอนในสถานประกอบการรายการนี้');
+  if (!supervise_can_see($me, $u)) throw new Exception('ดูได้เฉพาะวิชาที่ครูสอน หรือวิชาของแผนกตัวเอง');
+  return $u;
+}
+
+function api_superviseList($token = '', $semesterId = '') {
+  $me = auth_user($token);
   $counts = [];
   foreach (readTable('SupervisionVisits') as $v) {
-    $c = &$counts[$v['internship_id']];
+    if ((string)$v['semester_id'] !== str($semesterId)) continue;
+    $c = &$counts[$v['unit_key']];
     $c ??= ['done' => 0, 'planned' => 0, 'last' => ''];
     if ($v['status'] === 'done') { $c['done']++; if ($v['visit_date'] > $c['last']) $c['last'] = $v['visit_date']; } else $c['planned']++;
     unset($c);
   }
   $out = [];
-  foreach (readTable('Internships') as $in) {
-    if (js_true($semesterId) && (string)$in['semester_id'] !== str($semesterId)) continue;
-    if ($me['role'] === 'teacher' && (string)$in['supervisor_teacher_id'] !== (string)$me['teacher_id']) continue;
-    if ($me['role'] === 'dept') {
-      $gd = $groups[$in['group_id']]['department_id'] ?? ''; $td = $teachers[$in['supervisor_teacher_id']]['department_id'] ?? '';
-      if ((string)$gd !== (string)$me['department_id'] && (string)$td !== (string)$me['department_id']) continue;
-    }
-    $c = $counts[$in['id']] ?? ['done' => 0, 'planned' => 0, 'last' => ''];
-    $out[] = $in + ['visits_done' => $c['done'], 'visits_planned' => $c['planned'], 'last_visit' => $c['last']];
+  foreach (supervise_units($semesterId) as $key => $u) {
+    if (!supervise_can_see($me, $u)) continue;
+    $c = $counts[$key] ?? ['done' => 0, 'planned' => 0, 'last' => ''];
+    $u['slots'] = array_values($u['slots']);
+    $out[] = $u + ['visits_done' => $c['done'], 'visits_planned' => $c['planned'], 'last_visit' => $c['last']];
   }
   return $out;
 }
 
-function api_internSave($token = '', $rec = []) {
-  $me = auth_user($token, 'dept');
-  $rec = (array)$rec;
-  return with_lock(function () use ($me, $rec) {
-    $clean = intern_clean($me, $rec);
-    $rows = readTable('Internships');
-    $id = $rec['id'] ?? '';
-    $i = js_true($id) ? find_row($rows, $id) : null;
-    if ($i !== null) intern_scope($me, $rows[$i]); // ตรวจจากแถวเดิมก่อนเขียนทับ
-    if ($i === null) {
-      if (!js_true($rec['semester_id'] ?? '')) throw new Exception('กรุณาเลือกภาคเรียน');
-      $rows[] = ['id' => new_id(), 'semester_id' => $rec['semester_id'], 'created_by' => $me['name'], 'created_at' => now_dt()];
-      $i = count($rows) - 1;
-    }
-    $rows[$i] = array_merge($rows[$i], $clean);
-    $newId = $rows[$i]['id'];
-    writeTable('Internships', $rows);
-    log_action($me, 'บันทึกนักศึกษาฝึกงาน', $newId);
-    return $newId;
-  });
-}
-
-/** เพิ่มหลายคนจากการวางข้อมูล ถ้ามีแถวผิดจะไม่บันทึกเลยทั้งชุด */
-function api_internBulkSave($token = '', $semesterId = '', $list = []) {
-  $me = auth_user($token, 'dept');
-  if (!js_true($semesterId)) throw new Exception('กรุณาเลือกภาคเรียน');
-  return with_lock(function () use ($me, $semesterId, $list) {
-    $add = [];
-    foreach ((array)$list as $r) $add[] = ['id' => new_id(), 'semester_id' => $semesterId, 'created_by' => $me['name'], 'created_at' => now_dt()] + intern_clean($me, (array)$r);
-    appendRows('Internships', $add);
-    log_action($me, 'นำเข้านักศึกษาฝึกงาน', count($add) . ' คน');
-    return count($add);
-  });
-}
-
-function api_internDelete($token = '', $id = '') {
-  $me = auth_user($token, 'dept');
-  return with_lock(function () use ($me, $id) {
-    $rows = readTable('Internships');
-    $i = find_row($rows, str($id));
-    if ($i === null) throw new Exception('ไม่พบข้อมูล');
-    intern_scope($me, $rows[$i]);
-    writeTable('SupervisionVisits', array_values(array_filter(readTable('SupervisionVisits'), fn($v) => (string)$v['internship_id'] !== str($id))));
-    array_splice($rows, $i, 1);
-    writeTable('Internships', $rows);
-    log_action($me, 'ลบนักศึกษาฝึกงาน', $id);
-    return true;
-  });
-}
-
-function intern_row($id): array {
-  $rows = readTable('Internships');
-  $i = find_row($rows, str($id));
-  if ($i === null) throw new Exception('ไม่พบนักศึกษาฝึกงาน');
-  return $rows[$i];
-}
-
-function api_visitList($token = '', $internshipId = '') {
+function api_visitList($token = '', $semesterId = '', $key = '') {
   $me = auth_user($token);
-  intern_scope($me, intern_row($internshipId));
-  $rows = array_values(array_filter(readTable('SupervisionVisits'), fn($v) => (string)$v['internship_id'] === str($internshipId)));
+  supervise_unit($me, $semesterId, $key);
+  $rows = array_values(array_filter(readTable('SupervisionVisits'), fn($v) => (string)$v['semester_id'] === str($semesterId) && (string)$v['unit_key'] === str($key)));
   usort($rows, fn($a, $b) => strcmp($b['visit_date'], $a['visit_date']));
   return $rows;
 }
@@ -333,8 +399,7 @@ function api_visitList($token = '', $internshipId = '') {
 function api_visitSave($token = '', $rec = []) {
   $me = auth_user($token);
   $rec = (array)$rec;
-  $in = intern_row($rec['internship_id'] ?? '');
-  intern_scope($me, $in);
+  supervise_unit($me, $rec['semester_id'] ?? '', $rec['unit_key'] ?? '');
   if (!valid_date($rec['visit_date'] ?? '')) throw new Exception('กรุณาระบุวันที่นิเทศ');
   if (js_true($rec['next_visit_date'] ?? '') && !valid_date($rec['next_visit_date'])) throw new Exception('วันที่นิเทศครั้งถัดไปไม่ถูกต้อง');
   $type = ($rec['visit_type'] ?? '') === 'onsite' ? 'onsite' : 'online';
@@ -348,10 +413,10 @@ function api_visitSave($token = '', $rec = []) {
     $rows = readTable('SupervisionVisits');
     $id = $rec['id'] ?? '';
     $i = js_true($id) ? find_row($rows, $id) : null;
-    if ($i !== null && (string)$rows[$i]['internship_id'] !== str($rec['internship_id'])) throw new Exception('รายการนิเทศไม่ตรงกับนักศึกษา');
+    if ($i !== null && ((string)$rows[$i]['unit_key'] !== str($rec['unit_key']) || (string)$rows[$i]['semester_id'] !== str($rec['semester_id']))) throw new Exception('รายการนิเทศไม่ตรงกับวิชา');
     if ($i === null) { $rows[] = ['id' => new_id(), 'created_by' => $me['name'], 'created_at' => now_dt()]; $i = count($rows) - 1; }
     $rows[$i] = array_merge($rows[$i], [
-      'internship_id' => $rec['internship_id'], 'visit_date' => $rec['visit_date'], 'visit_type' => $type, 'meeting_link' => $meet, 'topic' => clean_text($rec['topic'] ?? '', 500),
+      'semester_id' => $rec['semester_id'], 'unit_key' => $rec['unit_key'], 'company_name' => clean_text($rec['company_name'] ?? '', 300), 'visit_date' => $rec['visit_date'], 'visit_type' => $type, 'meeting_link' => $meet, 'topic' => clean_text($rec['topic'] ?? '', 500),
       'findings' => clean_text($rec['findings'] ?? ''), 'suggestions' => clean_text($rec['suggestions'] ?? ''), 'score' => $score, 'evidence_link' => $evid,
       'next_visit_date' => $rec['next_visit_date'] ?? '', 'status' => $status,
     ]);
@@ -368,7 +433,7 @@ function api_visitDelete($token = '', $id = '') {
     $rows = readTable('SupervisionVisits');
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายการนิเทศ');
-    intern_scope($me, intern_row($rows[$i]['internship_id']));
+    supervise_unit($me, $rows[$i]['semester_id'], $rows[$i]['unit_key']);
     array_splice($rows, $i, 1);
     writeTable('SupervisionVisits', $rows);
     log_action($me, 'ลบรายการนิเทศ', $id);
@@ -504,4 +569,60 @@ function api_otCoverSheet($token = '', $roundId = '', $deptId = '') {
     foreach ($totals as $k => $_) $totals[$k] += $r[$k];
   }
   return ['round' => $round, 'weeks' => $weeks, 'rows' => $rows, 'totals' => $totals, 'weekTotals' => (object)$weekTotals, 'totalText' => ot_baht_text($totals['amount']), 'notLocked' => $sum['notLocked'], 'submission' => $sum['submission']];
+}
+
+// ======================= แจ้งปัญหาการใช้งาน =======================
+const ISSUE_STATUS = ['open', 'doing', 'done'];
+
+/** ผู้ดูแลระบบเห็นทุกเรื่อง ผู้ใช้อื่นเห็นเฉพาะเรื่องที่ตัวเองแจ้ง */
+function api_issueList($token = '') {
+  $me = auth_user($token);
+  $rows = readTable('IssueReports');
+  if ($me['role'] !== 'admin') $rows = array_filter($rows, fn($r) => (string)$r['reporter_id'] === (string)$me['id']);
+  $rows = array_values($rows);
+  usort($rows, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
+  return $rows;
+}
+
+function api_issueSave($token = '', $rec = []) {
+  $me = auth_user($token);
+  $rec = (array)$rec;
+  $title = clean_text($rec['title'] ?? '', 200); $detail = clean_text($rec['detail'] ?? '', 5000);
+  if ($title === '') throw new Exception('กรุณาระบุหัวข้อ');
+  if ($detail === '') throw new Exception('กรุณาอธิบายปัญหา');
+  return with_lock(function () use ($me, $rec, $title, $detail) {
+    $id = new_id();
+    appendRows('IssueReports', [['id' => $id, 'title' => $title, 'category' => clean_text($rec['category'] ?? '', 50), 'detail' => $detail, 'status' => 'open', 'reply' => '', 'replied_by' => '', 'reporter_id' => $me['id'], 'reporter_name' => $me['name'], 'created_at' => now_dt(), 'updated_at' => now_dt()]]);
+    log_action($me, 'แจ้งปัญหา', $id);
+    return $id;
+  });
+}
+
+function api_issueReply($token = '', $id = '', $status = '', $reply = '') {
+  $me = auth_user($token, 'admin');
+  if (!in_array($status, ISSUE_STATUS, true)) throw new Exception('สถานะไม่ถูกต้อง');
+  return with_lock(function () use ($me, $id, $status, $reply) {
+    $rows = readTable('IssueReports');
+    $i = find_row($rows, str($id));
+    if ($i === null) throw new Exception('ไม่พบเรื่องที่แจ้ง');
+    $rows[$i] = array_merge($rows[$i], ['status' => $status, 'reply' => clean_text($reply, 5000), 'replied_by' => $me['name'], 'updated_at' => now_dt()]);
+    writeTable('IssueReports', $rows);
+    log_action($me, 'ตอบเรื่องแจ้งปัญหา', str($id));
+    return true;
+  });
+}
+
+function api_issueDelete($token = '', $id = '') {
+  $me = auth_user($token);
+  return with_lock(function () use ($me, $id) {
+    $rows = readTable('IssueReports');
+    $i = find_row($rows, str($id));
+    if ($i === null) throw new Exception('ไม่พบเรื่องที่แจ้ง');
+    // ผู้แจ้งลบได้เฉพาะเรื่องของตัวเองที่ยังไม่เริ่มดำเนินการ
+    if ($me['role'] !== 'admin' && ((string)$rows[$i]['reporter_id'] !== (string)$me['id'] || $rows[$i]['status'] !== 'open')) throw new Exception('ลบได้เฉพาะเรื่องของตัวเองที่ยังไม่เริ่มดำเนินการ');
+    array_splice($rows, $i, 1);
+    writeTable('IssueReports', $rows);
+    log_action($me, 'ลบเรื่องแจ้งปัญหา', str($id));
+    return true;
+  });
 }

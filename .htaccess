@@ -14,9 +14,11 @@ Require all granted
     Require all denied
 </FilesMatch>
 
-# ชั้นที่ 3: ส่งทุกอย่างเข้า index.php ยกเว้นไฟล์ Bootstrap และ jQuery
+# ชั้นที่ 3: ส่งทุกอย่างเข้า index.php ยกเว้นไฟล์ใน assets และหน้าติดตั้ง
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteRule ^assets/([A-Za-z0-9._-]+)$ public/assets/$1 [END]
+    # หน้าติดตั้งล็อกตัวเองหลังติดตั้งเสร็จ
+    RewriteRule ^install\.php$ - [END]
     RewriteRule ^ index.php [END]
 </IfModule>
