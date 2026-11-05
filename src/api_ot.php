@@ -392,7 +392,7 @@ function api_otSuggestSchemes($token = '', $semesterId = '', $apply = false) {
       $capC = ot_personal_cap($t2, $settings)['cap'];
       $byCap = array_values(array_filter($pick, fn($s) => num($s['total_cap']) === $capC));
       if ($byCap) $pick = $byCap;
-      else { usort($pick, fn($a, $b) => num($a['total_cap']) <=> num($b['total_cap'])); $pick = array_slice($pick, 0, 1); }
+      else { stable_usort($pick, fn($a, $b) => num($a['total_cap']) <=> num($b['total_cap'])); $pick = array_slice($pick, 0, 1); }
     }
     $out[] = ['teacher_id' => $t['id'], 'name' => $t['name'], 'levels' => array_keys($lv), 'group' => $grp, 'scheme_ids' => array_column($pick, 'id'), 'names' => array_column($pick, 'name')];
   }

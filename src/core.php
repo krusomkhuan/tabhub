@@ -26,7 +26,7 @@ const SCHEMA = [
   'Windows'      => ['id', 'semester_id', 'department_id', 'start_date', 'end_date', 'sort'],
   // คาบ PLC: ไม่ระบุ teacher_id = ทั้งแผนก, ระบุ teacher_id = เฉพาะครูคนนั้น และใช้แทนคาบของแผนก
   'PlcSlots'     => ['id', 'department_id', 'teacher_id', 'day', 'start', 'length'],
-  'Users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active', 'avatar'],
+  'users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active', 'avatar'],
   'ColorGroups'  => ['id', 'category', 'name', 'color', 'items', 'sort'],
   'IssueReports' => ['id', 'title', 'category', 'detail', 'status', 'reply', 'replied_by', 'reporter_id', 'reporter_name', 'created_at', 'updated_at'],
   'Log'          => ['time', 'user', 'action', 'detail'],
@@ -168,6 +168,18 @@ function schema_sync(): void {
 
 // ======================= อ่าน/เขียนตาราง =======================
 final class Tbl { public static array $cache = []; public static bool $locked = false; }
+
+/** ไฟล์นำเข้า/สำรองรุ่นเก่าใช้ Users แต่ฐานข้อมูลรุ่นนี้ใช้ users เท่านั้น */
+function normalize_user_table(array $tables): array {
+  if (array_key_exists('Users', $tables)) {
+    if (!empty($tables['Users']) && !empty($tables['users'])) {
+      throw new Exception('ไฟล์มีข้อมูลทั้ง Users และ users กรุณาเลือกข้อมูลผู้ใช้เพียงชุดเดียว');
+    }
+    if (!array_key_exists('users', $tables) || empty($tables['users'])) $tables['users'] = $tables['Users'];
+    unset($tables['Users']);
+  }
+  return $tables;
+}
 
 function assert_table(string $name): array {
   if (!isset(SCHEMA[$name])) throw new Exception('ไม่พบตาราง ' . $name);

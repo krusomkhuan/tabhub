@@ -61,7 +61,7 @@ function teacher_slots($semesterId, string $tid, string $from, string $to): arra
       $slots[] = ['date' => $date, 'session_id' => $r['session_id'], 'group_id' => $r['group_id'], 'course_id' => $r['course_id'], 'room_id' => $s['room_id'] ?? '', 'start' => num($r['start']), 'length' => num($r['length']), 'kind' => $r['type'], 'replaced' => false, 'sub' => sub_summary($r, $s)];
     }
   }
-  usort($slots, fn($a, $b) => [$a['date'], $a['start'], (string)$a['session_id']] <=> [$b['date'], $b['start'], (string)$b['session_id']]);
+  stable_usort($slots, fn($a, $b) => [$a['date'], $a['start'], (string)$a['session_id']] <=> [$b['date'], $b['start'], (string)$b['session_id']]);
   // คาบที่เรียนด้วยกัน (วิชา ห้อง เวลาเดียวกัน) รายงานใบเดียว ตามแบบฟอร์มของวิทยาลัย
   $merged = [];
   foreach ($slots as $s) {
@@ -170,7 +170,7 @@ function api_teachReportList($token = '', $filter = []) {
     if (js_true($f['to'] ?? '') && $r['date'] > $f['to']) return false;
     return true;
   }));
-  usort($rows, fn($a, $b) => [$b['date'], $a['start']] <=> [$a['date'], $b['start']]);
+  stable_usort($rows, fn($a, $b) => [$b['date'], $a['start']] <=> [$a['date'], $b['start']]);
   // รายงานสอนแทน/ชดเชย ต้องรู้เหตุผลและครูผู้สอนเดิมเพื่อออกเอกสาร
   $subs = array_filter(readTable('OtSubs'), fn($x) => $x['status'] !== 'cancelled');
   $sessions = idx_table('Sessions');
@@ -396,7 +396,7 @@ function api_visitList($token = '', $semesterId = '', $key = '') {
   $me = auth_user($token);
   supervise_unit($me, $semesterId, $key);
   $rows = array_values(array_filter(readTable('SupervisionVisits'), fn($v) => (string)$v['semester_id'] === str($semesterId) && (string)$v['unit_key'] === str($key)));
-  usort($rows, fn($a, $b) => strcmp($b['visit_date'], $a['visit_date']));
+  stable_usort($rows, fn($a, $b) => strcmp($b['visit_date'], $a['visit_date']));
   return $rows;
 }
 
@@ -451,7 +451,7 @@ function windows_of($semesterId): array {
   $rows = array_values(array_filter(readTable('Windows'), fn($w) => (string)$w['semester_id'] === str($semesterId)));
   $i = 0;
   $keyed = array_map(function ($w) use (&$i) { return ['w' => $w, 's' => $w['sort'] === '' ? PHP_INT_MAX : num($w['sort']), 'i' => $i++]; }, $rows);
-  usort($keyed, fn($a, $b) => [$a['s'], $a['i']] <=> [$b['s'], $b['i']]);
+  stable_usort($keyed, fn($a, $b) => [$a['s'], $a['i']] <=> [$b['s'], $b['i']]);
   return array_map(fn($k) => $k['w'], $keyed);
 }
 
@@ -468,7 +468,7 @@ function api_windowCreateMissing($token = '', $semesterId = '') {
     $cur = windows_of($semesterId);
     $has = array_column($cur, 'department_id');
     $depts = readTable('Departments');
-    usort($depts, fn($a, $b) => [num($a['sort']), $a['name']] <=> [num($b['sort']), $b['name']]);
+    stable_usort($depts, fn($a, $b) => [num($a['sort']), $a['name']] <=> [num($b['sort']), $b['name']]);
     $n = count($cur); $add = [];
     foreach ($depts as $d) {
       if (in_array($d['id'], $has, true)) continue;
@@ -559,7 +559,7 @@ function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 
   $sem = idx_table('Semesters')[str($semesterId)] ?? null;
   if (!$sem) throw new Exception('ไม่พบภาคเรียน');
   $rounds = array_values(array_filter(readTable('OtRounds'), fn($r) => (string)$r['semester_id'] === str($semesterId)));
-  usort($rounds, fn($a, $b) => strcmp((string)$a['start_date'], (string)$b['start_date']));
+  stable_usort($rounds, fn($a, $b) => strcmp((string)$a['start_date'], (string)$b['start_date']));
   // ยังไม่ตั้งวันเปิดภาคเรียน: นับจากรอบการเบิกแรกไปก่อน และแจ้งให้ตั้งค่า
   $start = substr((string)($sem['start_date'] ?? ''), 0, 10);
   $startSet = $start !== '';
@@ -613,7 +613,7 @@ function api_issueList($token = '') {
   $rows = readTable('IssueReports');
   if ($me['role'] !== 'admin') $rows = array_filter($rows, fn($r) => (string)$r['reporter_id'] === (string)$me['id']);
   $rows = array_values($rows);
-  usort($rows, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
+  stable_usort($rows, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
   return $rows;
 }
 

@@ -19,9 +19,9 @@ $norm = function ($v) {
 $by = [];
 if (preg_match('/\.json$/i', $file)) {
   $d = json_decode((string)file_get_contents($file), true);
-  foreach ((array)$d as $n => $rows) if (isset(SCHEMA[$n]) && is_array($rows)) $by[$n] = $rows;
+  foreach (normalize_user_table((array)$d) as $n => $rows) if (isset(SCHEMA[$n]) && is_array($rows)) $by[$n] = $rows;
 } else {
-  foreach (read_xlsx((string)file_get_contents($file)) as $n => $aoa) {
+  foreach (normalize_user_table(read_xlsx((string)file_get_contents($file))) as $n => $aoa) {
     if (!isset(SCHEMA[$n])) continue;
     $head = array_map(fn($h) => trim((string)$h), array_shift($aoa) ?? []);
     $by[$n] = [];
@@ -46,5 +46,5 @@ replaceAllTables($by);
 echo "นำเข้าเรียบร้อย:\n";
 foreach ($by as $n => $rows) echo '  ' . str_pad($n, 14) . count($rows) . " แถว\n";
 $hasAdmin = false;
-foreach ($by['Users'] ?? [] as $u) if ($u['role'] === 'admin' && $u['pass_hash'] !== '') $hasAdmin = true;
+foreach ($by['users'] ?? [] as $u) if ($u['role'] === 'admin' && $u['pass_hash'] !== '') $hasAdmin = true;
 if (!$hasAdmin) echo "\nไม่มีบัญชีผู้ดูแลในไฟล์ ให้รัน php scripts/install.php เพื่อสร้างบัญชี admin\n";

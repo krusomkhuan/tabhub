@@ -20,8 +20,26 @@ const BACKUP_BAD_FILE = 'ไฟล์นี้ไม่ใช่ไฟล์ส�
 
 function backup_dir(): string {
   $d = APP_ROOT . '/data/backup';
-  if (!is_dir($d)) @mkdir($d, 0775, true);
+  if (!is_dir($d) && !@mkdir($d, 0775, true) && !is_dir($d)) {
+    throw new Exception('สร้างโฟลเดอร์ data/backup ไม่สำเร็จ ตรวจสิทธิ์เขียนของ PHP ในโฟลเดอร์ data');
+  }
   return $d;
+}
+
+function backup_require_writable(): string {
+  $d = backup_dir();
+  clearstatcache(true, $d);
+  if (!is_writable($d)) {
+    throw new Exception('PHP ไม่มีสิทธิ์เขียนโฟลเดอร์ data/backup กรุณาตรวจ Permission และ Owner/Group บนโฮสติ้ง');
+  }
+  return $d;
+}
+
+/** เก็บสาเหตุจริงใน error log โดยไม่ส่งพาธเซิร์ฟเวอร์ให้หน้าเว็บ */
+function backup_write_error(string $operation): Exception {
+  $last = error_get_last();
+  error_log('[backup ' . $operation . '] ' . ($last['message'] ?? 'filesystem operation failed'));
+  return new Exception('บันทึกไฟล์ใน data/backup ไม่สำเร็จ กรุณาตรวจพื้นที่/โควตาโฮสติ้งและสิทธิ์เขียนของ PHP ดูสาเหตุเพิ่มเติมใน PHP error log');
 }
 
 function backup_path(string $name): string {
@@ -44,6 +62,7 @@ function backup_image_names(array $reports): array {
 
 function backup_create(string $kind, string $by): string {
   @set_time_limit(0);
+  backup_require_writable();
   $tables = [];
   foreach (array_keys(SCHEMA) as $t) $tables[$t] = readTable($t);
   $images = array_values(array_filter(backup_image_names($tables['TeachReports'] ?? []), fn($n) => is_file(report_image_dir() . '/' . $n)));
@@ -133,10 +152,10 @@ function backup_read(string $path, ?string $extractTo = null): array {
     $i++;
   }
   if (!is_array($tables) || (!$legacy && !$ended)) throw new Exception(BACKUP_BAD_FILE);
-  $tables = array_intersect_key($tables, SCHEMA);
+  $tables = array_intersect_key(normalize_user_table($tables), SCHEMA);
   foreach ($tables as $rows) if (!is_array($rows)) throw new Exception('ข้อมูลในไฟล์สำรองไม่ถูกต้อง');
   $admin = false;
-  foreach ($tables['Users'] ?? [] as $u) if (($u['role'] ?? '') === 'admin' && ($u['pass_hash'] ?? '') !== '' && (string)($u['active'] ?? '') !== 'false') $admin = true;
+  foreach ($tables['users'] ?? [] as $u) if (($u['role'] ?? '') === 'admin' && ($u['pass_hash'] ?? '') !== '' && (string)($u['active'] ?? '') !== 'false') $admin = true;
   if (!$admin) throw new Exception('กู้คืนไม่ได้ เพราะไฟล์นี้ไม่มีบัญชีผู้ดูแลระบบ จะทำให้เข้าระบบไม่ได้');
   if (empty($tables['Settings'])) throw new Exception('กู้คืนไม่ได้ เพราะไฟล์นี้ไม่มีค่าตั้งค่าของระบบ');
   return ['tables' => $tables, 'images' => $legacy ? null : $count, 'version' => (string)($meta['version'] ?? ''), 'created_at' => (string)($meta['created_at'] ?? '')];
@@ -172,7 +191,7 @@ function backup_files(): array {
     $t = DateTime::createFromFormat('Ymd His', $m[1] . ' ' . $m[2]);
     $out[] = ['name' => $name, 'time' => $t ? $t->format('Y-m-d H:i:s') : '', 'kind' => $m[3], 'kind_label' => BACKUP_KINDS[$m[3]], 'size' => filesize($p), 'mtime' => filemtime($p)];
   }
-  usort($out, fn($a, $b) => strcmp($b['time'], $a['time']) ?: strcmp($b['name'], $a['name']));
+  stable_usort($out, fn($a, $b) => strcmp($b['time'], $a['time']) ?: strcmp($b['name'], $a['name']));
   return $out;
 }
 
@@ -263,21 +282,29 @@ function api_backupDelete($token = '', $name = '') {
 function api_backupUploadChunk($token = '', $id = '', $offset = 0, $base64 = '', $last = false) {
   $me = auth_user($token, 'admin');
   @set_time_limit(0);
+  $dir = backup_require_writable();
   $id = str($id);
   if ($id === '') { backup_clean_temp(); $id = bin2hex(random_bytes(12)); }
   elseif (!preg_match('/^[a-f0-9]{24}$/', $id)) throw new Exception('อ่านไฟล์ไม่สำเร็จ');
-  $part = backup_dir() . '/upload-' . $id . '.part';
+  $part = $dir . '/upload-' . $id . '.part';
+  clearstatcache(true, $part);
   $size = is_file($part) ? filesize($part) : 0;
   if ((int)$offset !== $size) throw new Exception('ส่งไฟล์ไม่ต่อเนื่อง กรุณาอัปโหลดใหม่');
   $bytes = base64_decode(str($base64), true);
   if ($bytes === false) throw new Exception('อ่านไฟล์ไม่สำเร็จ');
   if ($size + strlen($bytes) > BACKUP_MAX_UPLOAD) { @unlink($part); throw new Exception('ไฟล์ใหญ่เกินไป'); }
-  if (file_put_contents($part, $bytes, FILE_APPEND | LOCK_EX) !== strlen($bytes)) { @unlink($part); throw new Exception('เขียนไฟล์ไม่สำเร็จ ตรวจสอบพื้นที่ของเครื่อง'); }
+  error_clear_last();
+  if (@file_put_contents($part, $bytes, FILE_APPEND | LOCK_EX) !== strlen($bytes)) {
+    $error = backup_write_error('upload chunk');
+    @unlink($part);
+    throw $error;
+  }
   if (!$last) return ['id' => $id];
   try {
     backup_read($part); // ไฟล์ที่ใช้กู้คืนไม่ได้จะไม่ถูกบันทึก
     $name = backup_new_name('upload');
-    if (!rename($part, backup_dir() . '/' . $name)) throw new Exception('เขียนไฟล์ไม่สำเร็จ');
+    error_clear_last();
+    if (!@rename($part, $dir . '/' . $name)) throw backup_write_error('finish upload');
   } catch (Throwable $e) { @unlink($part); throw $e; }
   log_action($me, 'อัปโหลดไฟล์สำรอง', $name);
   return ['name' => $name];

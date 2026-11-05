@@ -168,7 +168,7 @@ function ot_hours_for(array $D): array {
       $st = num($r['start']); $len = num($r['length']);
       for ($p = $st; $p < $st + $len; $p++) $w['items'][] = ot_item($D, $s, $date, $day, $p, $tid, $r);
     }
-    usort($w['items'], fn($a, $b) => $a['date'] < $b['date'] ? -1 : ($a['date'] > $b['date'] ? 1 : $a['period'] - $b['period']));
+    stable_usort($w['items'], fn($a, $b) => $a['date'] < $b['date'] ? -1 : ($a['date'] > $b['date'] ? 1 : $a['period'] - $b['period']));
   }
   unset($w);
   return $weeks;
@@ -242,7 +242,7 @@ function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, arr
     if ($method === 'combined_trim') {
       $over = $total - $totalCap;
       $order = OT_LEVELS;
-      usort($order, fn($a, $b) => $paid[$b] <=> $paid[$a]); // ฝั่งมากถูกตัด
+      stable_usort($order, fn($a, $b) => $paid[$b] <=> $paid[$a]); // ฝั่งมากถูกตัด
       foreach ($order as $l) { $cut = min($over, $paid[$l]); $paid[$l] -= $cut; $over -= $cut; }
       $res['warnings'][] = 'เกินเพดานรวม ' . $totalCap . ' ชม. — ตัดฝั่งที่เบิกมากกว่า (รวมแล้วตัด)';
     } else {

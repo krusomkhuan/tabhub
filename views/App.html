@@ -1088,8 +1088,8 @@ VIEWS.backup = function (el) {
     };
     $('#bkFile', el).onchange = function () {
       var file = this.files[0]; if (!file) return;
-      /* ส่งทีละส่วน เพราะไฟล์ที่มีรูปอาจใหญ่เกินขนาดคำขอที่เซิร์ฟเวอร์รับได้ */
-      var CHUNK = 8 * 1024 * 1024, label = $('label[for=bkFile]', el);
+      /* ส่งทีละส่วนเล็ก ๆ เพราะโฮสติ้งหลายแห่งจำกัดขนาดคำขอไว้ต่ำ */
+      var CHUNK = 2 * 1024 * 1024, label = $('label[for=bkFile]', el);
       function send(off, id) {
         var r = new FileReader(), last = off + CHUNK >= file.size;
         r.onload = function () {

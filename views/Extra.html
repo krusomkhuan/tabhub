@@ -514,18 +514,19 @@
       var min = dated.length ? Math.min.apply(null, dated.map(function (w) { return dayNo(w.start_date); })) : 0;
       var max = dated.length ? Math.max.apply(null, dated.map(function (w) { return dayNo(w.end_date); })) : 0;
       var span = Math.max(1, max - min + 1);
-      $j('#wqOut').html('<div class="card p-0"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr class="small muted"><th class="ps-3">คิว</th><th>สาขาวิชา</th><th>เริ่ม</th><th>สิ้นสุด</th><th>สถานะ</th><th style="min-width:110px">ตำแหน่งช่วงเวลา</th><th></th></tr></thead><tbody>' +
+      $j('#wqOut').html('<div class="card p-0"><div class="table-responsive"><table class="table align-middle mb-0 wq-table"><thead><tr class="small muted"><th class="ps-3">คิว</th><th>สาขาวิชา</th><th>เริ่ม</th><th>สิ้นสุด</th><th>สถานะ</th><th>ตำแหน่งช่วงเวลา</th><th>จัดการคิว</th></tr></thead><tbody>' +
         rows.map(function (w, i) {
           var st = winStatus(w, today), bar = '';
           if (w.start_date && w.end_date) {
             var left = (dayNo(w.start_date) - min) / span * 100, width = Math.max(4, (dayNo(w.end_date) - dayNo(w.start_date) + 1) / span * 100);
             var color = st[0] === 'เปิดอยู่' ? '#198754' : (st[0] === 'รอคิว' ? '#0dcaf0' : '#8a97a6');
-            bar = '<div title="' + dmy(w.start_date) + ' – ' + dmy(w.end_date) + '" class="position-absolute top-0 bottom-0 rounded text-white text-center overflow-hidden text-nowrap small" style="left:' + left + '%;width:' + Math.min(width, 100 - left) + '%;background:' + color + ';line-height:24px;font-family:monospace">' + dm(w.start_date) + '-' + dm(w.end_date) + '</div>';
+            bar = '<div class="wq-bar" style="left:' + left + '%;width:' + Math.min(width, 100 - left) + '%;background:' + color + '"></div>';
           }
-          return '<tr data-id="' + esc(w.id) + '"><td class="ps-3">' + (i + 1) + '</td><td>' + esc(deptName(w.department_id) || '—') + '</td><td class="text-nowrap" style="font-family:monospace">' + dmy(w.start_date) + '</td><td class="text-nowrap" style="font-family:monospace">' + dmy(w.end_date) + '</td><td><span class="badge rounded-pill ' + st[1] + '">' + st[0] + '</span></td>' +
-            '<td><div class="position-relative rounded" style="height:24px;background:#e4e8ec">' + bar + '</div></td>' +
-            '<td style="min-width:310px"><div class="d-flex flex-wrap gap-1 align-items-center justify-content-end"><div class="d-flex flex-nowrap gap-1"><button class="btn sm" data-a="up"' + (i === 0 ? ' disabled' : '') + ' title="เลื่อนขึ้น">↑</button><button class="btn sm" data-a="down"' + (i === rows.length - 1 ? ' disabled' : '') + ' title="เลื่อนลง">↓</button><button class="btn sm text-nowrap" data-a="open">เปิดก่อนกำหนด</button></div>' +
-            '<div class="d-flex flex-nowrap gap-1 align-items-center"><input type="date" class="form-control form-control-sm w-auto wq-s" value="' + esc(w.start_date) + '"><span class="muted">–</span><input type="date" class="form-control form-control-sm w-auto wq-e" value="' + esc(w.end_date) + '"></div><div class="d-flex flex-nowrap gap-1"><button class="btn sm text-nowrap" data-a="save">บันทึกช่วงเวลา</button><button class="btn sm bad" data-a="del">ลบ</button></div></div></td></tr>';
+          var dept = deptName(w.department_id) || '—';
+          return '<tr data-id="' + esc(w.id) + '"><td class="ps-3">' + (i + 1) + '</td><td class="wq-dept">' + esc(dept) + '</td><td class="wq-date">' + dmy(w.start_date) + '</td><td class="wq-date">' + dmy(w.end_date) + '</td><td><span class="badge rounded-pill wq-status ' + st[1] + '">' + st[0] + '</span></td>' +
+            '<td class="wq-timeline"><div class="wq-range small">' + (bar ? dm(w.start_date) + ' – ' + dm(w.end_date) : 'ไม่กำหนดช่วงเวลา') + '</div><div class="wq-track" aria-hidden="true">' + bar + '</div></td>' +
+            '<td><div class="wq-actions"><div class="wq-buttons"><button class="btn sm" data-a="up"' + (i === 0 ? ' disabled' : '') + ' title="เลื่อนขึ้น" aria-label="เลื่อนคิว ' + esc(dept) + ' ขึ้น">↑</button><button class="btn sm" data-a="down"' + (i === rows.length - 1 ? ' disabled' : '') + ' title="เลื่อนลง" aria-label="เลื่อนคิว ' + esc(dept) + ' ลง">↓</button><button class="btn sm" data-a="open">เปิดก่อนกำหนด</button></div>' +
+            '<div class="wq-dates"><input type="date" class="form-control form-control-sm wq-s" aria-label="วันเริ่มคิว ' + esc(dept) + '" value="' + esc(w.start_date) + '"><span class="muted">–</span><input type="date" class="form-control form-control-sm wq-e" aria-label="วันสิ้นสุดคิว ' + esc(dept) + '" value="' + esc(w.end_date) + '"></div><div class="wq-buttons"><button class="btn sm pri" data-a="save">บันทึกช่วงเวลา</button><button class="btn sm bad" data-a="del">ลบ</button></div></div></td></tr>';
         }).join('') + '</tbody></table></div></div>');
       $j('#wqOut [data-a]').on('click', function () {
         var a = $j(this).data('a'), tr = $j(this).closest('tr'), id = tr.data('id');

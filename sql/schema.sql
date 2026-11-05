@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS `PlcSlots` (
   KEY `ix_teacher_id` (`teacher_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `Users` (
+CREATE TABLE IF NOT EXISTS `users` (
   `_seq` BIGINT NOT NULL AUTO_INCREMENT,
   `id` VARCHAR(64) NULL,
   `username` TEXT NULL,

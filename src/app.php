@@ -1,5 +1,6 @@
 <?php
 /** ตัวรับคำขอเว็บ: หน้าเว็บ, API และไฟล์ดาวน์โหลด */
+require_once __DIR__ . '/compat.php';
 require_once __DIR__ . '/core.php';
 require_once __DIR__ . '/sched.php';
 require_once __DIR__ . '/ot.php';

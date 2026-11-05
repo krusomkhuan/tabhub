@@ -14,8 +14,8 @@ const ENV_FILE = APP_ROOT . '/.env';
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 function has_admin(PDO $pdo): bool {
-  if (!$pdo->query("SHOW TABLES LIKE 'Users'")->fetch()) return false;
-  $n = $pdo->query("SELECT COUNT(*) FROM `Users` WHERE role = 'admin' AND pass_hash <> '' AND (active IS NULL OR active <> 'false')")->fetchColumn();
+  if (!$pdo->query("SHOW TABLES LIKE 'users'")->fetch()) return false;
+  $n = $pdo->query("SELECT COUNT(*) FROM `users` WHERE role = 'admin' AND pass_hash <> '' AND (active IS NULL OR active <> 'false')")->fetchColumn();
   return (int)$n > 0;
 }
 
@@ -40,7 +40,7 @@ function installer_state(): string {
 function requirements(): array {
   $writable = fn(string $d) => is_dir($d) ? is_writable($d) : is_writable(dirname($d));
   return [
-    'PHP 8.1 ขึ้นไป' => PHP_VERSION_ID >= 80100,
+    'PHP 7.4 ขึ้นไป' => PHP_VERSION_ID >= 70400,
     'ส่วนขยาย pdo_mysql' => extension_loaded('pdo_mysql'),
     'ส่วนขยาย mbstring' => extension_loaded('mbstring'),
     'ส่วนขยาย zlib' => extension_loaded('zlib'),
@@ -90,7 +90,7 @@ function run_install(array $f): string {
   foreach (DEFAULT_SETTINGS as $k => $v) if (!array_key_exists($k, $s)) appendRows('Settings', [['key' => $k, 'value' => $v]]);
   if ($existingAdmin) { schema_mark_synced(); write_lock(); return 'พบบัญชีผู้ดูแลในฐานข้อมูลนี้อยู่แล้ว ระบบใช้ข้อมูลเดิมและไม่ได้สร้างบัญชีใหม่ เข้าระบบด้วยบัญชีเดิมได้เลย'; }
   saveSetting('college_name', $f['college']);
-  appendRows('Users', [['id' => new_id(), 'username' => $f['admin_user'], 'name' => $f['admin_name'], 'role' => 'admin', 'department_id' => '', 'teacher_id' => '', 'salt' => uuid(), 'pass_hash' => hash_password($f['admin_pass']), 'active' => true]]);
+  appendRows('users', [['id' => new_id(), 'username' => $f['admin_user'], 'name' => $f['admin_name'], 'role' => 'admin', 'department_id' => '', 'teacher_id' => '', 'salt' => uuid(), 'pass_hash' => hash_password($f['admin_pass']), 'active' => true]]);
   schema_mark_synced();
   write_lock();
   return 'เข้าระบบด้วยชื่อผู้ใช้ ' . $f['admin_user'] . ' และรหัสผ่านที่เพิ่งตั้งได้เลย';

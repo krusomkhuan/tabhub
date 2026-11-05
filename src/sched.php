@@ -150,7 +150,7 @@ function sched_split(array $p, array $ctx): array {
 /** ก้อนที่ยังไม่ได้ลงตารางของแผน */
 function sched_remaining(array $p, array $sessions, array $ctx): array {
   $blocks = sched_split($p, $ctx);
-  usort($blocks, fn($a, $b) => $b <=> $a);
+  stable_usort($blocks, fn($a, $b) => $b <=> $a);
   $placed = [];
   foreach ($sessions as $s) if ((string)$s['plan_id'] === (string)$p['id']) $placed[] = num($s['length']);
   $left = sched_plan_periods($p, $ctx) - array_sum($placed);
@@ -276,7 +276,7 @@ function sched_slots(SchedBlock $block, SchedOcc $occ, array $ctx, callable $rnd
       $res[] = ['day' => $d, 'start' => $st, 'score' => $score];
     }
   }
-  usort($res, fn($a, $b) => $a['score'] <=> $b['score']);
+  stable_usort($res, fn($a, $b) => $a['score'] <=> $b['score']);
   return $res;
 }
 
@@ -337,7 +337,7 @@ function sched_repair(array $unplaced, array &$placed, SchedOcc $occ, array $ctx
         if ($free && $vs && count($vs) <= 2) $options[] = ['day' => $d, 'start' => $st, 'victims' => $vs, 'r' => $rnd() + count($vs)];
       }
     }
-    usort($options, fn($x, $y) => $x['r'] <=> $y['r']);
+    stable_usort($options, fn($x, $y) => $x['r'] <=> $y['r']);
     for ($i = 0; $i < count($options) && !$done && $i < 40; $i++) {
       $o = $options[$i];
       foreach ($o['victims'] as $v) foreach ($v->sessions as $s) $occ->add($s, -1);
@@ -386,7 +386,7 @@ function sched_auto(array $plans, array $fixed, array $ctx, array $opt = []): ar
       foreach ($b->info['teachers'] as $t) $maxLoad = max($maxLoad, $load[$t] ?? 0);
       $b->diff = $b->length * 10 + count($b->unit->plans) * 15 + $maxLoad + ($b->info['rooms'] ? 8 : 0) + $rnd() * ($a === 0 ? 0 : 15);
     }
-    usort($blocks, fn($x, $y) => $y->diff <=> $x->diff);
+    stable_usort($blocks, fn($x, $y) => $y->diff <=> $x->diff);
     $placed = []; $unplaced = [];
     foreach ($blocks as $b) {
       $c = sched_slots($b, $occ, $ctx, $rnd)[0] ?? null;

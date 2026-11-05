@@ -409,6 +409,22 @@
   .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 12px; }
   .card .table { --bs-table-bg: transparent; }
   .page h2 { font-size: 20px; }
+  /* คิวจัดตาราง: แยกคำอธิบายจากแถบเวลา และจัดเครื่องมือเป็นแถว */
+  .wq-table { min-width: 980px; }
+  .wq-table > thead > tr > th { white-space: nowrap; padding: 12px 10px; }
+  .wq-table > tbody > tr > td { padding: 14px 10px; }
+  .wq-dept { min-width: 140px; }
+  .wq-date, .wq-status, .wq-range { white-space: nowrap; }
+  .wq-date, .wq-range { font-variant-numeric: tabular-nums; }
+  .wq-timeline { min-width: 170px; }
+  .wq-range { margin-bottom: 6px; color: var(--muted); }
+  .wq-track { position: relative; height: 10px; border-radius: 8px; background: var(--line); overflow: hidden; }
+  .wq-bar { position: absolute; top: 0; bottom: 0; border-radius: inherit; }
+  .wq-actions { display: grid; gap: 8px; min-width: 310px; }
+  .wq-buttons { display: flex; gap: 6px; flex-wrap: nowrap; }
+  .wq-actions .btn { flex: 0 0 auto; white-space: nowrap; }
+  .wq-dates { display: grid; grid-template-columns: minmax(140px, 1fr) auto minmax(140px, 1fr); gap: 6px; align-items: center; }
+  .wq-dates input[type=date] { width: 100%; min-width: 0; }
   /* ===== โหมดกลางคืน: เอกสารที่จะพิมพ์คงพื้นขาวตัวดำเสมอ ===== */
   html[data-theme="dark"] {
     color-scheme: dark;

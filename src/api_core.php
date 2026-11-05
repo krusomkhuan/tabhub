@@ -37,7 +37,7 @@ function auth_user($token, ?string $need = null): array {
 
 function api_login($username = '', $password = '') {
   $username = strtolower(trim(str($username ?? '')));
-  $users = readTable('Users');
+  $users = readTable('users');
   $idx = null;
   foreach ($users as $i => $x) {
     if (strtolower((string)$x['username']) === $username && (string)$x['active'] !== 'false') { $idx = $i; break; }
@@ -48,7 +48,7 @@ function api_login($username = '', $password = '') {
   if ($r['legacy']) { // เปลี่ยนรหัสแบบเดิมเป็นแบบใหม่
     $users[$idx]['salt'] = uuid();
     $users[$idx]['pass_hash'] = hash_password(pw_text($password));
-    writeTable('Users', $users);
+    writeTable('users', $users);
   }
   $token = uuid();
   $info = ['id' => $u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'], 'department_id' => $u['department_id'], 'teacher_id' => $u['teacher_id']];
@@ -66,11 +66,11 @@ function api_changePassword($token = '', $oldPw = '', $newPw = '') {
   $me = auth_user($token);
   if (mb_strlen(pw_text($newPw)) < 6) throw new Exception('รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร');
   return with_lock(function () use ($me, $oldPw, $newPw) {
-    $users = readTable('Users');
+    $users = readTable('users');
     $i = find_row($users, $me['id']);
     if ($i === null || !verify_password(pw_text($oldPw), $users[$i]['salt'], $users[$i]['pass_hash'])['ok']) throw new Exception('รหัสผ่านเดิมไม่ถูกต้อง');
     $users[$i]['salt'] = uuid(); $users[$i]['pass_hash'] = hash_password(pw_text($newPw));
-    writeTable('Users', $users);
+    writeTable('users', $users);
     return true;
   });
 }
@@ -79,7 +79,7 @@ function api_changePassword($token = '', $oldPw = '', $newPw = '') {
 const AVATAR_MAX_BYTES = 45000;
 
 function user_avatar($id): string {
-  $users = readTable('Users');
+  $users = readTable('users');
   $i = find_row($users, str($id));
   $v = $i === null ? '' : (string)($users[$i]['avatar'] ?? '');
   // ไฟล์สำรองที่อัปโหลดอาจมีค่าแปลกปลอม จึงส่งออกเฉพาะรูปตามรูปแบบที่ระบบสร้าง
@@ -89,7 +89,7 @@ function user_avatar($id): string {
 /** โปรไฟล์ของผู้ใช้เอง ชื่อผู้ใช้และสิทธิ์ให้ผู้ดูแลระบบเป็นผู้เปลี่ยน */
 function api_profileGet($token = '') {
   $me = auth_user($token);
-  $users = readTable('Users');
+  $users = readTable('users');
   $i = find_row($users, $me['id']);
   if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
   return ['username' => $users[$i]['username'], 'name' => $users[$i]['name'], 'email' => $users[$i]['email'], 'avatar' => user_avatar($me['id'])];
@@ -115,12 +115,12 @@ function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
     }
   }
   return with_lock(function () use ($me, $token, $name, $email, $uri) {
-    $users = readTable('Users');
+    $users = readTable('users');
     $i = find_row($users, $me['id']);
     if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
     $users[$i]['name'] = $name; $users[$i]['email'] = $email;
     if ($uri !== null) $users[$i]['avatar'] = $uri;
-    writeTable('Users', $users);
+    writeTable('users', $users);
     // ชื่อบนหน้าเว็บและในประวัติการแก้ไขอ่านจากข้อมูลการเข้าระบบ จึงต้องอัปเดตด้วย
     $me['name'] = $name;
     kvPut('cache:tok_' . $token, json_encode($me, JSON_UNESCAPED_UNICODE), 21600);
@@ -134,14 +134,14 @@ function api_listUsers($token = '') {
   return array_map(fn($u) => [
     'id' => $u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'], 'department_id' => $u['department_id'],
     'teacher_id' => $u['teacher_id'], 'email' => $u['email'], 'active' => $u['active'], 'has_password' => $u['pass_hash'] !== '',
-  ], readTable('Users'));
+  ], readTable('users'));
 }
 
 function api_saveUser($token = '', $data = []) {
   $me = auth_user($token, 'admin');
   $data = (array)$data;
   return with_lock(function () use ($me, $data) {
-    $users = readTable('Users');
+    $users = readTable('users');
     $uname = strtolower(trim(str($data['username'] ?? '')));
     if ($uname === '') throw new Exception('กรุณาระบุชื่อผู้ใช้');
     $id = $data['id'] ?? '';
@@ -164,7 +164,7 @@ function api_saveUser($token = '', $data = []) {
       $u['salt'] = uuid(); $u['pass_hash'] = hash_password(pw_text($data['password']));
     }
     $users[$i] = $u;
-    writeTable('Users', $users);
+    writeTable('users', $users);
     log_action($me, 'saveUser', $uname);
     return true;
   });
@@ -174,7 +174,7 @@ function api_deleteUser($token = '', $id = '') {
   $me = auth_user($token, 'admin');
   if ($id === $me['id']) throw new Exception('ลบบัญชีตัวเองไม่ได้');
   return with_lock(function () use ($me, $id) {
-    writeTable('Users', array_values(array_filter(readTable('Users'), fn($x) => $x['id'] !== $id)));
+    writeTable('users', array_values(array_filter(readTable('users'), fn($x) => $x['id'] !== $id)));
     log_action($me, 'deleteUser', $id);
     return true;
   });
@@ -185,7 +185,7 @@ function api_bulkCreateTeacherUsers($token = '', $defaultPassword = '') {
   $me = auth_user($token, 'admin');
   if (mb_strlen(pw_text($defaultPassword)) < 6) throw new Exception('รหัสผ่านเริ่มต้นต้องมีอย่างน้อย 6 ตัวอักษร');
   return with_lock(function () use ($me, $defaultPassword) {
-    $users = readTable('Users');
+    $users = readTable('users');
     $linked = []; $taken = [];
     foreach ($users as $u) { if ($u['teacher_id'] !== '') $linked[$u['teacher_id']] = 1; $taken[strtolower((string)$u['username'])] = 1; }
     $n = 0;
@@ -196,7 +196,7 @@ function api_bulkCreateTeacherUsers($token = '', $defaultPassword = '') {
       $users[] = ['id' => new_id(), 'username' => $uname, 'name' => $t['name'], 'role' => 'teacher', 'department_id' => $t['department_id'], 'teacher_id' => $t['id'], 'salt' => uuid(), 'pass_hash' => hash_password(pw_text($defaultPassword)), 'active' => true];
       $taken[$uname] = 1; $n++;
     }
-    writeTable('Users', $users);
+    writeTable('users', $users);
     log_action($me, 'bulkCreateTeacherUsers', $n . ' บัญชี');
     return $n;
   });
@@ -259,7 +259,7 @@ function api_bootstrap($token = '', $semesterId = '') {
 
 function api_listTable($token = '', $name = '', $filter = null) {
   $me = auth_user($token);
-  if (!is_string($name) || !isset(SCHEMA[$name]) || $name === 'Users') throw new Exception('ไม่อนุญาต');
+  if (!is_string($name) || !isset(SCHEMA[$name]) || $name === 'users') throw new Exception('ไม่อนุญาต');
   $rows = scope_rows($me, $name, readTable($name));
   if (is_array($filter) && $filter) {
     $rows = array_values(array_filter($rows, function ($r) use ($filter) {
