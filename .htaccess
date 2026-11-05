@@ -3,7 +3,7 @@
 Require all denied
 
 # ยกเว้นหน้า /tabhub/ ซึ่งแค่พาไปยังพอร์ต 8080 เพื่อให้โฟลเดอร์แสดงในรายการของ localhost
-DirectoryIndex index.html
-<If "%{REQUEST_URI} =~ m#^/tabhub(/|/index\.html)?$#">
+DirectoryIndex index.php
+<If "%{REQUEST_URI} =~ m#^/tabhub(/|/index\.php)?$#">
     Require all granted
 </If>
