@@ -1,9 +1,10 @@
 <?php
 /**
- * หน้าเข้าระบบจาก http://localhost/tabhub/ : พาไปยังตัวระบบที่พอร์ต 8080
- * ตัวระบบจริงอยู่ที่ public/index.php
+ * ระบบจัดตารางเรียน–ตารางสอน และค่าสอนเกินภาระงาน วิทยาลัยการอาชีพโพนทอง (PHP + MariaDB)
+ * ทุกคำขอเข้าที่ไฟล์นี้ (ดู .htaccess) เปิดที่ http://localhost/tabhub/
  */
-$host = preg_replace('/:\d+$/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
-if (!preg_match('/^(\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)$/', $host)) $host = 'localhost';
-header('Location: http://' . $host . ':8080/', true, 302);
-header('Cache-Control: no-store');
+ini_set('display_errors', '0'); // ข้อความ error ต้องไม่ปนใน JSON ที่ส่งให้หน้าเว็บ
+ini_set('log_errors', '1');
+set_time_limit(300);
+require __DIR__ . '/src/app.php';
+handle_request();

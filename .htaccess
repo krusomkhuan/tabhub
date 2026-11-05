@@ -1,9 +1,22 @@
-# ห้าม Apache (XAMPP) เปิดไฟล์ในโฟลเดอร์นี้ เพราะมี .env, ไฟล์สำรองฐานข้อมูล และข้อมูลส่วนบุคคล
-# ตัวระบบเปิดที่พอร์ต 8080 จากโฟลเดอร์ public เท่านั้น
-Require all denied
-
-# ยกเว้นหน้า /tabhub/ ซึ่งแค่พาไปยังพอร์ต 8080 เพื่อให้โฟลเดอร์แสดงในรายการของ localhost
+# ทุกคำขอต้องผ่าน index.php เท่านั้น เปิดไฟล์ในโฟลเดอร์นี้โดยตรงไม่ได้
+# เพราะมี .env, ไฟล์สำรองฐานข้อมูล และข้อมูลส่วนบุคคล ห้ามลบไฟล์นี้
+Options -Indexes
 DirectoryIndex index.php
-<If "%{REQUEST_URI} =~ m#^/tabhub(/|/index\.php)?$#">
-    Require all granted
-</If>
+Require all granted
+
+# ชั้นที่ 1: ถ้า Apache ไม่มี mod_rewrite ให้ปิดทั้งโฟลเดอร์ ดีกว่าเปิดไฟล์ลับ
+<IfModule !mod_rewrite.c>
+    Require all denied
+</IfModule>
+
+# ชั้นที่ 2: ห้ามไฟล์ซ่อนและไฟล์ข้อมูลทุกกรณี
+<FilesMatch "(^\.|\.(env|sql|json|log|md|bat|lock|bak|xlsx|name)$)">
+    Require all denied
+</FilesMatch>
+
+# ชั้นที่ 3: ส่งทุกอย่างเข้า index.php ยกเว้นไฟล์ Bootstrap และ jQuery
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^assets/([A-Za-z0-9._-]+)$ public/assets/$1 [END]
+    RewriteRule ^ index.php [END]
+</IfModule>

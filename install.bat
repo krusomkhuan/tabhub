@@ -9,5 +9,5 @@ echo ตรวจค่าฐานข้อมูลในไฟล์ .env (�
 notepad .env
 "%PHP%" scripts\install.php
 echo.
-echo เสร็จแล้ว - ตั้งค่า Apache พอร์ต 8080 ตามคู่มือ README.md แล้วเปิด http://localhost:8080
+echo เสร็จแล้ว - เปิด http://localhost/tabhub/
 pause

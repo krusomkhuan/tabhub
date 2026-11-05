@@ -133,7 +133,9 @@ function render_page(string $page, array $params, string $title): string {
 }
 
 function handle_request(): void {
-  $base = rtrim(cfg('BASE_PATH'), '/');
+  // ตำแหน่งของระบบหาจากที่อยู่ของ index.php เช่น /tabhub หรือกำหนดเองด้วย BASE_PATH
+  $auto = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? ''))), '/');
+  $base = rtrim(cfg('BASE_PATH', $auto), '/');
   $path = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
   $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
   if ($base !== '') {

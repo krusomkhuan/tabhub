@@ -2,7 +2,8 @@
 .env
 
 # ข้อมูลจริงของวิทยาลัย (มีข้อมูลส่วนบุคคล) ห้ามขึ้น Git
-data/
+data/*
+!data/.htaccess
 sql/tabhub.sql
 sql/data.sql
 

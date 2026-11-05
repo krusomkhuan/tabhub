@@ -26,24 +26,9 @@ XAMPP มีครบทุกตัว แถว "MySQL" ใน XAMPP Control P
 2. เปิด Apache และ MySQL ใน XAMPP Control Panel
 3. คัดลอก `.env.example` เป็น `.env` แล้วใส่ค่าฐานข้อมูล
 4. ดับเบิลคลิก `install.bat` เพื่อสร้างตาราง ถ้ายังไม่มีผู้ดูแลระบบ ระบบจะแสดงรหัสผ่านชั่วคราวของบัญชี `admin` ครั้งเดียว
-5. เพิ่มข้อความนี้ท้ายไฟล์ `C:\xampp\apache\conf\extra\httpd-vhosts.conf` แล้วรีสตาร์ต Apache
+5. เปิด http://localhost/tabhub/ ส่วนเครื่องอื่นในวิทยาลัยเข้าที่ `http://IP-ของเครื่องนี้/tabhub/` โดยต้องอนุญาตพอร์ต 80 ใน Windows Firewall ก่อน
 
-```apache
-Listen 8080
-<VirtualHost *:8080>
-    ServerName localhost
-    DocumentRoot "C:/xampp/htdocs/tabhub/public"
-    <Directory "C:/xampp/htdocs/tabhub/public">
-        Options -Indexes
-        AllowOverride None
-        Require all granted
-        DirectoryIndex index.php
-        FallbackResource /index.php
-    </Directory>
-</VirtualHost>
-```
-
-6. เปิด http://localhost:8080 ส่วนเครื่องอื่นในวิทยาลัยเข้าที่ `http://IP-ของเครื่องนี้:8080` โดยต้องอนุญาตพอร์ต 8080 ใน Windows Firewall ก่อน
+ต้องเปิด `mod_rewrite` ของ Apache และตั้ง `AllowOverride All` ซึ่ง XAMPP ตั้งไว้ให้แล้ว ถ้าไม่มี `mod_rewrite` ระบบจะปิดทั้งโฟลเดอร์เพื่อกันไฟล์ลับรั่ว
 
 > โปรเจกต์นี้ไม่มีข้อมูลจริงของวิทยาลัยใน Git ให้นำเข้าจากไฟล์สำรองหรือจากระบบเดิม
 
@@ -66,8 +51,9 @@ C:\xampp\mysql\bin\mariadb-dump -u root -p tabhub > backup.sql
 
 ## โครงสร้างไฟล์
 ```
-public/index.php     จุดรับคำขอเว็บ (เปิดจากเว็บได้เฉพาะโฟลเดอร์ public)
-public/assets/       Bootstrap 5 และ jQuery
+index.php            จุดรับคำขอเว็บ ทุกคำขอเข้าที่ไฟล์นี้
+.htaccess            ห้ามเปิดไฟล์โดยตรง และส่งคำขอเข้า index.php
+public/assets/       Bootstrap 5 และ jQuery (เปิดที่ /tabhub/assets/)
 src/core.php         ค่าตั้งค่า โครงสร้างตาราง การอ่าน/เขียนฐานข้อมูล
 src/app.php          เส้นทางเว็บ รายการ API ที่อนุญาต การจำกัดล็อกอิน
 src/sched.php        ตรวจการชนและจัดตารางอัตโนมัติ
@@ -89,6 +75,6 @@ sql/schema.sql       โครงสร้างตาราง
 - ทุกคำขอเป็น transaction ถ้าเกิดข้อผิดพลาดกลางคันข้อมูลจะย้อนกลับทั้งหมด และการเขียนใช้ล็อกเดียวกันเพื่อไม่ให้ข้อมูลทับกัน
 - รหัสผ่านแบบเดิม (SHA-256) ยังเข้าระบบได้ และจะถูกเปลี่ยนเป็น bcrypt ตอนล็อกอินสำเร็จ
 - ล็อกอินผิด 5 ครั้งจาก IP และชื่อผู้ใช้เดียวกัน จะถูกพัก 15 นาที ถ้าใช้ reverse proxy ให้ตั้ง `TRUST_PROXY=true`
-- ไฟล์ `.htaccess` ที่รากโปรเจกต์ห้าม Apache เปิดโฟลเดอร์นี้ผ่านพอร์ต 80 **ห้ามลบ** เพราะมีไฟล์ `.env` และข้อมูลสำรองอยู่
+- ไฟล์ `.htaccess` ที่รากโปรเจกต์และในโฟลเดอร์ `src`, `sql`, `data`, `scripts`, `views` **ห้ามลบ** เพราะกันไม่ให้เปิด `.env` และข้อมูลสำรองจากเว็บ
 - ปุ่ม "นำเข้าจาก TAB" ต้องใส่ `TAB_API_KEY` ในไฟล์ `.env` ก่อน
 - ข้อมูลครูและนักศึกษาเป็นข้อมูลส่วนบุคคล ควรตั้งรหัสผ่าน MariaDB และใช้ HTTPS เมื่อเปิดใช้งานผ่านอินเทอร์เน็ต
