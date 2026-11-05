@@ -1,3 +1,9 @@
 # ห้าม Apache (XAMPP) เปิดไฟล์ในโฟลเดอร์นี้ เพราะมี .env, ไฟล์สำรองฐานข้อมูล และข้อมูลส่วนบุคคล
-# ตัวระบบรันด้วย Node.js (server.js) ไม่ได้ใช้ Apache จึงปิดทั้งโฟลเดอร์ได้
+# ตัวระบบเปิดที่พอร์ต 8080 จากโฟลเดอร์ public เท่านั้น
 Require all denied
+
+# ยกเว้นหน้า /tabhub/ ซึ่งแค่พาไปยังพอร์ต 8080 เพื่อให้โฟลเดอร์แสดงในรายการของ localhost
+DirectoryIndex index.html
+<If "%{REQUEST_URI} =~ m#^/tabhub(/|/index\.html)?$#">
+    Require all granted
+</If>
