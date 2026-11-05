@@ -21,6 +21,7 @@ const API_ALLOW = [
   'importFromTAB', 'listTabSemesters',
   'teachReportSlots', 'teachReportSave', 'teachReportList', 'teachReportReview', 'teachReportDelete', 'teachReportSummary',
   'internList', 'internSave', 'internBulkSave', 'internDelete', 'visitList', 'visitSave', 'visitDelete', 'otCoverSheet',
+  'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
 ];
 const LOGIN_MAX_FAILS = 5;
 const LOGIN_WINDOW_SEC = 900;

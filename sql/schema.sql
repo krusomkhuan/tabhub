@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS `Windows` (
   `department_id` VARCHAR(64) NULL,
   `start_date` TEXT NULL,
   `end_date` TEXT NULL,
+  `sort` TEXT NULL,
   PRIMARY KEY (`_seq`),
   KEY `ix_id` (`id`),
   KEY `ix_semester_id` (`semester_id`),

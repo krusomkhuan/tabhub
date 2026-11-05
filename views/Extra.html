@@ -10,6 +10,9 @@
     { id: 'intern', label: 'นักศึกษาฝึกงาน / บันทึกนิเทศ', role: 'teacher' },
     { id: 'intern-summary', label: 'สรุปการนิเทศ', role: 'dept' }
   );
+  var wi = NAV.map(function (n) { return n.id; }).indexOf('t-Windows');
+  if (wi >= 0) NAV[wi] = { id: 'windows', label: 'คิว/ช่วงเวลาจัดตาราง', role: 'admin' };
+  NAV_ICON.windows = '⏳';
   var at = NAV.map(function (n) { return n.id; }).indexOf('ot-summary');
   NAV.splice(at + 1, 0, { id: 'ot-cover', label: 'งบหน้าแผนกวิชา', role: 'dept' });
   $j.extend(NAV_ICON, { 'teach-report': '📝', 'teach-review': '✅', intern: '🏭', 'intern-summary': '📊', 'ot-cover': '📄' });
@@ -269,6 +272,59 @@
       });
     }
     $j('#cvR,#cvD').on('change', load);
+    load();
+  };
+
+  /* ---------- คิว/ช่วงเวลาจัดตาราง ---------- */
+  var WQ = { sem: '' };
+  var dmy = function (s) { if (!s) return '—'; var p = String(s).slice(0, 10).split('-'); return p[2] + '/' + p[1] + '/' + p[0]; };
+  var dm = function (s) { var p = String(s).slice(0, 10).split('-'); return p[2] + '/' + p[1]; };
+  var dayNo = function (s) { return Math.round(new Date(String(s).slice(0, 10) + 'T00:00:00Z').getTime() / 86400000); };
+  var winStatus = function (w, today) {
+    if (!w.start_date && !w.end_date) return ['ไม่กำหนด', 'text-bg-light border'];
+    if (w.start_date && today < w.start_date) return ['รอคิว', 'text-bg-info'];
+    if (w.end_date && today > w.end_date) return ['ปิดแล้ว', 'text-bg-secondary'];
+    return ['เปิดอยู่', 'text-bg-success'];
+  };
+  VIEWS.windows = function (el) {
+    if (!WQ.sem) WQ.sem = S.sem;
+    var semOpts = S.D.Semesters.map(function (s) { return '<option value="' + esc(s.id) + '"' + (String(s.id) === String(WQ.sem) ? ' selected' : '') + '>' + esc(s.label || (s.term + '/' + s.year)) + '</option>'; }).join('');
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-3 align-items-end"><div><label class="form-label small muted mb-1">ภาคเรียน</label><select id="wqS" class="form-select" style="min-width:230px">' + semOpts + '</select></div><button class="btn pri" id="wqAdd">+ สร้างคิวสำหรับแผนกที่ยังไม่มี</button></div></div><div id="wqOut"></div>');
+    function reload() {
+      // หน้าจัดตารางใช้ข้อมูลคิวชุดเดียวกัน จึงโหลดข้อมูลหลักใหม่ด้วย
+      return reloadData().then(load);
+    }
+    function load() { return api('windowList', S.token, WQ.sem).then(draw); }
+    function draw(rows) {
+      if (!rows.length) { $j('#wqOut').html('<div class="card muted">ภาคเรียนนี้ยังไม่มีคิว กด "สร้างคิวสำหรับแผนกที่ยังไม่มี" เพื่อเริ่มต้น แผนกที่ไม่มีคิวจะจัดตารางได้ตลอดเวลา</div>'); return; }
+      var today = todayStr();
+      var dated = rows.filter(function (w) { return w.start_date && w.end_date; });
+      var min = dated.length ? Math.min.apply(null, dated.map(function (w) { return dayNo(w.start_date); })) : 0;
+      var max = dated.length ? Math.max.apply(null, dated.map(function (w) { return dayNo(w.end_date); })) : 0;
+      var span = Math.max(1, max - min + 1);
+      $j('#wqOut').html('<div class="card p-0"><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr class="small muted"><th class="ps-3">คิว</th><th>สาขาวิชา</th><th>เริ่ม</th><th>สิ้นสุด</th><th>สถานะ</th><th style="min-width:110px">ตำแหน่งช่วงเวลา</th><th></th></tr></thead><tbody>' +
+        rows.map(function (w, i) {
+          var st = winStatus(w, today), bar = '';
+          if (w.start_date && w.end_date) {
+            var left = (dayNo(w.start_date) - min) / span * 100, width = Math.max(4, (dayNo(w.end_date) - dayNo(w.start_date) + 1) / span * 100);
+            var color = st[0] === 'เปิดอยู่' ? '#198754' : (st[0] === 'รอคิว' ? '#0dcaf0' : '#8a97a6');
+            bar = '<div title="' + dmy(w.start_date) + ' – ' + dmy(w.end_date) + '" class="position-absolute top-0 bottom-0 rounded text-white text-center overflow-hidden text-nowrap small" style="left:' + left + '%;width:' + Math.min(width, 100 - left) + '%;background:' + color + ';line-height:24px;font-family:monospace">' + dm(w.start_date) + '-' + dm(w.end_date) + '</div>';
+          }
+          return '<tr data-id="' + esc(w.id) + '"><td class="ps-3">' + (i + 1) + '</td><td>' + esc(deptName(w.department_id) || '—') + '</td><td class="text-nowrap" style="font-family:monospace">' + dmy(w.start_date) + '</td><td class="text-nowrap" style="font-family:monospace">' + dmy(w.end_date) + '</td><td><span class="badge rounded-pill ' + st[1] + '">' + st[0] + '</span></td>' +
+            '<td><div class="position-relative rounded" style="height:24px;background:#e4e8ec">' + bar + '</div></td>' +
+            '<td style="min-width:310px"><div class="d-flex flex-wrap gap-1 align-items-center justify-content-end"><div class="d-flex flex-nowrap gap-1"><button class="btn sm" data-a="up"' + (i === 0 ? ' disabled' : '') + ' title="เลื่อนขึ้น">↑</button><button class="btn sm" data-a="down"' + (i === rows.length - 1 ? ' disabled' : '') + ' title="เลื่อนลง">↓</button><button class="btn sm text-nowrap" data-a="open">เปิดก่อนกำหนด</button></div>' +
+            '<div class="d-flex flex-nowrap gap-1 align-items-center"><input type="date" class="form-control form-control-sm w-auto wq-s" value="' + esc(w.start_date) + '"><span class="muted">–</span><input type="date" class="form-control form-control-sm w-auto wq-e" value="' + esc(w.end_date) + '"></div><div class="d-flex flex-nowrap gap-1"><button class="btn sm text-nowrap" data-a="save">บันทึกช่วงเวลา</button><button class="btn sm bad" data-a="del">ลบ</button></div></div></td></tr>';
+        }).join('') + '</tbody></table></div></div>');
+      $j('#wqOut [data-a]').on('click', function () {
+        var a = $j(this).data('a'), tr = $j(this).closest('tr'), id = tr.data('id');
+        if (a === 'up' || a === 'down') api('windowMove', S.token, id, a === 'up' ? -1 : 1).then(load);
+        else if (a === 'open') { if (confirm('เปิดคิวนี้ตั้งแต่วันนี้?')) api('windowOpenNow', S.token, id).then(function () { toast('เปิดคิวแล้ว'); reload(); }); }
+        else if (a === 'save') api('windowSave', S.token, id, tr.find('.wq-s').val(), tr.find('.wq-e').val()).then(function () { toast('บันทึกแล้ว'); reload(); });
+        else if (a === 'del') { if (confirm('ลบคิวนี้? แผนกจะจัดตารางได้ตลอดเวลาถ้าไม่มีคิวอื่น')) api('windowDelete', S.token, id).then(reload); }
+      });
+    }
+    $j('#wqS').on('change', function () { WQ.sem = this.value; load(); });
+    $j('#wqAdd').on('click', function () { api('windowCreateMissing', S.token, WQ.sem).then(function (n) { toast(n ? 'สร้างคิวแล้ว ' + n + ' แผนก' : 'ทุกแผนกมีคิวแล้ว'); reload(); }); });
     load();
   };
 })(jQuery);

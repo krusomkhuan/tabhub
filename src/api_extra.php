@@ -376,6 +376,107 @@ function api_visitDelete($token = '', $id = '') {
   });
 }
 
+// ======================= คิว/ช่วงเวลาจัดตาราง =======================
+/** คิวของภาคเรียน เรียงตามลำดับคิว (แถวที่ยังไม่มีลำดับต่อท้ายตามลำดับเดิม) */
+function windows_of($semesterId): array {
+  $rows = array_values(array_filter(readTable('Windows'), fn($w) => (string)$w['semester_id'] === str($semesterId)));
+  $i = 0;
+  $keyed = array_map(function ($w) use (&$i) { return ['w' => $w, 's' => $w['sort'] === '' ? PHP_INT_MAX : num($w['sort']), 'i' => $i++]; }, $rows);
+  usort($keyed, fn($a, $b) => [$a['s'], $a['i']] <=> [$b['s'], $b['i']]);
+  return array_map(fn($k) => $k['w'], $keyed);
+}
+
+function api_windowList($token = '', $semesterId = '') {
+  auth_user($token, 'admin');
+  return windows_of($semesterId);
+}
+
+/** เพิ่มคิวให้แผนกที่ยังไม่มีในภาคเรียนนี้ โดยยังไม่กำหนดวันที่ */
+function api_windowCreateMissing($token = '', $semesterId = '') {
+  $me = auth_user($token, 'admin');
+  if (find_row(readTable('Semesters'), str($semesterId)) === null) throw new Exception('ไม่พบภาคเรียน');
+  return with_lock(function () use ($me, $semesterId) {
+    $cur = windows_of($semesterId);
+    $has = array_column($cur, 'department_id');
+    $depts = readTable('Departments');
+    usort($depts, fn($a, $b) => [num($a['sort']), $a['name']] <=> [num($b['sort']), $b['name']]);
+    $n = count($cur); $add = [];
+    foreach ($depts as $d) {
+      if (in_array($d['id'], $has, true)) continue;
+      $add[] = ['id' => new_id(), 'semester_id' => $semesterId, 'department_id' => $d['id'], 'start_date' => '', 'end_date' => '', 'sort' => ++$n];
+    }
+    appendRows('Windows', $add);
+    log_action($me, 'สร้างคิวจัดตาราง', count($add) . ' แผนก');
+    return count($add);
+  });
+}
+
+/** เลื่อนลำดับคิวขึ้น (-1) หรือลง (+1) */
+function api_windowMove($token = '', $id = '', $dir = 0) {
+  $me = auth_user($token, 'admin');
+  $dir = num($dir) < 0 ? -1 : 1;
+  return with_lock(function () use ($me, $id, $dir) {
+    $all = readTable('Windows');
+    $i = find_row($all, str($id));
+    if ($i === null) throw new Exception('ไม่พบคิว');
+    $list = windows_of($all[$i]['semester_id']);
+    $pos = find_row($list, str($id));
+    $to = $pos + $dir;
+    if ($to < 0 || $to >= count($list)) return false;
+    [$list[$pos], $list[$to]] = [$list[$to], $list[$pos]];
+    $order = [];
+    foreach ($list as $n => $w) $order[$w['id']] = $n + 1;
+    foreach ($all as $k => $w) if (isset($order[$w['id']])) $all[$k]['sort'] = $order[$w['id']];
+    writeTable('Windows', $all);
+    log_action($me, 'เลื่อนคิวจัดตาราง', $id);
+    return true;
+  });
+}
+
+function api_windowSave($token = '', $id = '', $start = '', $end = '') {
+  $me = auth_user($token, 'admin');
+  foreach ([$start, $end] as $d) if ($d !== '' && !valid_date($d)) throw new Exception('วันที่ไม่ถูกต้อง');
+  if ($start !== '' && $end !== '' && $start > $end) throw new Exception('วันเริ่มต้องไม่หลังวันสิ้นสุด');
+  return with_lock(function () use ($me, $id, $start, $end) {
+    $all = readTable('Windows');
+    $i = find_row($all, str($id));
+    if ($i === null) throw new Exception('ไม่พบคิว');
+    $all[$i]['start_date'] = $start; $all[$i]['end_date'] = $end;
+    writeTable('Windows', $all);
+    log_action($me, 'บันทึกช่วงเวลาคิว', $id . ' ' . $start . ' - ' . $end);
+    return true;
+  });
+}
+
+/** เปิดคิวตั้งแต่วันนี้ ถ้าวันสิ้นสุดผ่านไปแล้วหรือยังไม่กำหนด จะเปิดถึงสิ้นวันนี้ */
+function api_windowOpenNow($token = '', $id = '') {
+  $me = auth_user($token, 'admin');
+  return with_lock(function () use ($me, $id) {
+    $all = readTable('Windows');
+    $i = find_row($all, str($id));
+    if ($i === null) throw new Exception('ไม่พบคิว');
+    $today = date('Y-m-d');
+    $all[$i]['start_date'] = $today;
+    if ($all[$i]['end_date'] === '' || $all[$i]['end_date'] < $today) $all[$i]['end_date'] = $today;
+    writeTable('Windows', $all);
+    log_action($me, 'เปิดคิวก่อนกำหนด', $id);
+    return true;
+  });
+}
+
+function api_windowDelete($token = '', $id = '') {
+  $me = auth_user($token, 'admin');
+  return with_lock(function () use ($me, $id) {
+    $all = readTable('Windows');
+    $i = find_row($all, str($id));
+    if ($i === null) throw new Exception('ไม่พบคิว');
+    array_splice($all, $i, 1);
+    writeTable('Windows', $all);
+    log_action($me, 'ลบคิวจัดตาราง', $id);
+    return true;
+  });
+}
+
 // ======================= งบหน้าแผนกวิชา =======================
 /** งบหน้าค่าสอนเกินภาระงาน: นับเฉพาะใบเบิกที่ล็อกแล้ว แยกยอดรายสัปดาห์ */
 function api_otCoverSheet($token = '', $roundId = '', $deptId = '') {
