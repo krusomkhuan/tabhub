@@ -75,6 +75,60 @@ function api_changePassword($token = '', $oldPw = '', $newPw = '') {
   });
 }
 
+/** รูปโปรไฟล์เก็บในแถวผู้ใช้ จึงต้องเล็กกว่าที่คอลัมน์ TEXT รับได้ (64 KB หลังแปลงเป็น base64) */
+const AVATAR_MAX_BYTES = 45000;
+
+function user_avatar($id): string {
+  $users = readTable('Users');
+  $i = find_row($users, str($id));
+  $v = $i === null ? '' : (string)($users[$i]['avatar'] ?? '');
+  // ไฟล์สำรองที่อัปโหลดอาจมีค่าแปลกปลอม จึงส่งออกเฉพาะรูปตามรูปแบบที่ระบบสร้าง
+  return preg_match('#^data:image/(jpeg|png);base64,[A-Za-z0-9+/=]+$#', $v) ? $v : '';
+}
+
+/** โปรไฟล์ของผู้ใช้เอง ชื่อผู้ใช้และสิทธิ์ให้ผู้ดูแลระบบเป็นผู้เปลี่ยน */
+function api_profileGet($token = '') {
+  $me = auth_user($token);
+  $users = readTable('Users');
+  $i = find_row($users, $me['id']);
+  if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
+  return ['username' => $users[$i]['username'], 'name' => $users[$i]['name'], 'email' => $users[$i]['email'], 'avatar' => user_avatar($me['id'])];
+}
+
+/** $avatar: null = คงรูปเดิม, '' = ลบรูป, นอกนั้นเป็น base64 ของไฟล์รูป */
+function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
+  $me = auth_user($token);
+  $name = trim(str($name)); $email = trim(str($email));
+  if ($name === '') throw new Exception('กรุณากรอกชื่อ-นามสกุล');
+  if (mb_strlen($name) > 120) throw new Exception('ชื่อยาวเกินไป');
+  if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('รูปแบบอีเมลไม่ถูกต้อง');
+  $uri = null;
+  if ($avatar !== null) {
+    $uri = '';
+    if (str($avatar) !== '') {
+      $bytes = base64_decode(str($avatar), true);
+      if ($bytes === false) throw new Exception('อ่านไฟล์รูปไม่สำเร็จ');
+      if (strlen($bytes) > AVATAR_MAX_BYTES) throw new Exception('รูปโปรไฟล์มีขนาดใหญ่เกินไป');
+      $ext = report_image_ext($bytes);
+      if ($ext === '') throw new Exception('รองรับเฉพาะรูป JPG และ PNG');
+      $uri = 'data:image/' . ($ext === 'jpg' ? 'jpeg' : 'png') . ';base64,' . base64_encode($bytes);
+    }
+  }
+  return with_lock(function () use ($me, $token, $name, $email, $uri) {
+    $users = readTable('Users');
+    $i = find_row($users, $me['id']);
+    if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
+    $users[$i]['name'] = $name; $users[$i]['email'] = $email;
+    if ($uri !== null) $users[$i]['avatar'] = $uri;
+    writeTable('Users', $users);
+    // ชื่อบนหน้าเว็บและในประวัติการแก้ไขอ่านจากข้อมูลการเข้าระบบ จึงต้องอัปเดตด้วย
+    $me['name'] = $name;
+    kvPut('cache:tok_' . $token, json_encode($me, JSON_UNESCAPED_UNICODE), 21600);
+    log_action($me, 'แก้ไขโปรไฟล์', '');
+    return $me + ['avatar' => user_avatar($me['id'])];
+  });
+}
+
 function api_listUsers($token = '') {
   auth_user($token, 'admin');
   return array_map(fn($u) => [
@@ -198,7 +252,7 @@ function api_bootstrap($token = '', $semesterId = '') {
     'sem' => $sem,
     'plans' => array_values(array_filter(readTable('Plans'), fn($p) => (string)$p['semester_id'] === (string)$sem)),
     'sessions' => sem_sessions($sem),
-    'me' => $me, 'settings' => $s, 'days' => DAY_NAMES, 'url' => $GLOBALS['REQ_URL'] ?? '',
+    'me' => $me + ['avatar' => user_avatar($me['id'])], 'settings' => $s, 'days' => DAY_NAMES, 'url' => $GLOBALS['REQ_URL'] ?? '',
     'data' => $data,
   ];
 }
@@ -221,6 +275,7 @@ function api_saveRow($token = '', $name = '', $row = []) {
   $me = auth_user($token, EDITABLE[$name] ?? 'admin');
   if (!isset(EDITABLE[$name])) throw new Exception('แก้ไขตารางนี้ไม่ได้');
   $row = (array)$row;
+  if ($name === 'Semesters' && js_true($row['start_date'] ?? '') && js_true($row['end_date'] ?? '') && str($row['end_date']) < str($row['start_date'])) throw new Exception('วันปิดภาคเรียนต้องไม่ก่อนวันเปิดภาคเรียน');
   return with_lock(function () use ($me, $name, $row) {
     $rows = readTable($name);
     $id = $row['id'] ?? '';

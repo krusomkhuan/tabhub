@@ -14,7 +14,7 @@ require_once __DIR__ . '/backup.php';
 // เรียกจากเว็บได้เฉพาะรายการนี้เท่านั้น
 const API_ALLOW = [
   'login', 'logout', 'getCollegeName', 'getWebAppUrl', 'getPublicData',
-  'changePassword', 'listUsers', 'saveUser', 'deleteUser', 'bulkCreateTeacherUsers',
+  'changePassword', 'profileGet', 'profileSave', 'listUsers', 'saveUser', 'deleteUser', 'bulkCreateTeacherUsers',
   'bootstrap', 'listTable', 'saveRow', 'deleteRow', 'bulkImport', 'saveSettings', 'copyPlans',
   'getSchedule', 'placeSession', 'removeSession', 'toggleLock', 'checkPlacement', 'runAutoSchedule', 'clearSchedule', 'getActivityLog',
   'teachingHours', 'progress', 'exportToSheet',
@@ -23,7 +23,7 @@ const API_ALLOW = [
   'teachReportImageAdd', 'teachReportImages', 'teachReportImageDelete', 'teachReportSlots', 'teachReportSave', 'teachReportList', 'teachReportReview', 'teachReportDelete', 'teachReportSummary',
   'superviseList', 'visitList', 'visitSave', 'visitDelete', 'otCoverSheet',
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
-  'issueList', 'issueSave', 'issueReply', 'issueDelete', 'backupList', 'backupCreate', 'backupDownload', 'backupDelete', 'backupUpload', 'backupRestore',
+  'issueList', 'issueSave', 'issueReply', 'issueDelete', 'backupList', 'backupCreate', 'backupDownload', 'backupDelete', 'backupUploadChunk', 'backupRestore',
 ];
 const LOGIN_MAX_FAILS = 5;
 const LOGIN_WINDOW_SEC = 900;
@@ -39,7 +39,16 @@ function send_headers(int $code, string $type, array $extra = []): void {
 
 function send_json($obj, int $code = 200): void {
   send_headers($code, 'application/json; charset=utf-8');
-  echo json_encode($obj, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+  $json = json_encode($obj, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+  header('Content-Length: ' . strlen($json));
+  echo $json;
+}
+
+/** ส่งคำตอบที่เขียนแล้วให้ผู้ใช้ทันที เพื่อทำงานที่ใช้เวลานานต่อโดยผู้ใช้ไม่ต้องรอ */
+function finish_response(): void {
+  ignore_user_abort(true);
+  while (ob_get_level() > 0) @ob_end_flush();
+  flush();
 }
 
 function client_ip(): string {
@@ -96,8 +105,8 @@ function handle_api(string $fn, string $base): void {
     release_lock();
     if ($loginKey) kvDel($loginKey);
     if (random_int(0, 99) === 0) kvPurgeExpired();
-    backup_auto_tick();
     send_json(['result' => $result]);
+    backup_auto_tick();
   } catch (Throwable $e) {
     try { if (db()->inTransaction()) db()->rollBack(); release_lock(); } catch (Throwable $_) {}
     $msg = show_error_message($e, $fn);
@@ -118,7 +127,8 @@ function handle_download(string $id): void {
   $file = APP_ROOT . '/data/exports/' . $id . '.xlsx';
   if (!is_file($file) || filemtime($file) < time() - 900) { send_headers(404, 'text/plain; charset=utf-8'); echo 'ไฟล์หมดอายุแล้ว กรุณาส่งออกใหม่'; return; }
   $name = (string)@file_get_contents(APP_ROOT . '/data/exports/' . $id . '.name');
-  send_headers(200, str_ends_with($name, '.gz') ? 'application/gzip' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ["Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode($name !== '' ? $name : 'export.xlsx')]);
+  @set_time_limit(0); // ไฟล์สำรองที่มีรูปอาจใหญ่และใช้เวลาส่งนาน
+  send_headers(200, str_ends_with($name, '.gz') ? 'application/gzip' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ["Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode($name !== '' ? $name : 'export.xlsx'), 'Content-Length: ' . filesize($file)]);
   readfile($file);
 }
 

@@ -222,6 +222,7 @@ function api_teachReportDelete($token = '', $id = '') {
 // ----- รูปประกอบรายงาน: เห็นหน้าและชื่อนักเรียน จึงเก็บใน data/ ซึ่งเปิดตรงจากเว็บไม่ได้ และส่งผ่าน API ที่ตรวจสิทธิ์ -----
 const REPORT_MAX_IMAGES = 4;
 const REPORT_MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const REPORT_IMAGE_NAME = '/^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/';
 
 function report_image_dir(): string {
   $d = APP_ROOT . '/data/teach_images';
@@ -230,7 +231,12 @@ function report_image_dir(): string {
 }
 function report_image_names(array $r): array {
   $list = json_decode((string)($r['images'] ?? ''), true);
-  return is_array($list) ? array_values(array_filter($list, fn($n) => is_string($n) && preg_match('/^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/', $n))) : [];
+  return is_array($list) ? array_values(array_filter($list, fn($n) => is_string($n) && preg_match(REPORT_IMAGE_NAME, $n))) : [];
+}
+/** ชนิดรูปจากเนื้อไฟล์จริง ไม่เชื่อชื่อไฟล์หรือชนิดที่ส่งมา คืนค่าว่างถ้าไม่ใช่ JPG/PNG */
+function report_image_ext(string $bytes): string {
+  $info = @getimagesizefromstring($bytes);
+  return [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png'][$info[2] ?? 0] ?? '';
 }
 function report_row(array $me, $id, array &$rows, bool $forEdit): int {
   $rows = readTable('TeachReports');
@@ -246,9 +252,7 @@ function api_teachReportImageAdd($token = '', $id = '', $base64 = '') {
   $bytes = base64_decode(str($base64), true);
   if ($bytes === false || $bytes === '') throw new Exception('อ่านไฟล์รูปไม่สำเร็จ');
   if (strlen($bytes) > REPORT_MAX_IMAGE_BYTES) throw new Exception('รูปมีขนาดใหญ่เกิน 4 MB');
-  // ตรวจจากเนื้อไฟล์จริง ไม่เชื่อชื่อไฟล์หรือชนิดที่ส่งมา
-  $info = @getimagesizefromstring($bytes);
-  $ext = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png'][$info[2] ?? 0] ?? '';
+  $ext = report_image_ext($bytes);
   if ($ext === '') throw new Exception('รองรับเฉพาะรูป JPG และ PNG');
   return with_lock(function () use ($me, $id, $bytes, $ext) {
     $rows = [];
@@ -544,31 +548,60 @@ function api_windowDelete($token = '', $id = '') {
 
 // ======================= งบหน้าแผนกวิชา =======================
 /** งบหน้าค่าสอนเกินภาระงาน: นับเฉพาะใบเบิกที่ล็อกแล้ว แยกยอดรายสัปดาห์ */
-function api_otCoverSheet($token = '', $roundId = '', $deptId = '') {
+/** งบหน้าทำทั้งภาคเรียนแยกตามระดับ: ปวช. 18 สัปดาห์ ปวส. 15 สัปดาห์ นับจากวันเปิดภาคเรียน */
+const OT_COVER_WEEKS = ['vc' => 18, 'vs' => 15];
+
+function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 'vc') {
   $me = auth_user($token, 'dept');
   if ($me['role'] === 'dept' && str($deptId) !== (string)$me['department_id']) throw new Exception('ดูงบหน้าได้เฉพาะแผนกตัวเอง');
-  $round = idx_table('OtRounds')[str($roundId)] ?? null;
-  if (!$round) throw new Exception('ไม่พบรอบการเบิก');
-  $sum = ot_dept_summary($roundId, $deptId);
-  $weeks = array_map(fn($w) => ['index' => $w['index'], 'from' => $w['dates'][0], 'to' => $w['dates'][count($w['dates']) - 1]], ot_weeks_of($round));
-  $claims = [];
-  foreach (readTable('OtClaims') as $c) if ((string)$c['round_id'] === str($roundId)) $claims[$c['teacher_id']] ??= $c;
-  $rows = []; $totals = ['hours' => 0, 'amount' => 0, 'vc' => 0, 'vs' => 0, 'bd' => 0, 'perHeadAmount' => 0];
+  $count = OT_COVER_WEEKS[str($level)] ?? null;
+  if (!$count) throw new Exception('ระดับไม่ถูกต้อง');
+  $sem = idx_table('Semesters')[str($semesterId)] ?? null;
+  if (!$sem) throw new Exception('ไม่พบภาคเรียน');
+  $rounds = array_values(array_filter(readTable('OtRounds'), fn($r) => (string)$r['semester_id'] === str($semesterId)));
+  usort($rounds, fn($a, $b) => strcmp((string)$a['start_date'], (string)$b['start_date']));
+  // ยังไม่ตั้งวันเปิดภาคเรียน: นับจากรอบการเบิกแรกไปก่อน และแจ้งให้ตั้งค่า
+  $start = substr((string)($sem['start_date'] ?? ''), 0, 10);
+  $startSet = $start !== '';
+  if (!$startSet) $start = $rounds ? substr((string)$rounds[0]['start_date'], 0, 10) : '';
+  if ($start === '') return ['semester' => $sem, 'level' => str($level), 'noDates' => true, 'weeks' => [], 'rows' => [], 'notLocked' => []];
+  $until = ot_parse($start)->modify('+' . (($count + 1) * 7) . ' days');
+  $weeks = array_slice(ot_weeks_of(['start_date' => $start, 'end_date' => ot_ymd($until)]), 0, $count);
+  $weekOf = [];
+  foreach ($weeks as $w) foreach ($w['dates'] as $d) $weekOf[$d] = $w['index'];
   $weekTotals = array_fill_keys(array_column($weeks, 'index'), 0);
-  foreach ($sum['rows'] as $r) {
-    if ($r['status'] !== 'locked') continue;
-    $sm = json_decode($claims[$r['teacher_id']]['summary'] ?? '{}', true) ?: [];
-    $wk = [];
-    foreach ($weeks as $w) {
-      $a = $sm['weeks'][$w['index']]['amount'] ?? 0;
-      $wk[$w['index']] = $a;
-      $weekTotals[$w['index']] += $a;
+
+  $byTeacher = []; $notLocked = []; $outside = 0;
+  $claims = readTable('OtClaims');
+  foreach ($rounds as $round) {
+    $summary = [];
+    foreach ($claims as $c) if ((string)$c['round_id'] === (string)$round['id']) $summary[$c['teacher_id']] ??= json_decode((string)$c['summary'], true) ?: [];
+    foreach (ot_dept_summary($round['id'], $deptId)['rows'] as $r) {
+      if ($r['status'] !== 'locked') { $notLocked[$r['name']] = true; continue; }
+      foreach (ot_weeks_of($round) as $w) {
+        $lv = $summary[$r['teacher_id']]['weeks'][$w['index']]['levels'][str($level)] ?? null;
+        if (!$lv || (!$lv['amount'] && !$lv['hours'])) continue;
+        $idx = $weekOf[$w['dates'][0]] ?? null;
+        if ($idx === null) { $outside += $lv['amount']; continue; } // เกินจำนวนสัปดาห์ของระดับนี้ ไม่นำมาเบิก
+        $t = &$byTeacher[$r['teacher_id']];
+        $t ??= ['teacher_id' => $r['teacher_id'], 'name' => $r['name'], 'position' => $r['position'], 'week_amounts' => [], 'hours' => 0, 'amount' => 0];
+        $t['week_amounts'][$idx] = ($t['week_amounts'][$idx] ?? 0) + $lv['amount'];
+        $t['hours'] += $lv['hours']; $t['amount'] += $lv['amount'];
+        $weekTotals[$idx] += $lv['amount'];
+        unset($t);
+      }
     }
-    $r['week_amounts'] = (object)$wk;
-    $rows[] = $r;
-    foreach ($totals as $k => $_) $totals[$k] += $r[$k];
   }
-  return ['round' => $round, 'weeks' => $weeks, 'rows' => $rows, 'totals' => $totals, 'weekTotals' => (object)$weekTotals, 'totalText' => ot_baht_text($totals['amount']), 'notLocked' => $sum['notLocked'], 'submission' => $sum['submission']];
+  $rows = array_values($byTeacher);
+  foreach ($rows as &$x) $x['week_amounts'] = (object)$x['week_amounts'];
+  unset($x);
+  $total = array_sum(array_column($rows, 'amount'));
+  return [
+    'semester' => $sem, 'level' => str($level), 'startSet' => $startSet, 'start' => $start, 'noRounds' => !$rounds,
+    'weeks' => array_map(fn($w) => ['index' => $w['index'], 'from' => $w['dates'][0], 'to' => $w['dates'][count($w['dates']) - 1]], $weeks),
+    'rows' => $rows, 'totals' => ['hours' => array_sum(array_column($rows, 'hours')), 'amount' => $total], 'weekTotals' => (object)$weekTotals,
+    'totalText' => ot_baht_text($total), 'notLocked' => array_keys($notLocked), 'outside' => $outside,
+  ];
 }
 
 // ======================= แจ้งปัญหาการใช้งาน =======================

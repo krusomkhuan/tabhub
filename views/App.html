@@ -133,6 +133,7 @@ var NAV = [
   { id: 'mine', label: 'ตารางสอนของฉัน', role: 'teacher' },
   { id: 'schedule', label: 'จัดตารางเรียน', role: 'dept' },
   { id: 'plans', label: 'แผนการเรียน', role: 'dept' },
+  { id: 'plancheck', label: 'ตรวจสอบแผนการเรียน', role: 'teacher' },
   { id: 't-PlcSlots', label: 'คาบ PLC', role: 'dept' },
   { id: 'manual', label: 'คู่มือการจัดตาราง', role: 'teacher' },
   { sec: 'รายงาน' },
@@ -160,7 +161,7 @@ var NAV = [
   { id: 'issues', label: 'แจ้งปัญหาการใช้งาน', role: 'teacher' }
 ];
 
-var NAV_ICON = { dashboard: '🏠', mine: '🗓', schedule: '🧩', plans: '📚', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
+var NAV_ICON = { dashboard: '🏠', mine: '🗓', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
   'ot-claims': '💰', 'ot-subs': '🔁', 'ot-summary': '🧾', 'ot-teachers': '🎚', 'ot-holidays': '🏖', users: '👤', settings: '⚙', import: '⤵',
   't-OtSchemes': '📋', 't-OtPerHead': '🙋', 't-OtRounds': '📆', 't-OtBlocked': '⛔', 't-Semesters': '📅', 't-Departments': '🏫', 't-Majors': '🎓',
   't-Teachers': '🧑‍🏫', 't-Buildings': '🏢', 't-Rooms': '🚪', 't-Courses': '📘', 't-Groups': '👩‍🎓', 't-Windows': '⏳', 't-PlcSlots': '🤝' };
@@ -178,12 +179,15 @@ function renderShell() {
     '<p class="app-ver side-ver">เวอร์ชัน ' + esc(APP_VERSION) + '<br>ผู้พัฒนา: ' + esc(APP_DEVELOPERS) + '</p></aside>' +
     '<div class="main"><div class="top no-print"><button class="btn sm menu-btn" id="mb">☰</button><h2 id="title"></h2>' +
     '<select id="semSel" class="sem">' + semOpts + '</select><button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>' +
-    '<div class="user" id="userBtn"><span class="av">' + esc(initials) + '</span><span class="un"><b>' + esc(S.me.name) + '</b><small>' + roleTh + '</small></span>' +
-    '<div class="umenu" id="umenu"><a href="javascript:void 0" id="pwBtn">🔑 เปลี่ยนรหัสผ่าน</a><a href="javascript:void 0" id="outBtn">⎋ ออกจากระบบ</a></div></div></div>' +
+    '<button type="button" class="bell-btn" id="bellBtn" aria-label="การแจ้งเตือนแผนการเรียน">🔔<span class="bell-n" id="bellN"></span></button>' +
+    '<div class="user" id="userBtn"><span class="av">' + (S.me.avatar ? '<img src="' + esc(S.me.avatar) + '" alt="">' : esc(initials)) + '</span><span class="un"><b>' + esc(S.me.name) + '</b><small>' + roleTh + '</small></span>' +
+    '<div class="umenu" id="umenu"><a href="javascript:void 0" id="profBtn">👤 แก้ไขโปรไฟล์</a><a href="javascript:void 0" id="pwBtn">🔑 เปลี่ยนรหัสผ่าน</a><a href="javascript:void 0" id="outBtn">⎋ ออกจากระบบ</a></div></div></div>' +
     '<div class="content" id="content"></div></div></div>';
   $('#semSel').onchange = function () { S.sem = this.value; store('tt_sem', S.sem); loadSchedule().then(function () { go(S.view); }); };
   $('#outBtn').onclick = function () { api('logout', S.token); store('tt_token', null); S.token = null; S.sel = { mode: 'group' }; renderLogin(); };
   $('#pwBtn').onclick = changePw;
+  $('#profBtn').onclick = editProfile;
+  $('#bellBtn').onclick = function () { go('plancheck'); };
   $('#userBtn').onclick = function (e) { if (e.target.closest('#umenu')) return; $('#umenu').classList.toggle('open'); };
   $('#mb').onclick = function () { $('#side').classList.toggle('open'); $('#sideBg').classList.toggle('open'); };
   $('#sideBg').onclick = function () { $('#side').classList.remove('open'); this.classList.remove('open'); };
@@ -197,10 +201,134 @@ function go(v) {
   $$('.side a.nav').forEach(function (a) { a.classList.toggle('on', a.dataset.v === v); });
   $('#side').classList.remove('open'); if ($('#sideBg')) $('#sideBg').classList.remove('open');
   $('#title').textContent = n.label;
+  updateBell();
   var el = $('#content');
   if (v.indexOf('t-') === 0) return viewTable(el, v.slice(2));
   (VIEWS[v] || function () { el.innerHTML = ''; })(el);
 }
+
+var VIEWS = {};
+
+/* ย่อรูปบนเครื่องก่อนส่ง ตัดกลางเป็นจัตุรัส และลดคุณภาพจนเล็กพอเก็บในแถวผู้ใช้ */
+function avatarFromFile(file) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var side = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas'), q = 0.85, out;
+      c.width = c.height = 256;
+      var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 256, 256);
+      x.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+      URL.revokeObjectURL(url);
+      do { out = c.toDataURL('image/jpeg', q); q -= 0.15; } while (out.length > 55000 && q > 0.2);
+      resolve(out);
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('read')); };
+    img.src = url;
+  });
+}
+function editProfile() {
+  $('#umenu').classList.remove('open');
+  api('profileGet', S.token).then(function (u) {
+    var picked = null; /* null = คงรูปเดิม, '' = ลบรูป */
+    var m = modal('<h3>แก้ไขโปรไฟล์</h3><div class="pf-av"><span class="pf-pic" id="pfP"></span><div><label class="btn sm" for="pfF">🖼 เลือกรูป</label><input type="file" id="pfF" accept="image/*" hidden> <button type="button" class="btn sm" id="pfX">ลบรูป</button><div class="small muted" style="margin-top:6px">ระบบจะตัดเป็นรูปจัตุรัสและย่อขนาดให้</div></div></div>' +
+      '<label class="f">ชื่อผู้ใช้สำหรับเข้าระบบ</label><input value="' + esc(u.username) + '" disabled>' +
+      '<label class="f">ชื่อ-นามสกุล *</label><input id="pfN" maxlength="120" value="' + esc(u.name) + '">' +
+      '<label class="f">อีเมล</label><input id="pfE" inputmode="email" autocomplete="email" maxlength="200" value="' + esc(u.email) + '">' +
+      '<p class="small muted">ชื่อนี้ใช้แสดงในบัญชีและประวัติการแก้ไข ส่วนชื่อที่พิมพ์ในตารางสอนแก้ได้ที่เมนูครูผู้สอน ถ้าต้องการเปลี่ยนชื่อผู้ใช้ให้แจ้งผู้ดูแลระบบ</p>' +
+      '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pfS">บันทึก</button></div>');
+    function show(src) {
+      $('#pfP', m).innerHTML = src ? '<img src="' + esc(src) + '" alt="รูปโปรไฟล์">' : esc(String($('#pfN', m).value || '?').replace(/^(นาย|นางสาว|นาง|ว่าที่\S*)/, '').trim().slice(0, 2));
+      $('#pfX', m).style.display = src ? '' : 'none';
+    }
+    show(u.avatar);
+    $('#pfF', m).onchange = function () {
+      var f = this.files[0]; this.value = ''; if (!f) return;
+      avatarFromFile(f).then(function (d) { picked = d; show(d); }).catch(function () { toast('เปิดไฟล์รูปนี้ไม่ได้ กรุณาใช้รูป JPG หรือ PNG', 1); });
+    };
+    $('#pfX', m).onclick = function () { picked = ''; show(''); };
+    $('#pfS', m).onclick = function () {
+      api('profileSave', S.token, $('#pfN', m).value, $('#pfE', m).value, picked === null ? null : picked.split(',')[1] || '').then(function (me) {
+        S.me = me; closeModal(); toast('บันทึกโปรไฟล์แล้ว'); renderShell(); go(S.view);
+      });
+    };
+  });
+}
+
+/* ===================== ตรวจสอบแผนการเรียน ===================== */
+function planState(need, placed) {
+  if (!need) return ['over', 'ไม่ได้กำหนดคาบ'];
+  var left = need - placed;
+  return left < 0 ? ['over', 'เกินแผน'] : left === 0 ? ['done', 'ครบแล้ว'] : placed > 0 ? ['part', 'ยังไม่ครบ'] : ['none', 'ยังไม่จัด'];
+}
+/* ครูเห็นวิชาของตนเอง ตัวแทนแผนกเห็นกลุ่มในแผนก ผู้ดูแลระบบเห็นทั้งหมด */
+function planCheck() {
+  var C = ctx(), placed = {}, me = S.me;
+  S.sessions.forEach(function (s) { placed[s.plan_id] = (placed[s.plan_id] || 0) + (Number(s.length) || 0); });
+  function inDept(gid) { return me.role === 'admin' || (IDX.Groups[gid] && String(IDX.Groups[gid].department_id) === String(me.department_id)); }
+  var rows = S.plans.filter(function (p) {
+    return me.role === 'teacher' ? Sched.ids(p.teacher_ids).indexOf(String(me.teacher_id)) >= 0 : inDept(p.group_id);
+  }).map(function (p) {
+    var need = Sched.planPeriods(p, C), got = placed[p.id] || 0;
+    return { plan: p, gid: String(p.group_id), need: need, placed: got, state: planState(need, got) };
+  });
+  var busy = {};
+  S.plans.forEach(function (p) { busy[p.group_id] = 1; });
+  S.sessions.forEach(function (s) { busy[s.group_id] = 1; });
+  var empty = me.role === 'teacher' ? [] : S.D.Groups.filter(function (g) { return !busy[g.id] && inDept(g.id); });
+  var bad = rows.filter(function (r) { return r.state[0] !== 'done'; }), groups = {}, short = 0;
+  bad.forEach(function (r) { groups[r.gid] = 1; short += Math.max(0, r.need - r.placed); });
+  return { rows: rows, bad: bad, empty: empty, groupCount: Object.keys(groups).length, short: short, total: bad.length + empty.length };
+}
+/* กระดิ่งบอกจำนวนรายการที่ต้องแก้ และเตือนหนึ่งครั้งเมื่อเข้าใช้หรือเปลี่ยนภาคเรียน */
+function updateBell() {
+  var b = $('#bellBtn'); if (!b || !S.plans) return;
+  var c = planCheck();
+  $('#bellN').textContent = c.total ? (c.total > 99 ? '99+' : c.total) : '';
+  b.title = c.total ? planIssueText(c) : 'จัดตารางครบตามแผนแล้ว';
+  if (c.total && S.bellSem !== S.sem) toast(planIssueText(c) + ' ดูได้ที่กระดิ่งด้านบน');
+  S.bellSem = S.sem;
+}
+/* บอกให้ตรงกับสิ่งที่พบ เพราะเกินแผนหรือไม่มีแผน ไม่ใช่การจัดไม่ครบ */
+function planIssueText(c) {
+  var n = function (st) { return c.bad.filter(function (r) { return r.state[0] === st; }).length; }, parts = [];
+  var short = n('part') + n('none'), other = n('over');
+  if (short) parts.push('ยังจัดไม่ครบ ' + short + ' วิชา ขาดอีก ' + c.short + ' คาบ');
+  if (other) parts.push('คาบเกินแผนหรือไม่ได้กำหนดคาบ ' + other + ' วิชา');
+  if (c.empty.length) parts.push('กลุ่มที่ไม่มีแผน ' + c.empty.length + ' กลุ่ม');
+  return 'แผนการเรียนต้องตรวจสอบ: ' + parts.join(' · ');
+}
+function planAlertHtml(c) {
+  if (c.total) return '<a class="plan-alert" href="#plancheck">⚠ ' + planIssueText(c) + ' — กดเพื่อตรวจสอบ</a>';
+  return c.rows.length ? '<a class="plan-alert ok" href="#plancheck">✓ จัดตารางครบตามแผนการเรียนแล้ว</a>' : '';
+}
+VIEWS.plancheck = function (el) {
+  if (!S.sem) { el.innerHTML = '<div class="card">ยังไม่มีภาคเรียน — เพิ่มที่เมนู ปีการศึกษา / ภาคเรียน</div>'; return; }
+  var c = planCheck(), f = S.pcFilter = S.pcFilter || { state: 'bad', dept: '' };
+  var count = function (st) { return c.rows.filter(function (r) { return r.state[0] === st; }).length; };
+  el.innerHTML = '<div class="card"><h3>ตรวจสอบแผนการเรียน · ภาคเรียน ' + esc(semLabel(S.sem)) + '</h3>' + planAlertHtml(c).replace(/href="#plancheck"/, '').replace(/^<a/, '<div').replace(/<\/a>$/, '</div>').replace(' — กดเพื่อตรวจสอบ', '') +
+    '<div class="plan-sum"><span class="tag">ทั้งหมด ' + c.rows.length + ' วิชา</span><span class="tag ok">ครบแล้ว ' + count('done') + '</span><span class="tag warn">ยังไม่ครบ ' + count('part') + '</span><span class="tag">ยังไม่จัด ' + count('none') + '</span><span class="tag bad">เกินแผน/ไม่ได้กำหนดคาบ ' + count('over') + '</span>' + (c.empty.length ? '<span class="tag bad">กลุ่มไม่มีแผน ' + c.empty.length + '</span>' : '') + '</div>' +
+    '<div class="row">' + (S.me.role === 'admin' ? '<select id="pcD" style="width:auto">' + deptOptions(f.dept) + '</select>' : '') +
+    '<select id="pcS" style="width:auto"><option value="bad"' + (f.state === 'bad' ? ' selected' : '') + '>เฉพาะที่ยังไม่เรียบร้อย</option><option value="all"' + (f.state === 'all' ? ' selected' : '') + '>ทุกวิชา</option></select></div></div>' +
+    '<div class="card" id="pcOut"></div>';
+  function draw() {
+    var inDept = function (gid) { return !f.dept || (IDX.Groups[gid] && String(IDX.Groups[gid].department_id) === String(f.dept)); };
+    var list = sortBy((f.state === 'bad' ? c.bad : c.rows).filter(function (r) { return inDept(r.gid); }), function (r) { return groupCode(r.gid) + ' ' + courseOf(r.plan.course_id).code; });
+    var empty = c.empty.filter(function (g) { return inDept(g.id); });
+    function fix(gid) { return canEditGroup(gid) ? '<button class="btn sm" data-pc-go="' + esc(gid) + '">จัดตาราง</button>' : ''; }
+    var html = list.map(function (r) {
+      var co = courseOf(r.plan.course_id);
+      return '<tr class="plan-row ' + r.state[0] + '"><td style="white-space:nowrap">' + esc(groupCode(r.gid)) + '</td><td>' + esc(co.code + ' ' + co.name) + '<div class="small muted">' + esc(teacherNames(r.plan.teacher_ids)) + '</div></td><td class="plan-c">' + r.need + '</td><td class="plan-c">' + r.placed + '</td><td class="plan-c"><span class="plan-st">' + r.state[1] + '</span></td><td style="text-align:right">' + (r.state[0] === 'done' ? '' : fix(r.gid)) + '</td></tr>';
+    }).concat(empty.map(function (g) {
+      return '<tr class="plan-row over"><td style="white-space:nowrap">' + esc(g.code || g.name) + '</td><td class="muted">ยังไม่มีแผนการเรียนในภาคเรียนนี้</td><td class="plan-c">-</td><td class="plan-c">-</td><td class="plan-c"><span class="plan-st">ไม่มีแผน</span></td><td style="text-align:right">' + (canEditGroup(g.id) ? '<button class="btn sm" data-pc-plan="' + esc(g.id) + '">เพิ่มแผน</button>' : '') + '</td></tr>';
+    })).join('');
+    $('#pcOut').innerHTML = html ? '<div class="tablewrap"><table class="data plan-status"><thead><tr><th>กลุ่ม</th><th>วิชา / ครู</th><th>ต้องจัด</th><th>ลงแล้ว</th><th>สถานะ</th><th></th></tr></thead><tbody>' + html + '</tbody></table></div>' : '<p class="tag ok">ไม่มีรายการที่ต้องแก้ไข</p>';
+    $$('[data-pc-go]', el).forEach(function (a) { a.onclick = function () { S.sel.mode = 'group'; S.sel.group = a.dataset.pcGo; S.sel.chip = null; go('schedule'); }; });
+    $$('[data-pc-plan]', el).forEach(function (a) { a.onclick = function () { S.sel.group = a.dataset.pcPlan; go('plans'); }; });
+  }
+  if ($('#pcD')) $('#pcD').onchange = function () { f.dept = this.value; draw(); };
+  $('#pcS').onchange = function () { f.state = this.value; draw(); };
+  draw();
+};
 
 function changePw() {
   var m = modal('<h3>เปลี่ยนรหัสผ่าน</h3><label class="f">รหัสผ่านเดิม</label><input id="p0" type="password"><label class="f">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)</label><input id="p1" type="password"><label class="f">ยืนยันรหัสผ่านใหม่</label><input id="p2" type="password"><div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="ps">บันทึก</button></div>');
@@ -210,18 +338,17 @@ function changePw() {
   };
 }
 
-var VIEWS = {};
-
 /* ===================== ภาพรวม ===================== */
 VIEWS.dashboard = function (el) {
   var D = S.D;
-  var C = ctx(), need = 0, done = 0;
-  S.plans.forEach(function (p) { need += Sched.planPeriods(p, C); });
-  S.sessions.forEach(function (s) { done += Number(s.length) || 0; });
-  var pct = need ? Math.min(100, Math.round(done / need * 100)) : 0;
+  /* คาบที่ลงเกินแผนไม่นับ มิฉะนั้นจะไปชดเชยวิชาที่ยังขาด แล้วดูเหมือนจัดครบ */
+  var C = ctx(), need = 0, done = 0, got = {};
+  S.sessions.forEach(function (s) { got[s.plan_id] = (got[s.plan_id] || 0) + (Number(s.length) || 0); });
+  S.plans.forEach(function (p) { var n = Sched.planPeriods(p, C); need += n; done += Math.min(n, got[p.id] || 0); });
+  var pct = need ? (done < need ? Math.min(99, Math.round(done / need * 100)) : 100) : 0;
   var tiles = [
     ['schedule', '🧩', 'จัดตารางเรียน', 'จัดอัตโนมัติ / ลากวาง', 'dept'], ['reports', '🖨', 'พิมพ์ตาราง', 'กลุ่ม · ครู · ห้อง', 'teacher'],
-    ['plans', '📚', 'แผนการเรียน', 'วิชา ครู ห้อง ของแต่ละกลุ่ม', 'dept'], ['ot-claims', '💰', 'ค่าสอนเกินภาระงาน', 'เลือกชั่วโมงเบิกรายสัปดาห์', 'teacher'],
+    ['plans', '📚', 'แผนการเรียน', 'วิชา ครู ห้อง ของแต่ละกลุ่ม', 'dept'], ['plancheck', '✅', 'ตรวจสอบแผนการเรียน', 'จัดตารางครบหรือยัง', 'teacher'], ['ot-claims', '💰', 'ค่าสอนเกินภาระงาน', 'เลือกชั่วโมงเบิกรายสัปดาห์', 'teacher'],
     ['teach-report', '📝', 'รายงานการสอนออนไลน์', 'ครูรายงานรายคาบ · แผนกตรวจ', 'teacher'],
     ['intern', '🏭', 'นิเทศออนไลน์', 'วิชาในสถานประกอบการ · บันทึกนิเทศ', 'teacher'], ['ot-subs', '🔁', 'สอนแทน / สอนชดเชย', 'บันทึกการสอนแทนและชดเชย', 'teacher'],
     ['ot-summary', '🧾', 'สรุปเสนอเบิก', 'ใบสรุปรายแผนก', 'dept'], ['ot-cover', '📄', 'งบหน้าแผนกวิชา', 'งบหน้าเสนอเบิกของแผนก', 'dept'],
@@ -231,7 +358,7 @@ VIEWS.dashboard = function (el) {
   ].filter(function (t) { return can(t[4]); });
   el.innerHTML = '<div class="hero card"><div class="grow"><div class="muted small">ภาคเรียน ' + esc(semLabel(S.sem)) + '</div><h2 style="margin:2px 0 6px">สวัสดี ' + esc(S.me.name) + '</h2>' +
     '<div class="row"><b style="font-size:28px">' + pct + '%</b><span class="muted">ลงตารางแล้ว ' + done + ' / ' + need + ' คาบ · ' + S.plans.length + ' รายการในแผนการเรียน</span></div>' +
-    '<div class="bar" style="margin-top:8px"><i style="width:' + pct + '%"></i></div></div></div>' +
+    '<div class="bar" style="margin-top:8px"><i style="width:' + pct + '%"></i></div></div></div>' + planAlertHtml(planCheck()) +
     '<div class="grid4">' + stat('🏫', D.Departments.length, 'แผนกวิชา') + stat('🧑‍🏫', D.Teachers.length, 'ครูผู้สอน') + stat('👩‍🎓', D.Groups.length, 'กลุ่มเรียน') +
     stat('📘', D.Courses.length, 'รายวิชา') + stat('🚪', D.Rooms.length, 'ห้องเรียน') + '</div>' +
     '<h3 class="sec-title">ทางลัด</h3><div class="tiles">' + tiles.map(function (t) {
@@ -439,6 +566,7 @@ function showAllConflicts() {
 }
 
 function renderPlanBox(gid, editable) {
+  updateBell(); /* วาดใหม่ทุกครั้งที่ลงหรือย้ายคาบ ตัวเลขบนกระดิ่งจึงตรงเสมอ */
   var C = ctx();
   var plans = S.plans.filter(function (p) { return String(p.group_id) === String(gid); });
   var box = $('#planBox');
@@ -456,7 +584,7 @@ function renderPlanBox(gid, editable) {
       return '<span class="chip' + (on ? ' sel' : '') + '" draggable="true" data-plan="' + esc(p.id) + '" data-len="' + len + '" data-i="' + i + '">' + len + ' คาบ</span>';
     }).join('') : '';
     var left = need - placed;
-    var state = left < 0 ? ['over', 'เกินแผน'] : left === 0 ? ['done', 'ครบแล้ว'] : placed > 0 ? ['part', 'ยังไม่ครบ'] : ['none', 'ยังไม่จัด'];
+    var state = planState(need, placed);
     return '<tr class="plan-row ' + state[0] + '" data-plan-row="' + esc(p.id) + '"><td class="plan-c">' + esc(c.code) + '</td><td><div>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn">เรียนร่วม</span>' : '') + '</div>' +
       '<div class="small muted">' + esc(teacherNames(p.teacher_ids)) + (p.room_id ? ' · ห้อง ' + esc(roomName(p.room_id)) : '') + '</div></td><td class="plan-c">' + esc([c.theory, c.practice, c.credits].join('-')) + '</td><td class="plan-c">' + need +
       '</td><td class="plan-c"><span class="plan-st">' + state[1] + '</span> (' + placed + '/' + need + ')' + (left > 0 && chips ? '<div>' + chips + (editable && left > 1 ? ' <button class="btn sm" data-custom="' + esc(p.id) + '" title="ลงจำนวนคาบอื่น">±</button>' : '') + '</div>' : '') + '</td></tr>';
@@ -927,7 +1055,8 @@ VIEWS.backup = function (el) {
   function size(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
   function refresh() { VIEWS.backup(el); }
   function restore(f) {
-    var m = modal('<h3>กู้คืนข้อมูล</h3><p>ข้อมูลในระบบตอนนี้จะถูกแทนที่ด้วยไฟล์ <b>' + esc(f.time) + '</b> (' + esc(f.kind_label) + ') รวมถึงตารางสอนและบัญชีผู้ใช้</p>' +
+    var m = modal('<h3>กู้คืนข้อมูล</h3><p>ข้อมูลในระบบตอนนี้จะถูกแทนที่ด้วยไฟล์ <b>' + esc(f.time) + '</b> (' + esc(f.kind_label) + ') รวมถึงตารางสอน บัญชีผู้ใช้ และรูปประกอบรายงาน</p>' +
+      (f.images === null ? '<p class="small"><b>ไฟล์นี้สร้างก่อนระบบสำรองรูปได้</b> จึงกู้คืนเฉพาะข้อมูล รูปที่มีอยู่ในเครื่องจะคงไว้ตามเดิม</p>' : '') +
       '<p class="small muted">ระบบจะสำรองข้อมูลปัจจุบันให้ก่อนกู้คืน หากกู้ผิดไฟล์สามารถย้อนกลับได้</p><label class="f">พิมพ์คำว่า กู้คืน เพื่อยืนยัน</label><input id="bkC" autocomplete="off">' +
       '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn bad" id="bkGo" disabled>กู้คืนข้อมูล</button></div>');
     $('#bkC', m).oninput = function () { $('#bkGo', m).disabled = this.value.trim() !== 'กู้คืน'; };
@@ -940,16 +1069,16 @@ VIEWS.backup = function (el) {
     };
   }
   api('backupList', S.token).then(function (d) {
-    el.innerHTML = '<div class="card"><h3>สำรองข้อมูล</h3><p class="small muted">เก็บทุกตารางในระบบ รวมถึงบัญชีผู้ใช้และรหัสผ่านที่เข้ารหัสแล้ว ไฟล์ที่ดาวน์โหลดมีข้อมูลส่วนบุคคล ควรเก็บในที่ปลอดภัย และควรคัดลอกออกจากเครื่องนี้เป็นระยะ</p>' +
+    el.innerHTML = '<div class="card"><h3>สำรองข้อมูล</h3><p class="small muted">เก็บทุกตารางในระบบ รวมถึงบัญชีผู้ใช้และรหัสผ่านที่เข้ารหัสแล้ว และรูปประกอบรายงานการสอน (ตอนนี้มี ' + d.image_count + ' รูป รวม ' + size(d.image_bytes) + ') ไฟล์ที่ดาวน์โหลดมีข้อมูลส่วนบุคคลและรูปนักเรียน ควรเก็บในที่ปลอดภัย และควรคัดลอกออกจากเครื่องนี้เป็นระยะ</p>' +
       '<div class="row"><button class="btn pri" id="bkNew">💾 สำรองข้อมูลตอนนี้</button><label class="btn" for="bkFile">⤴ อัปโหลดไฟล์สำรอง</label><input type="file" id="bkFile" accept=".gz" hidden></div>' +
       '<div class="row bk-auto"><label class="row small" style="gap:6px"><input type="checkbox" id="bkAuto" style="width:auto"' + (d.auto ? ' checked' : '') + '> สำรองอัตโนมัติวันละครั้ง</label>' +
       '<label class="row small" style="gap:6px">เก็บไว้ <input type="number" id="bkKeep" min="1" max="365" value="' + d.keep + '" style="width:80px"> ไฟล์ล่าสุด</label><button class="btn sm" id="bkSave">บันทึก</button></div>' +
-      '<p class="small muted" style="margin:6px 0 0">ระบบสำรองอัตโนมัติเมื่อมีคนใช้งานในวันนั้น ถ้าไม่มีคนใช้งานจะยังไม่สำรอง</p></div>' +
-      '<div class="card"><h3>ไฟล์สำรอง (' + d.files.length + ')</h3><div class="tablewrap"><table class="data"><thead><tr><th>วันเวลา</th><th>ประเภท</th><th style="text-align:right">ขนาด</th><th></th></tr></thead><tbody>' +
+      '<p class="small muted" style="margin:6px 0 0">ระบบสำรองอัตโนมัติเมื่อมีคนใช้งานในวันนั้น ถ้าไม่มีคนใช้งานจะยังไม่สำรอง ทุกไฟล์เก็บรูปทั้งหมดซ้ำกัน ถ้ารูปมากขึ้นและพื้นที่เครื่องน้อย ให้ลดจำนวนไฟล์ที่เก็บ</p></div>' +
+      '<div class="card"><h3>ไฟล์สำรอง (' + d.files.length + ')</h3><div class="tablewrap"><table class="data"><thead><tr><th>วันเวลา</th><th>ประเภท</th><th style="text-align:right">รูป</th><th style="text-align:right">ขนาด</th><th></th></tr></thead><tbody>' +
       (d.files.map(function (f, i) {
-        return '<tr><td style="white-space:nowrap">' + esc(f.time) + '</td><td>' + esc(f.kind_label) + '</td><td style="text-align:right;white-space:nowrap">' + size(f.size) + '</td><td style="white-space:nowrap;text-align:right">' +
+        return '<tr><td style="white-space:nowrap">' + esc(f.time) + '</td><td>' + esc(f.kind_label) + '</td><td style="text-align:right;white-space:nowrap">' + (f.images === null ? '<span class="muted">ไม่รวมรูป</span>' : f.images) + '</td><td style="text-align:right;white-space:nowrap">' + size(f.size) + '</td><td style="white-space:nowrap;text-align:right">' +
           '<button class="btn sm" data-bk-dl="' + i + '">ดาวน์โหลด</button> <button class="btn sm" data-bk-rs="' + i + '">กู้คืน</button> <button class="btn sm bad" data-bk-del="' + i + '">ลบ</button></td></tr>';
-      }).join('') || '<tr><td colspan="4" class="muted">ยังไม่มีไฟล์สำรอง</td></tr>') + '</tbody></table></div></div>';
+      }).join('') || '<tr><td colspan="5" class="muted">ยังไม่มีไฟล์สำรอง</td></tr>') + '</tbody></table></div></div>';
     $('#bkNew', el).onclick = function () {
       this.disabled = true; this.textContent = 'กำลังสำรอง…';
       api('backupCreate', S.token).then(function () { toast('สำรองข้อมูลแล้ว'); refresh(); }).catch(refresh);
@@ -959,11 +1088,22 @@ VIEWS.backup = function (el) {
     };
     $('#bkFile', el).onchange = function () {
       var file = this.files[0]; if (!file) return;
-      var r = new FileReader();
-      r.onload = function () {
-        api('backupUpload', S.token, String(r.result).split(',')[1] || '').then(function () { toast('อัปโหลดแล้ว กดกู้คืนที่ไฟล์นั้นเมื่อต้องการใช้'); refresh(); }).catch(refresh);
-      };
-      r.readAsDataURL(file);
+      /* ส่งทีละส่วน เพราะไฟล์ที่มีรูปอาจใหญ่เกินขนาดคำขอที่เซิร์ฟเวอร์รับได้ */
+      var CHUNK = 8 * 1024 * 1024, label = $('label[for=bkFile]', el);
+      function send(off, id) {
+        var r = new FileReader(), last = off + CHUNK >= file.size;
+        r.onload = function () {
+          api('backupUploadChunk', S.token, id, off, String(r.result).split(',')[1] || '', last).then(function (x) {
+            if (last) { toast('อัปโหลดแล้ว กดกู้คืนที่ไฟล์นั้นเมื่อต้องการใช้'); refresh(); return; }
+            label.textContent = 'กำลังอัปโหลด ' + Math.round((off + CHUNK) / file.size * 100) + '%';
+            send(off + CHUNK, x.id);
+          }).catch(refresh);
+        };
+        r.onerror = function () { toast('อ่านไฟล์ไม่สำเร็จ', 1); refresh(); };
+        r.readAsDataURL(file.slice(off, off + CHUNK));
+      }
+      label.textContent = 'กำลังอัปโหลด…';
+      send(0, '');
     };
     $$('[data-bk-dl]', el).forEach(function (b) {
       b.onclick = function () { api('backupDownload', S.token, d.files[b.dataset.bkDl].name).then(function (u) { var a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }); };
@@ -1008,7 +1148,7 @@ VIEWS.manual = function (el) {
     step(5, 'จัดตาราง', 'ตัวแทนแผนก / ผู้ดูแลระบบ', '<p>ที่เมนู ' + menu('schedule') + ' เลือกกลุ่มเรียนทางซ้าย แล้วเลือกวิธีใดวิธีหนึ่ง หรือใช้ร่วมกันก็ได้</p>' +
       '<div class="man-two"><div><h4>จัดอัตโนมัติ</h4>' + list(['กด <b>⚡ จัดอัตโนมัติ</b> ระดับกลุ่มหรือแผนก ผู้ดูแลระบบจัดทั้งวิทยาลัยได้', 'ติ๊ก <b>ล้างคาบที่ไม่ล็อกก่อนจัด</b> เมื่อต้องการจัดใหม่ คาบที่ล็อกไว้จะอยู่ที่เดิม', 'ถ้ามีวิชาที่ลงไม่ได้ ระบบจะแสดงรายการให้แก้ต่อด้วยมือ']) + '</div>' +
       '<div><h4>ลากวางเอง</h4>' + list(['ลากก้อนคาบจากตาราง <b>วิชาในแผนการเรียน</b> ไปวาง หรือแตะก้อนคาบแล้วแตะช่องในตาราง', 'กด <b>±</b> เมื่อต้องการลงจำนวนคาบอื่นในครั้งนั้น', 'ลากคาบที่ลงแล้วเพื่อย้าย']) + '</div></div>' +
-      '<p style="margin-top:8px">ตาราง <b>รายวิชาที่ต้องจัด</b> บอกสถานะของแต่ละวิชา เช่น ครบแล้ว (4/4) หรือ ยังไม่ครบ (2/4) คลิกแถวที่ยังไม่ครบเพื่อเริ่มวางคาบ ระบบไม่ให้ลงคาบเกินจำนวนในแผน แม้ผู้ดูแลระบบบังคับวางก็ตาม</p>') +
+      '<p style="margin-top:8px">ตาราง <b>รายวิชาที่ต้องจัด</b> บอกสถานะของแต่ละวิชา เช่น ครบแล้ว (4/4) หรือ ยังไม่ครบ (2/4) คลิกแถวที่ยังไม่ครบเพื่อเริ่มวางคาบ ระบบไม่ให้ลงคาบเกินจำนวนในแผน แม้ผู้ดูแลระบบบังคับวางก็ตาม</p><p style="margin-top:8px">เมื่อยังจัดไม่ครบ กระดิ่งด้านบนจะแสดงจำนวนรายการ กดเพื่อเปิดหน้า <b>ตรวจสอบแผนการเรียน</b> แล้วกดจัดตารางของกลุ่มนั้นได้ทันที</p>') +
 
     step(6, 'แก้ไขคาบและตรวจการชน', 'ตัวแทนแผนก / ผู้ดูแลระบบ', list(['คลิกคาบในตารางเพื่อเปลี่ยนห้อง จำนวนคาบ ล็อก หรือลบ และเปิดดูตารางครูหรือตารางห้องของคาบนั้น', 'กด <b>🔒 ล็อก</b> คาบที่ตกลงแล้ว เพื่อไม่ให้ถูกล้างหรือย้ายโดยไม่ตั้งใจ', 'เมื่อจัดเสร็จ กด <b>ตรวจการชนทั้งหมด</b> เพื่อดูปัญหาทั้งภาคเรียน และกดชื่อกลุ่มเพื่อไปแก้'])) +
 
@@ -1046,7 +1186,7 @@ VIEWS.log = function (el) {
 /* ===================== ข้อมูลพื้นฐาน (ตารางทั่วไป) ===================== */
 var DAYS_OPT = function () { return S.days.map(function (d, i) { return [i, d]; }); };
 var TABLES = {
-  Semesters: { title: 'ภาคเรียน', fields: [['year', 'ปีการศึกษา', 'text'], ['term', 'ภาคเรียนที่', 'text'], ['label', 'ชื่อแสดง (เช่น 2/2569)', 'text'], ['is_default', 'ภาคเรียนเริ่มต้น', 'bool']] },
+  Semesters: { title: 'ภาคเรียน', fields: [['year', 'ปีการศึกษา', 'text'], ['term', 'ภาคเรียนที่', 'text'], ['label', 'ชื่อแสดง (เช่น 2/2569)', 'text'], ['start_date', 'วันเปิดภาคเรียน', 'date'], ['end_date', 'วันปิดภาคเรียน', 'date'], ['is_default', 'ภาคเรียนเริ่มต้น', 'bool']] },
   Departments: { title: 'แผนกวิชา', fields: [['name', 'ชื่อแผนกวิชา', 'text'], ['sort', 'ลำดับ', 'number']] },
   Majors: { title: 'สาขาวิชา', fields: [['department_id', 'แผนกวิชา', 'ref:Departments'], ['name', 'ชื่อสาขาวิชา', 'text'], ['level', 'ระดับ', 'text'], ['sort', 'ลำดับ', 'number']] },
   Teachers: { title: 'ครูผู้สอน', search: true, fields: [['code', 'รหัสครู', 'text'], ['name', 'ชื่อ-สกุล', 'text'], ['department_id', 'แผนกวิชา', 'ref:Departments'], ['position', 'ตำแหน่ง', 'text'],

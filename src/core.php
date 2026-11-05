@@ -11,7 +11,7 @@ const APP_DEVELOPERS = 'ครูสมควร สากำ และครู
 
 const SCHEMA = [
   'Settings'     => ['key', 'value'],
-  'Semesters'    => ['id', 'year', 'term', 'label', 'is_default'],
+  'Semesters'    => ['id', 'year', 'term', 'label', 'is_default', 'start_date', 'end_date'],
   'Departments'  => ['id', 'name', 'sort'],
   'Majors'       => ['id', 'department_id', 'name', 'level', 'sort'],
   'Teachers'     => ['id', 'code', 'name', 'department_id', 'major_id', 'position', 'employment', 'is_dept_head', 'is_unit_head', 'service_start',
@@ -26,7 +26,7 @@ const SCHEMA = [
   'Windows'      => ['id', 'semester_id', 'department_id', 'start_date', 'end_date', 'sort'],
   // คาบ PLC: ไม่ระบุ teacher_id = ทั้งแผนก, ระบุ teacher_id = เฉพาะครูคนนั้น และใช้แทนคาบของแผนก
   'PlcSlots'     => ['id', 'department_id', 'teacher_id', 'day', 'start', 'length'],
-  'Users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active'],
+  'Users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active', 'avatar'],
   'ColorGroups'  => ['id', 'category', 'name', 'color', 'items', 'sort'],
   'IssueReports' => ['id', 'title', 'category', 'detail', 'status', 'reply', 'replied_by', 'reporter_id', 'reporter_name', 'created_at', 'updated_at'],
   'Log'          => ['time', 'user', 'action', 'detail'],

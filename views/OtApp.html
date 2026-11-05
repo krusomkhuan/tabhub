@@ -238,10 +238,17 @@ function bindAbsence() {
 VIEWS['ot-subs'] = function (el) {
   if (!(S.D.OtRounds || []).length) { el.innerHTML = '<div class="card">ยังไม่มีรอบการเบิก</div>'; return; }
   el.innerHTML = '<div class="card"><div class="row"><select id="sbR" style="width:auto">' + roundOptions() + '</select><span class="grow"></span>' +
-    (can('dept') ? '<button class="btn pri sm" id="sbAdd">+ บันทึกสอนแทน / สอนชดเชย</button>' : '') + '</div>' +
+    (can('dept') ? '<div class="sb-add"><button class="btn pri sm" id="sbAdd" aria-haspopup="true" aria-expanded="false">+ บันทึกสอนแทน / สอนชดเชย ▾</button><div class="umenu" id="sbMenu">' +
+      '<a href="javascript:void 0" data-sb-type="sub">🔁 สอนแทน<small>ครูคนอื่นสอนแทนในวันเดิม</small></a><a href="javascript:void 0" data-sb-type="makeup">📅 สอนชดเชย<small>ครูคนเดิมสอนในวันอื่น</small></a></div></div>' : '') + '</div>' +
     '<div class="small muted" style="margin-top:8px;line-height:1.7">ระเบียบข้อ 8: ครูผู้สอนแทนเบิกชั่วโมงนั้นได้ โดยรวมกับชั่วโมงเบิกปกติแล้วไม่เกิน 12 ชม./สัปดาห์ และไม่เกินสิทธิ์ของครูผู้สอนเดิม · สอนชดเชยกรณีไปราชการ ต้องแนบรายงานผลการสอนภายใน 7 วัน มิฉะนั้นเบิกชั่วโมงนั้นไม่ได้ · ข้อ 6: วิชาฝึกงาน/ทวิภาคี ห้ามสอนชดเชยหรือสอนแทน</div></div><div id="sbList"></div>';
   $('#sbR').onchange = function () { OT.round = this.value; listSubs(); };
-  if ($('#sbAdd')) $('#sbAdd').onclick = function () { subModal({}); };
+  if ($('#sbAdd')) {
+    var menu = $('#sbMenu'), btn = $('#sbAdd');
+    var setOpen = function (on) { menu.classList.toggle('open', on); btn.setAttribute('aria-expanded', on ? 'true' : 'false'); };
+    btn.onclick = function (e) { e.stopPropagation(); setOpen(!menu.classList.contains('open')); };
+    el.onclick = function (e) { if (!e.target.closest('.sb-add')) setOpen(false); };
+    $$('[data-sb-type]', menu).forEach(function (a) { a.onclick = function () { setOpen(false); subModal(a.dataset.sbType); }; });
+  }
   listSubs();
 };
 
@@ -268,24 +275,23 @@ function listSubs() {
   });
 }
 
-function subModal() {
+function subModal(kind) {
   var tOpts = function (dept) { return '<option value="">— เลือก —</option>' + otTeachers(dept).map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.name) + ' · ' + esc(deptName(t.department_id)) + '</option>'; }).join(''); };
   var myDept = S.me.role === 'dept' ? S.me.department_id : '';
   var round = IDX.OtRounds[OT.round];
-  var m = modal('<h3>บันทึกสอนแทน / สอนชดเชย</h3>' +
-    '<div class="row"><label class="row small"><input type="radio" name="sbT" value="sub" checked style="width:auto"> สอนแทน (ครูอื่นสอนแทนในวันเดิม)</label><label class="row small"><input type="radio" name="sbT" value="makeup" style="width:auto"> สอนชดเชย (ครูคนเดิมสอนวันอื่น)</label></div>' +
+  var isSub = kind === 'sub';
+  var m = modal('<h3>' + (isSub ? 'บันทึกการสอนแทน' : 'บันทึกการสอนชดเชย') + '</h3><p class="small muted" style="margin:0 0 6px">' + (isSub ? 'ครูคนอื่นสอนแทนในวันเดิม' : 'ครูคนเดิมสอนในวันอื่น') + '</p>' +
     '<label class="f">เหตุผล</label><select id="sbWhy"><option>ลา</option><option>ไปราชการ</option><option>ลาป่วย</option><option>อื่นๆ</option></select>' +
     '<label class="f">ครูผู้สอนเดิม</label><select id="sbO">' + tOpts(myDept) + '</select>' +
     '<label class="f">วันที่ของคาบเดิม</label><input type="date" id="sbOD" min="' + round.start_date + '" max="' + round.end_date + '">' +
     '<label class="f">คาบเรียน</label><select id="sbS"><option value="">— เลือกครูและวันที่ก่อน —</option></select>' +
     '<label class="f">จำนวนคาบ</label><input type="number" id="sbL" min="1">' +
-    '<div id="sbSubBox"><label class="f">ครูผู้สอนแทน</label><select id="sbBy">' + tOpts('') + '</select></div>' +
-    '<div id="sbMkBox" style="display:none"><div class="row"><div class="grow"><label class="f">วันที่สอนชดเชย</label><input type="date" id="sbMD"></div><div class="grow"><label class="f">เริ่มคาบที่</label><select id="sbMS"><option value="">— เลือกคาบ —</option>' + Grid.periodOptions(S.settings) + '</select></div></div>' +
+    '<div id="sbSubBox"' + (isSub ? '' : ' style="display:none"') + '><label class="f">ครูผู้สอนแทน</label><select id="sbBy">' + tOpts('') + '</select></div>' +
+    '<div id="sbMkBox"' + (isSub ? ' style="display:none"' : '') + '><div class="row"><div class="grow"><label class="f">วันที่สอนชดเชย</label><input type="date" id="sbMD"></div><div class="grow"><label class="f">เริ่มคาบที่</label><select id="sbMS"><option value="">— เลือกคาบ —</option>' + Grid.periodOptions(S.settings) + '</select></div></div>' +
     '<p class="small muted">ระบบจะกำหนดวันส่งรายงานผลการสอนชดเชย = วันที่สอนชดเชย + ' + (S.settings.ot_makeup_report_days || 7) + ' วัน</p></div>' +
     '<label class="f">หมายเหตุ / เลขที่คำสั่ง</label><input id="sbN">' +
     '<div id="sbWarn"></div><div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="sbGo">บันทึก</button></div>');
-  function type() { return $('input[name=sbT]:checked', m).value; }
-  $$('input[name=sbT]', m).forEach(function (r) { r.onchange = function () { $('#sbSubBox').style.display = type() === 'sub' ? '' : 'none'; $('#sbMkBox').style.display = type() === 'makeup' ? '' : 'none'; }; });
+  function type() { return kind; }
   function fillSessions() {
     var tid = $('#sbO').value, od = $('#sbOD').value;
     if (!tid || !od) return;

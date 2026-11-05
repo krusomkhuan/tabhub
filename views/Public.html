@@ -74,9 +74,19 @@
     order.sort(function (a, b) { return a.localeCompare(b, 'th'); });
     var hint = { group: 'เลือกกลุ่มเรียนเพื่อดูตารางเรียน', teacher: 'เลือกครูเพื่อดูตารางสอน', room: 'เลือกห้องเพื่อดูตารางใช้ห้อง' }[P.type];
     if (!order.length) return '<div class="card muted">ไม่พบรายการ</div>';
-    return '<div class="card pub-picker pub-' + P.type + '"><h2>' + hint + '</h2>' + order.map(function (name) {
-      return '<section><h3>' + esc(name) + '<span>' + groups[name].length + '</span></h3><div class="pub-chips">' + groups[name].map(function (x) {
-        return '<button class="pub-chip" data-pick="' + esc(x[0]) + '">' + esc(P.type === 'room' ? x[3] : x[1]) + '</button>';
+    /* ห้องไม่มีแผนให้เทียบ จึงบอกสถานะจัดครบได้เฉพาะกลุ่มเรียนและครู */
+    var bad = {};
+    (P.type === 'group' ? D.incomplete.groups : P.type === 'teacher' ? D.incomplete.teachers : []).forEach(function (id) { bad[id] = 1; });
+    var anyBad = (P.items || []).some(function (x) { return bad[x[0]]; });
+    /* สีแผนกคงที่ แม้จะกรองดูทีละแผนก: หมุนเฉดสีตามลำดับแผนกให้แผนกติดกันสีห่างกัน */
+    var deptNames = sortTh(D.departments, function (d) { return d.name; }).map(function (d) { return d.name; });
+    function deptStyle(name) { return P.type === 'teacher' ? ' class="pub-dept" style="--h:' + Math.round((Math.max(0, deptNames.indexOf(name)) * 137.5 + 25) % 360) + '"' : ''; }
+    return '<div class="card pub-picker pub-' + P.type + '"><h2>' + hint + '</h2>' +
+      (anyBad ? '<p class="pub-legend"><span class="pub-chip warn">⚠ สีนี้</span> หมายถึงตารางยังจัดไม่ครบตามแผนการเรียน อาจมีการเปลี่ยนแปลง</p>' : '') +
+      order.map(function (name) {
+      return '<section' + deptStyle(name) + '><h3>' + esc(name) + '<span>' + groups[name].length + '</span></h3><div class="pub-chips">' + groups[name].map(function (x) {
+        var warn = bad[x[0]];
+        return '<button class="pub-chip' + (warn ? ' warn' : '') + '" data-pick="' + esc(x[0]) + '"' + (warn ? ' title="ตารางยังจัดไม่ครบ"' : '') + '>' + (warn ? '⚠ ' : '') + esc(P.type === 'room' ? x[3] : x[1]) + '</button>';
       }).join('') + '</div></section>';
     }).join('') + '</div>';
   }

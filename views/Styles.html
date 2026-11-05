@@ -292,6 +292,27 @@
   .pub-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .pub-chip { padding: 7px 13px; font: inherit; font-size: 14px; cursor: pointer; color: var(--tc); background: var(--ts); border: 1px solid transparent; border-radius: 10px; transition: background .12s, color .12s; }
   .pub-chip:hover, .pub-chip:focus-visible { color: #fff; background: var(--tc); outline: none; }
+  /* สีครูตามแผนก ส่วน "จัดไม่ครบ" เป็นสีทึบเพื่อไม่ให้ปนกับสีอ่อนของแผนก */
+  .pub-dept { --tc: hsl(var(--h) 70% 32%); --ts: hsl(var(--h) 70% 93%); }
+  .pub-chip.warn { color: #3b2500; background: #f5a623; font-weight: 700; }
+  .pub-chip.warn:hover, .pub-chip.warn:focus-visible { color: #fff; background: #b45309; }
+  .pub-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+  .pub-legend .pub-chip { padding: 2px 9px; font-size: 12px; cursor: default; }
+  .bell-btn { position: relative; flex-shrink: 0; width: 36px; height: 36px; padding: 0; font-size: 17px; line-height: 1; cursor: pointer; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 9px; }
+  .bell-n { position: absolute; top: -6px; right: -6px; min-width: 18px; padding: 2px 4px; font-size: 11px; font-weight: 700; line-height: 14px; color: #fff; background: #d92d20; border-radius: 9px; }
+  .bell-n:empty { display: none; }
+  .plan-alert { display: block; margin-bottom: 14px; padding: 11px 14px; font-weight: 600; text-decoration: none; color: #8a5a06; background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 10px; }
+  .plan-alert.ok { color: var(--ok); background: var(--ok-soft); border-color: var(--ok); }
+  .plan-sum { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .user .av { overflow: hidden; } .user .av img, .pf-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .pf-av { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  .pf-pic { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; overflow: hidden; font-size: 24px; font-weight: 700; color: #fff; background: var(--pri); border-radius: 50%; }
+  @media (max-width: 480px) { .top #title { display: none; } .top .sem { flex: 1; min-width: 0; } }
+  .row select { max-width: 100%; }
+  .sb-add { position: relative; } .sb-add .umenu { top: 38px; min-width: 280px; text-align: left; }
+  .sb-add .umenu small { display: block; color: var(--muted); }
+  .cover-table { font-size: 12px; }
+  .cover-table td, .cover-table th { padding: 3px 4px; }
   @media (max-width: 760px) {
     .pub-hero { padding: 16px; gap: 12px; } .pub-hero img { width: 48px; height: 48px; } .pub-hero h1 { font-size: 20px; } .pub-hero p { font-size: 13px; }
     .pub-sem { width: 100%; justify-content: space-between; }
@@ -429,6 +450,10 @@
   html[data-theme="dark"] .pub-group { --tc: #7fabf2; --ts: #1f3350; } html[data-theme="dark"] .pub-teacher { --tc: #eea25c; --ts: #3d2a14; } html[data-theme="dark"] .pub-room { --tc: #4fcdb8; --ts: #123a33; }
   html[data-theme="dark"] .pub-tab.on { background: #2b4a78; border-color: #2b4a78; }
   html[data-theme="dark"] .pub-chip:hover { color: #0f1720; }
+  html[data-theme="dark"] .pub-dept { --tc: hsl(var(--h) 70% 72%); --ts: hsl(var(--h) 40% 20%); }
+  html[data-theme="dark"] .pub-chip.warn { color: #2b1b00; background: #f5a623; }
+  html[data-theme="dark"] .plan-alert { color: var(--warn); }
+  html[data-theme="dark"] .plan-alert.ok { color: var(--ok); }
   html[data-theme="dark"] .pub-link { background: #1f2c3a; }
   html[data-theme="dark"] .login-wrap { color: var(--ink); background-color: #0f1720; background-image: radial-gradient(circle at 12% 12%, rgba(108,156,245,.12), transparent 38%), radial-gradient(circle at 88% 88%, rgba(108,156,245,.1), transparent 38%); }
   html[data-theme="dark"] .login-wrap .login { border-color: var(--line); }

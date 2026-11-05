@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS `Semesters` (
   `term` TEXT NULL,
   `label` TEXT NULL,
   `is_default` TEXT NULL,
+  `start_date` TEXT NULL,
+  `end_date` TEXT NULL,
   PRIMARY KEY (`_seq`),
   KEY `ix_id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -220,6 +222,7 @@ CREATE TABLE IF NOT EXISTS `Users` (
   `salt` TEXT NULL,
   `pass_hash` TEXT NULL,
   `active` TEXT NULL,
+  `avatar` TEXT NULL,
   PRIMARY KEY (`_seq`),
   KEY `ix_id` (`id`),
   KEY `ix_department_id` (`department_id`),

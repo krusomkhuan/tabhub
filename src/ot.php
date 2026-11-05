@@ -191,7 +191,7 @@ function ot_per_head_rule(array $it, array $rules, ?array $course): ?array {
 function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, array $ctx): array {
   $res = ['byLevel' => [], 'errors' => [], 'warnings' => [], 'amount' => 0, 'claimHours' => 0, 'perHeadAmount' => 0, 'paid' => []];
   foreach (OT_LEVELS as $l) $res['byLevel'][$l] = ['taught' => 0, 'load' => 0, 'claim' => 0, 'perhead' => 0];
-  $subUsed = [];
+  $subUsed = []; $phByLevel = [];
   foreach ($items as $it) {
     $v = $sel[$it['key']] ?? '';
     $lv = $it['level'];
@@ -204,7 +204,7 @@ function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, arr
       if (js_true($it['pending'] ?? '')) $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['pending'] . ' (ระเบียบข้อ 8)';
       if ($it['sub'] === 'sub') $subUsed[$it['sub_id']] = ($subUsed[$it['sub_id']] ?? 0) + 1;
       $rule = !empty($ph[$it['course_id'] . '|' . $it['group_id']]) ? ot_per_head_rule($it, $ctx['perHead'] ?? [], $ctx['courses'][$it['course_id']] ?? null) : null;
-      if ($rule) { $res['byLevel'][$lv]['perhead']++; $res['perHeadAmount'] += $it['students'] * num($rule['rate_per_head']); }
+      if ($rule) { $res['byLevel'][$lv]['perhead']++; $phAmount = $it['students'] * num($rule['rate_per_head']); $res['perHeadAmount'] += $phAmount; $phByLevel[$lv] = ($phByLevel[$lv] ?? 0) + $phAmount; }
       else $res['byLevel'][$lv]['claim']++;
     }
   }
@@ -258,6 +258,9 @@ function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, arr
   foreach (OT_LEVELS as $l) $res['amount'] += $paid[$l] * ($sch['levels'][$l]['rate'] ?: 0);
   $res['amount'] += $res['perHeadAmount'];
   $res['paid'] = $paid;
+  // ยอดแยกระดับสำหรับงบหน้า ซึ่งทำแยกใบ ปวช. / ปวส.
+  $res['levels'] = [];
+  foreach (OT_LEVELS as $l) $res['levels'][$l] = ['hours' => $paid[$l] + $res['byLevel'][$l]['perhead'], 'amount' => $paid[$l] * ($sch['levels'][$l]['rate'] ?: 0) + ($phByLevel[$l] ?? 0)];
   $res['claimHours'] = array_sum($paid) + $phHours;
   $res['cap'] = $totalCap;
   if ($free) $res['warnings'][] = 'แบบอิสระ: ไม่ตรวจภาระ/เพดานรายระดับ — ผู้ตรวจต้องตรวจเอง';

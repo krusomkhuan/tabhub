@@ -113,7 +113,7 @@ function ot_evaluate(array $data, $schemeId, array $weeksSel): array {
   foreach ($data['weeks'] as $w) {
     $ws = (array)($weeksSel[$w['index']] ?? []);
     $r = ot_eval_week($w['items'], (array)($ws['sel'] ?? []), (array)($ws['ph'] ?? []), $sch, $data['cap'], ['subQuota' => $w['subQuota'], 'perHead' => $data['perHead'], 'courses' => $courses, 'refAmount' => $data['refAmount']]);
-    $out['weeks'][$w['index']] = ['claimHours' => $r['claimHours'], 'amount' => $r['amount'], 'paid' => $r['paid'], 'errors' => $r['errors'], 'warnings' => $r['warnings']];
+    $out['weeks'][$w['index']] = ['claimHours' => $r['claimHours'], 'amount' => $r['amount'], 'paid' => $r['paid'], 'levels' => $r['levels'], 'errors' => $r['errors'], 'warnings' => $r['warnings']];
     $out['hours'] += $r['claimHours']; $out['amount'] += $r['amount']; $out['perHeadAmount'] += $r['perHeadAmount'];
     foreach (OT_LEVELS as $l) $out['byLevel'][$l] += $r['paid'][$l] ?? 0;
     foreach ($r['errors'] as $e) $out['errors'][] = 'สัปดาห์ที่ ' . $w['index'] . ': ' . $e;

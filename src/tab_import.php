@@ -133,7 +133,7 @@ function tab_import_semester($tabSid): array {
       $year = tab_pick($semRaw, ['academic_year.year', 'year', 'academic_year']);
       if (is_array($year)) $year = json_encode($year, JSON_UNESCAPED_UNICODE);
       $label = tab_pick($semRaw, ['label', 'name', 'title']);
-      $sems[] = ['id' => $semId, 'year' => $year, 'term' => $term, 'label' => js_true($label) ? $label : $term . '/' . $year, 'is_default' => (bool)tab_pick($semRaw, ['is_default', 'default', 'current'])];
+      $sems[] = ['id' => $semId, 'year' => $year, 'term' => $term, 'label' => js_true($label) ? $label : $term . '/' . $year, 'is_default' => (bool)tab_pick($semRaw, ['is_default', 'default', 'current']), 'start_date' => '', 'end_date' => ''];
       writeTable('Semesters', $sems);
     }
     // ---- ข้อมูลวิทยาลัย/คาบ ----

@@ -219,6 +219,25 @@ function api_getActivityLog($token = '', $limit = 300) {
 
 // ======================= รายงาน =======================
 /** ข้อมูลสำหรับหน้าสาธารณะ (ไม่ต้องล็อกอิน) ไม่มีอีเมลหรือข้อมูลส่วนตัว */
+/**
+ * กลุ่มเรียนและครูที่ตารางยังไม่สมบูรณ์ คือมีวิชาในแผนที่ลงคาบไม่ครบ
+ * กลุ่มที่ไม่มีทั้งแผนและคาบเรียนนับว่าไม่สมบูรณ์ด้วย ส่วนครูที่ไม่มีแผนไม่นับ เพราะอาจไม่มีชั่วโมงสอนจริง
+ */
+function plan_incomplete(string $sem, array $sessions, array $ctx): array {
+  $placed = []; $busy = [];
+  foreach ($sessions as $s) { $placed[$s['plan_id']] = ($placed[$s['plan_id']] ?? 0) + num($s['length']); $busy[$s['group_id']] = true; }
+  $groups = []; $teachers = [];
+  foreach ($ctx['plans'] as $p) {
+    if ((string)$p['semester_id'] !== $sem) continue;
+    $busy[$p['group_id']] = true;
+    if (($placed[$p['id']] ?? 0) >= sched_plan_periods($p, $ctx)) continue;
+    $groups[$p['group_id']] = true;
+    foreach (explode(',', (string)$p['teacher_ids']) as $t) if (trim($t) !== '') $teachers[trim($t)] = true;
+  }
+  foreach ($ctx['groups'] as $id => $g) if (!isset($busy[$id])) $groups[$id] = true;
+  return ['groups' => array_map('strval', array_keys($groups)), 'teachers' => array_map('strval', array_keys($teachers))];
+}
+
 function api_getPublicData($semesterId = '') {
   $s = readSettings();
   if (($s['public_enabled'] ?? '') === 'false') throw new Exception('ยังไม่เปิดเผยแพร่ตาราง');
@@ -226,8 +245,10 @@ function api_getPublicData($semesterId = '') {
   $sem = js_true($semesterId) ? $semesterId : (js_true($s['default_semester_id'] ?? '') ? $s['default_semester_id'] : ($sems ? $sems[count($sems) - 1]['id'] : ''));
   $pick = fn(array $rows, array $cols) => array_map(fn($r) => array_intersect_key($r, array_flip($cols)), $rows);
   $ctx = sched_ctx_now();
-  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)($ctx['plans'][$x['plan_id']]['hour_type'] ?? '')], sem_sessions($sem));
+  $rawSessions = sem_sessions($sem);
+  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)($ctx['plans'][$x['plan_id']]['hour_type'] ?? '')], $rawSessions);
   return [
+    'incomplete' => plan_incomplete(str($sem), $rawSessions, $ctx),
     'settings' => [
       'college_name' => $s['college_name'] ?? null, 'periods_per_day' => $s['periods_per_day'] ?? null, 'period_start' => $s['period_start'] ?? null,
       'period_minutes' => $s['period_minutes'] ?? null, 'lunch_period' => $s['lunch_period'] ?? null, 'days' => $s['days'] ?? null, 'period_times' => $s['period_times'] ?? '',
@@ -320,4 +341,11 @@ function save_download(string $bytes, string $name): string {
   file_put_contents($d . '/' . $id . '.xlsx', $bytes);
   file_put_contents($d . '/' . $id . '.name', $name);
   return 'download/' . $id;
+}
+
+/** เหมือน save_download แต่คัดลอกจากไฟล์ ไม่ต้องโหลดไฟล์ใหญ่ลงหน่วยความจำ */
+function save_download_file(string $path, string $name): string {
+  $url = save_download('', $name);
+  if (!copy($path, exports_dir() . '/' . basename($url) . '.xlsx')) throw new Exception('เตรียมไฟล์ดาวน์โหลดไม่สำเร็จ ตรวจสอบพื้นที่ของเครื่อง');
+  return $url;
 }
