@@ -16,7 +16,7 @@
     <div class="pub-tabs no-print" id="pTabs"></div>
     <div class="card pub-controls no-print">
       <select id="pDept"></select><select id="pItem"></select>
-      <div class="pub-actions"><button class="btn pri" id="pShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button><button class="btn" id="pLink">🔗 คัดลอกลิงก์</button><button class="btn pwa-add" onclick="PWA.add()">📲 เพิ่มไอคอนลงมือถือ</button></div>
+      <div class="pub-actions"><span id="pModeControl"></span><button class="btn pri" id="pShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button><button class="btn" id="pLink">🔗 คัดลอกลิงก์</button><button class="btn pwa-add" onclick="PWA.add()">📲 เพิ่มไอคอนลงมือถือ</button></div>
     </div>
     <div id="pOut" class="muted">กำลังโหลด…</div>
     <p class="app-ver no-print">เวอร์ชัน <span id="pVer"></span> · <a href="?page=pdpa">นโยบายคุ้มครองข้อมูลส่วนบุคคล</a></p>
@@ -112,26 +112,32 @@
       out.innerHTML = Grid.teacherSheet({
         settings: D.settings, dayNames: D.days, locked: D.locked || [], teacher: t, teacherId: P.id, sessions: D.sessions, groups: D.groups,
         hourType: function (s) { return s.hour_type || 'in'; }, plc: D.plc || [],
-        course: course, group: gcode, room: function (id) { return (IX.rooms[id] || {}).name || ''; },
+        course: course, group: gcode, room: function (id) { return (IX.rooms[id] || {}).name || ''; }, color: publicSessionColor,
         deptName: (IX.departments[t.department_id] || {}).name || '', semLabel: sem ? sem.label : '', sign: Grid.signBlock(D.settings, head && head.name)
       });
       return;
     }
-    var total = ss.reduce(function (a, s) { return a + Number(s.length); }, 0);
-    out.innerHTML = '<div class="page"><h2>' + esc(title) + '</h2><div class="sub">' + esc(D.settings.college_name) + ' · ภาคเรียนที่ ' + esc(sem ? sem.label : '') + ' · ' + total + ' คาบ/สัปดาห์</div>' +
-      Grid.render({ settings: D.settings, dayNames: D.days, sessions: ss, locked: D.locked || [],
-        label: function (s, list) {
-          var c = course(s.course_id), parts = [];
-          var h = '<b>' + esc(c.code) + '</b><span>' + esc(c.name) + '</span>' + (P.type !== 'teacher' ? '<span>' + esc(tNames((list || [s]).map(function (x) { return x.teacher_ids; }).join(',').split(',').filter(function (t, i, a) { return t && a.indexOf(t) === i; }).join(','))) + '</span>' : '');
-          if (list && list.length > 1) parts.push(list.map(function (x) { return gcode(x.group_id); }).join(' - ') + ' (เรียนรวม)');
-          else if (P.type !== 'group') parts.push(gcode(s.group_id));
-          if (P.type !== 'room' && s.room_id) parts.push((IX.rooms[s.room_id] || {}).name);
-          return h + (parts.length ? '<span>' + esc(parts.join(' · ')) + '</span>' : '');
-        },
-        color: function (s) { var c = course(s.course_id); return Grid.sessionColor({ settings: D.settings, groups: D.color_groups || [], course_id: s.course_id, color: c.color, course_type: c.course_type, name: c.name, teacher_ids: s.teacher_ids, room_id: s.room_id, room: (IX.rooms[s.room_id] || {}).name, department_id: (IX.groups[s.group_id] || {}).department_id, workplace: s.workplace }); } }) +
-      Grid.courseList(ss, { course: course, group: gcode, teachers: tNames }) + '</div>';
+    var g = IX.groups[P.id] || {}, r = IX.rooms[P.id] || {};
+    var options = {
+      settings: D.settings, dayNames: D.days, locked: D.locked || [], sessions: D.sessions, groups: D.groups,
+      studentGroup: P.type === 'group' ? Object.assign({}, g, { id: P.id }) : null,
+      roomInfo: P.type === 'room' ? Object.assign({}, r, { id: P.id }) : null,
+      teacher: IX.teachers[g.advisor_id] || {}, course: course, group: gcode,
+      room: function (id) { return (IX.rooms[id] || {}).name || ''; }, color: publicSessionColor,
+      teacherNames: function (ids) { return Grid.shortTeacherNames(ids, function (id) { return IX.teachers[id]; }); },
+      buildingName: (IX.buildings[r.building_id] || {}).name || '', semLabel: sem ? sem.label : '',
+      sign: Grid.signBlock(D.settings, (D.teachers.filter(function (t) { return String(t.department_id) === String(g.department_id) && String(t.is_dept_head) === 'true'; })[0] || {}).name, P.type === 'room')
+    };
+    out.innerHTML = P.type === 'group' ? Grid.studentSheet(options) : Grid.roomSheet(options);
   }
 
+  function publicSessionColor(s) {
+    var c = course(s.course_id);
+    return Grid.sessionColor({ settings: D.settings, groups: D.color_groups || [], course_id: s.course_id, color: c.color, course_type: c.course_type, name: c.name, teacher_ids: s.teacher_ids, room_id: s.room_id, room: (IX.rooms[s.room_id] || {}).name, department_id: (IX.groups[s.group_id] || {}).department_id, workplace: s.workplace });
+  }
+
+  document.getElementById('pModeControl').innerHTML = Grid.displayControl('pMode');
+  Grid.bindDisplayControl(document.getElementById('pMode'), function () { if (D) draw(); });
   document.getElementById('pSem').onchange = function () { load(this.value); };
   document.getElementById('pLink').onclick = function () {
     var u = BASE + '?page=public&sem=' + encodeURIComponent(D.semester_id) + (P.id ? '&' + P.type + '=' + encodeURIComponent(P.id) : '');

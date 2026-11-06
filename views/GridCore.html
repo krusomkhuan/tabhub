@@ -360,9 +360,9 @@ var Grid = (function () {
   }
 
   /** ช่องลงนามท้ายตาราง */
-  function signBlock(st, headName) {
+  function signBlock(st, headName, omitHead) {
     function one(name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
-    return '<div class="signs">' + one(headName, 'หัวหน้าแผนกวิชา') + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ') +
+    return '<div class="signs">' + (omitHead ? '' : one(headName, 'หัวหน้าแผนกวิชา')) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ') +
       one(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + one(st.signer_director, 'ผู้อำนวยการ') + '</div>';
   }
 
@@ -372,16 +372,16 @@ var Grid = (function () {
    * hourType คืน 'in' (คาบใน), 'out' (คาบนอก) หรือ 'none' (ไม่นับ)
    */
   function teacherSheet(o) {
-    var st = o.settings, t = o.teacher || {}, n = Number(st.periods_per_day || 12), id = o.teacherId;
+    var student = o.studentGroup, roomSheet = o.roomInfo, official = student || roomSheet, st = o.settings, t = o.teacher || {}, n = Number(st.periods_per_day || 12), id = o.teacherId;
     var days = String(st.days || '0,1,2,3,4').split(',').map(Number), lunch = lunchOf(st);
     var times = periodTimes(st), locks = lockedMap(o.locked, days);
     var ids = function (x) { return String(x || '').split(',').map(function (v) { return v.trim(); }).filter(String); };
-    var sessions = o.sessions.filter(function (s) { return ids(s.teacher_ids).indexOf(String(id)) >= 0; });
+    var sessions = o.sessions.filter(function (s) { return student ? String(s.group_id) === String(student.id) : roomSheet ? String(s.room_id) === String(roomSheet.id) : ids(s.teacher_ids).indexOf(String(id)) >= 0; });
     var covers = function (s, p) { return Number(s.start) <= p && p < Number(s.start) + Number(s.length); };
     var isLunchBar = function (p) { return lunch.indexOf(p) >= 0 && !sessions.some(function (s) { return covers(s, p); }); };
     var isHomeRoom = function (label) { return /โฮมรูม|home\s*room/i.test(label || ''); };
     var cmp = function (a, b) { return String(a).localeCompare(String(b), 'th', { numeric: true }); };
-    var advisees = o.groups.filter(function (g) { return String(g.advisor_id) === String(id); }).map(function (g) { return o.group(g.id); }).sort(cmp);
+    var advisees = official ? [] : o.groups.filter(function (g) { return String(g.advisor_id) === String(id); }).map(function (g) { return o.group(g.id); }).sort(cmp);
 
     /* รายวิชา: คาบเรียนร่วมเวลาเดียวกันนับเป็นชั่วโมงสอนเดียว */
     var byCourse = {};
@@ -394,13 +394,13 @@ var Grid = (function () {
       return { code: r.c.code, name: r.c.name, t: r.c.theory, p: r.c.practice, u: r.c.credits, h: h };
     }).sort(function (a, b) { return cmp(a.code, b.code); });
     var homeRooms = 0;
-    if (advisees.length) days.forEach(function (d) {
+    if (student || advisees.length) days.forEach(function (d) {
       for (var p = 1; p <= n; p++) if (isHomeRoom(locks[d + '-' + p]) && !sessions.some(function (s) { return Number(s.day) === d && covers(s, p); })) homeRooms++;
     });
     if (homeRooms) rows.push({ code: 'Home Room', name: 'กิจกรรมโฮมรูม (ชั่วโมงพบครูที่ปรึกษา)', t: '', p: '', u: '', h: homeRooms });
     /* คาบ PLC: แสดงเฉพาะช่องที่ไม่มีคาบสอนหรือชั่วโมงล็อก นับในช่อง ช. แต่ไม่นับรวมใน/รวมนอก */
     var plcCells = {}, plcHours = 0;
-    plcFor(id, t.department_id, o.plc).forEach(function (x) {
+    (official ? [] : plcFor(id, t.department_id, o.plc)).forEach(function (x) {
       for (var k = 0, len = Number(x.length) || 1; k < len; k++) {
         var pp = Number(x.start) + k, dd = Number(x.day), key = dd + '-' + pp;
         if (pp > n || plcCells[key] || lunch.indexOf(pp) >= 0 || locks[key] || sessions.some(function (s) { return Number(s.day) === dd && covers(s, pp); })) continue;
@@ -416,19 +416,28 @@ var Grid = (function () {
       if (every('none')) return;
       if (every('out')) hoursOut += len; else hoursIn += len;
     });
-    var rowCount = Math.max(9, Math.ceil(rows.length / 2));
+    var rowCount = Math.max(9, Math.ceil((rows.length + (official ? 1 : 0)) / 2));
     var courseCells = function (r) {
       r = r || {};
       return '<td>' + esc(r.code) + '</td><td class="ts-l">' + esc(r.name) + '</td><td>' + esc(r.t) + '</td><td>' + esc(r.p) + '</td><td>' + esc(r.u) + '</td><td>' + esc(r.h) + '</td>';
     };
+    var totalCells = '<td colspan="2" class="ts-r"><b>รวม</b></td><td>' + sum('t') + '</td><td>' + sum('p') + '</td><td>' + sum('u') + '</td><td>' + sum('h') + '</td>';
     var courseRows = '';
-    for (var i = 0; i < rowCount; i++) courseRows += '<tr>' + courseCells(rows[i]) + courseCells(rows[i + rowCount]) + '</tr>';
+    for (var i = 0; i < rowCount; i++) {
+      var lastRow = official && i === rowCount - 1, totalsLeft = rows.length < rowCount;
+      courseRows += '<tr>' + (lastRow && totalsLeft ? totalCells : courseCells(rows[i])) + (lastRow && !totalsLeft ? totalCells : courseCells(rows[i + rowCount])) + '</tr>';
+    }
     var info = function (label, val, cls) { return '<div class="ts-info"><b>' + label + '</b><span' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(val) + '</span></div>'; };
     var courseHead = '<th>รหัสวิชา</th><th>ชื่อรายวิชา</th><th>ท.</th><th>ป.</th><th>น.</th><th>ช.</th>';
+    var who = student
+      ? info('ภาคเรียนที่', o.semLabel) + info('ครูที่ปรึกษา', t.name || '—') + info('รหัสกลุ่มเรียน', student.student_code || student.code || '—') + info('ชื่อกลุ่มเรียน', student.code || student.name || '—')
+      : roomSheet ? info('ภาคเรียนที่', o.semLabel) + info('อาคารเรียน', o.buildingName || '—') + info('ห้องเรียน', roomSheet.name || '—')
+      : info('ภาคเรียน', o.semLabel) + info('ผู้สอน', t.name) + (t.education === undefined ? '' : info('วุฒิการศึกษา', t.education)) + info('แผนกวิชา', o.deptName) + info('หน้าที่พิเศษ', t.special_duty, 'ts-duty');
     var head = '<table class="ts-head"><colgroup><col style="width:26.6%">' + new Array(3).join('<col style="width:6.7%"><col style="width:22.6%"><col style="width:1.65%"><col style="width:1.65%"><col style="width:1.65%"><col style="width:1.65%">') + '</colgroup>' +
-      '<tr><td class="ts-who" rowspan="' + (rowCount + 2) + '"><img src="assets/college-seal.png" alt="ตราวิทยาลัย"><div class="ts-college">' + esc(st.college_name) + '</div>' +
-      info('ภาคเรียน', o.semLabel) + info('ผู้สอน', t.name) + (t.education === undefined ? '' : info('วุฒิการศึกษา', t.education)) + info('แผนกวิชา', o.deptName) + info('หน้าที่พิเศษ', t.special_duty, 'ts-duty') + '</td>' + courseHead + courseHead + '</tr>' +
-      courseRows + '<tr class="ts-total"><td></td><td class="ts-r"><b>รวม</b></td><td>' + sum('t') + '</td><td>' + sum('p') + '</td><td>' + sum('u') + '</td><td>' + sum('h') + '</td><td class="ts-sum" colspan="6">(รวมใน: ' + hoursIn + ') (รวมนอก: ' + hoursOut + ')</td></tr></table>';
+      '<tr><td class="ts-who" rowspan="' + (rowCount + (official ? 1 : 2)) + '"><img src="assets/college-seal.png" alt="ตราวิทยาลัย"><div class="ts-college">' + esc(st.college_name) + '</div>' +
+      '<div class="ts-person-info">' + who + '</div></td>' + courseHead + courseHead + '</tr>' +
+      courseRows + (official ? ''
+        : '<tr class="ts-total"><td></td><td class="ts-r"><b>รวม</b></td><td>' + sum('t') + '</td><td>' + sum('p') + '</td><td>' + sum('u') + '</td><td>' + sum('h') + '</td><td class="ts-sum" colspan="6">(รวมใน: ' + hoursIn + ') (รวมนอก: ' + hoursOut + ')</td></tr>') + '</table>';
 
     /* ตารางสอน: คาบพักไม่นับเลขคาบ เช่น 1-4, พัก, 5-11 */
     var timeRow = '<tr><td>เวลา</td><td>' + esc(flagTime(st)) + '</td>', numRow = '<tr><td>วัน/คาบ</td><td class="ts-bar" rowspan="' + (days.length + 1) + '"><span>กิจกรรมหน้าเสาธง</span></td>';
@@ -460,7 +469,12 @@ var Grid = (function () {
         if (seg) {
           h += '<td colspan="' + (seg.end - q + 1) + '">' + mergeItems(seg.items).map(function (group) {
             var s = group[0];
-            return '<div class="ts-s"><div>' + esc(o.course(s.course_id).code) + '</div><div>' + esc(s.room_id ? o.room(s.room_id) : '') + '</div><div>' + esc(group.map(function (x) { return o.group(x.group_id); }).join(',')) + '</div></div>';
+            var groupNames = group.map(function (x) { return o.group(x.group_id); }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(',');
+            var teacherLabel = official ? o.teacherNames(group.map(function (x) { return x.teacher_ids; }).join(',')) : '';
+            var label = official ? teacherLabel : groupNames;
+            var middle = roomSheet ? groupNames : (s.room_id ? o.room(s.room_id) : '');
+            var fill = validColor(o.color ? o.color(s) : colorFor(s.course_id), '#cfe2f3');
+            return '<div class="ts-s" style="--session-color:' + fill + '"><div>' + esc(o.course(s.course_id).code) + '</div><div>' + esc(middle) + '</div><div>' + esc(label) + '</div></div>';
           }).join('') + '</td>';
           q = seg.end;
         } else {
@@ -471,16 +485,47 @@ var Grid = (function () {
             h += '<td class="ts-plc" colspan="' + (plcEnd - q + 1) + '">PLC</td>';
             q = plcEnd;
           }
-          else if (isHomeRoom(lock) && advisees.length) h += '<td><div class="ts-s"><div>Home Room</div><div></div><div>' + esc(advisees.join(', ')) + ' **</div></div></td>';
+          else if (isHomeRoom(lock) && (student || advisees.length)) h += '<td><div class="ts-s"><div>Home Room</div><div></div><div>' + esc(student ? o.teacherNames(t.id || '') : advisees.join(', ') + ' **') + '</div></div></td>';
           else h += '<td class="ts-lock">' + esc(lock || '') + '</td>';
         }
       }
       return h + '</tr>';
     }).join('');
-    return '<div class="page ts-page"><div class="ts-wrap"><div class="ts-sheet">' + head + '<table class="ts-grid"><tbody>' + timeRow + '</tr>' + numRow + '</tr>' + body + '</tbody></table>' + o.sign + '</div></div></div>';
+    return '<div class="page ts-page' + (student ? ' student-page' : roomSheet ? ' room-page' : '') + (displayMode() === 'color' ? ' sheet-color' : ' sheet-mono') + '"><div class="ts-wrap"><div class="ts-sheet">' + head + '<table class="ts-grid"><tbody>' + timeRow + '</tr>' + numRow + '</tr>' + body + '</tbody></table>' + o.sign + '</div></div></div>';
+  }
+
+  /** ตารางนักเรียนใช้โครงแบบเดียวกับเอกสารตารางเรียนของวิทยาลัย */
+  function studentSheet(o) {
+    return teacherSheet(Object.assign({}, o, { studentGroup: o.studentGroup, hourType: function () { return 'in'; }, plc: [] }));
+  }
+
+  function roomSheet(o) {
+    return teacherSheet(Object.assign({}, o, { hourType: function () { return 'in'; }, plc: [] }));
+  }
+
+  function shortTeacherNames(value, lookup) {
+    return String(value || '').split(',').filter(function (x, i, a) { return x && a.indexOf(x) === i; }).map(function (id) {
+      return String((lookup(id) || {}).name || '').replace(/^(?:นางสาว|นาย|นาง|ครู)[ \t]*/, '').trim().split(/\s+/)[0];
+    }).filter(Boolean).join(', ');
+  }
+
+  var sheetMode = 'mono';
+  function displayMode() {
+    try { sheetMode = localStorage.getItem('tt_sheet_mode') === 'color' ? 'color' : 'mono'; } catch (e) {}
+    return sheetMode;
+  }
+  function displayControl(id) {
+    return '<label class="sheet-mode-control">รูปแบบ <select id="' + esc(id) + '" aria-label="รูปแบบสีตาราง"><option value="mono"' + (displayMode() === 'mono' ? ' selected' : '') + '>ขาวดำ</option><option value="color"' + (displayMode() === 'color' ? ' selected' : '') + '>สี</option></select></label>';
+  }
+  function bindDisplayControl(select, redraw) {
+    select.onchange = function () {
+      sheetMode = this.value === 'color' ? 'color' : 'mono';
+      try { localStorage.setItem('tt_sheet_mode', sheetMode); } catch (e) {}
+      redraw();
+    };
   }
 
   return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap, mergeItems: mergeItems,
-    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, teacherSheet: teacherSheet, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
+    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, teacherSheet: teacherSheet, studentSheet: studentSheet, roomSheet: roomSheet, shortTeacherNames: shortTeacherNames, displayControl: displayControl, bindDisplayControl: bindDisplayControl, displayMode: displayMode, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
 })();
 </script>

@@ -844,19 +844,23 @@ function teacherSheet(id) {
   return Grid.teacherSheet({
     settings: S.settings, dayNames: S.days, locked: S.D.LockedSlots, teacher: t, teacherId: id, sessions: S.sessions, groups: S.D.Groups,
     hourType: function (s) { return (IDX.Plans[s.plan_id] || {}).hour_type || 'in'; }, plc: S.D.PlcSlots,
-    course: courseOf, group: groupCode, room: roomName, deptName: deptName(t.department_id), semLabel: semLabel(S.sem), sign: signBlock(t.department_id)
+    course: courseOf, group: groupCode, room: roomName, color: sessionColor, deptName: deptName(t.department_id), semLabel: semLabel(S.sem), sign: signBlock(t.department_id)
   });
 }
 
 function reportPage(type, id) {
   if (type === 'teacher') return teacherSheet(id);
-  var sessions, title, dept;
-  if (type === 'group') { sessions = S.sessions.filter(function (s) { return String(s.group_id) === String(id); }); var g = IDX.Groups[id] || {}; title = 'ตารางเรียน กลุ่ม ' + (g.code || ''); dept = g.department_id; }
-  else { sessions = S.sessions.filter(function (s) { return String(s.room_id) === String(id); }); title = 'ตารางการใช้ห้อง ' + roomName(id) + ' ' + nm('Buildings', (IDX.Rooms[id] || {}).building_id); }
-  var total = sessions.reduce(function (a, s) { return a + Number(s.length); }, 0);
-  return '<div class="page"><h2>' + esc(title) + '</h2><div class="sub">' + esc(S.settings.college_name) + ' · ภาคเรียนที่ ' + esc(semLabel(S.sem)) + (dept ? ' · แผนกวิชา' + esc(deptName(dept)) : '') + ' · รวม ' + total + ' คาบ/สัปดาห์</div>' +
-    Grid.render({ settings: S.settings, dayNames: S.days, sessions: sessions, locked: S.D.LockedSlots, label: sessionLabel(type), color: sessionColor }) +
-    Grid.courseList(sessions, { course: courseOf, group: groupCode, teachers: teacherNames }) + (type !== 'room' ? signBlock(dept) : '') + '</div>';
+  var group = IDX.Groups[id] || {}, room = IDX.Rooms[id] || {};
+  var options = {
+    settings: S.settings, dayNames: S.days, locked: S.D.LockedSlots, sessions: S.sessions, groups: S.D.Groups,
+    studentGroup: type === 'group' ? Object.assign({}, group, { id: id }) : null,
+    roomInfo: type === 'room' ? Object.assign({}, room, { id: id }) : null,
+    teacher: IDX.Teachers[group.advisor_id] || {}, course: courseOf, group: groupCode, room: roomName, color: sessionColor,
+    teacherNames: function (ids) { return Grid.shortTeacherNames(ids, function (tid) { return IDX.Teachers[tid]; }); },
+    buildingName: nm('Buildings', room.building_id), semLabel: semLabel(S.sem),
+    sign: type === 'room' ? Grid.signBlock(S.settings, '', true) : signBlock(group.department_id)
+  };
+  return type === 'group' ? Grid.studentSheet(options) : Grid.roomSheet(options);
 }
 
 VIEWS.reports = function (el) {
@@ -871,7 +875,7 @@ VIEWS.reports = function (el) {
     '<select id="rT" style="width:auto"><option value="group">ตารางเรียนรายกลุ่ม</option><option value="teacher">ตารางสอนรายครู</option><option value="room">ตารางใช้ห้อง</option></select>' +
     (r.type !== 'room' ? '<select id="rD" style="width:auto">' + deptOptions(r.dept) + '</select>' : '') +
     '<select id="rI" style="width:auto;min-width:220px"><option value="__all">— ทั้งหมด' + (r.dept ? 'ในแผนก' : '') + ' (' + o.length + ') —</option>' + o.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(r.id) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>' +
-    '<button class="btn pri" id="rShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button>' +
+    Grid.displayControl('rMode') + '<button class="btn pri" id="rShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button>' +
     (can('dept') ? '<button class="btn" id="rX">ส่งออกเป็น Excel (.xlsx)</button>' : '') + '</div></div><div id="rOut"></div>';
   Grid.bindShareButton($('#rShare'), function () { return $$('#rOut .page'); }, function () {
     var typeName = { group: 'ตารางเรียน', teacher: 'ตารางสอน', room: 'ตารางใช้ห้อง' }[r.type], it = $('#rI');
@@ -881,6 +885,7 @@ VIEWS.reports = function (el) {
   $('#rT').onchange = function () { r.type = this.value; r.id = ''; VIEWS.reports(el); };
   if ($('#rD')) $('#rD').onchange = function () { r.dept = this.value; r.id = ''; VIEWS.reports(el); };
   $('#rI').onchange = function () { r.id = this.value; draw(); };
+  Grid.bindDisplayControl($('#rMode'), draw);
   if ($('#rX')) $('#rX').onclick = function () { api('exportToSheet', S.token, S.sem).then(function (u) { var a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); toast('ดาวน์โหลดไฟล์ Excel แล้ว'); }); };
   function draw() {
     var out = $('#rOut');
@@ -894,7 +899,8 @@ VIEWS.reports = function (el) {
 
 VIEWS.mine = function (el) {
   if (!S.me.teacher_id) { el.innerHTML = '<div class="card">บัญชีนี้ยังไม่ได้ผูกกับรายชื่อครู — แจ้งผู้ดูแลระบบให้ผูกบัญชีที่เมนู ผู้ใช้งาน</div>'; return; }
-  el.innerHTML = '<div class="row no-print" style="margin-bottom:10px"><button class="btn pri" id="mShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button></div>' + reportPage('teacher', S.me.teacher_id);
+  el.innerHTML = '<div class="row no-print" style="margin-bottom:10px">' + Grid.displayControl('mMode') + '<button class="btn pri" id="mShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button></div>' + reportPage('teacher', S.me.teacher_id);
+  Grid.bindDisplayControl($('#mMode'), function () { VIEWS.mine(el); });
   Grid.bindShareButton($('#mShare'), function () { return $$('#content .page'); }, function () { return 'ตารางสอน ' + S.me.name + ' ภาคเรียน ' + semLabel(S.sem); }, function (m, bad) { toast(m, bad); });
 };
 

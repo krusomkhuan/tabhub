@@ -313,6 +313,31 @@
   .sb-add .umenu small { display: block; color: var(--muted); }
   .cover-table { font-size: 12px; }
   .cover-table td, .cover-table th { padding: 3px 4px; }
+  /* หลักฐานการเบิก: พิมพ์ฟอร์มแทนหน้าจอเลือกชั่วโมงรายสัปดาห์ */
+  .ot-receipt { page: otclaim; color: #000; background: #fff; font-size: 10px; line-height: 1.3; }
+  .receipt-draft { width: 60%; margin: 0 auto 3px; border: 1px solid #d33a3a; padding: 2px 5px; text-align: center; color: #d33a3a; font-size: 9px; }
+  .receipt-heading { position: relative; min-height: 94px; padding-top: 60px; text-align: center; }
+  .receipt-heading img { position: absolute; top: 6px; left: 0; width: 48px; height: 48px; object-fit: contain; }
+  .receipt-heading h2 { margin: 0 0 3px; font-size: 12px; font-weight: 600; }
+  .receipt-heading p { margin: 0 0 5px; font-size: 10px; }
+  .receipt-table, .receipt-signatures { border-collapse: collapse; table-layout: fixed; width: 100%; background: #fff; color: #000; }
+  .receipt-table th, .receipt-table td, .receipt-signatures td { border: 1px solid #000; padding: 2px 3px; text-align: center; overflow-wrap: anywhere; font-size: 9px; font-weight: 400; }
+  .receipt-table thead tr:first-child th { height: 64px; }
+  .receipt-table thead tr:nth-child(2) th { height: 54px; }
+  .receipt-table tbody td { height: 18px; }
+  .receipt-table td.receipt-name { text-align: left; }
+  .receipt-table td.receipt-number { text-align: right; font-variant-numeric: tabular-nums; }
+  .receipt-total { background: #e4e5e7; }
+  .receipt-signatures { margin-top: -1px; }
+  .receipt-signatures td { width: 33.333%; height: 76px; vertical-align: middle; }
+  .receipt-signatures td.receipt-grand-total { background: #c4c7cb; text-align: left; padding: 7px; }
+  .ot-receipt { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page otclaim { size: A4 landscape; margin: 5mm; }
+  @media print {
+    .ot-receipt { display: block; break-inside: avoid; margin: 0; padding: 0; }
+    .ot-receipt thead { display: table-header-group; }
+    .ot-receipt tr { break-inside: avoid; }
+  }
   @media (max-width: 760px) {
     .pub-hero { padding: 16px; gap: 12px; } .pub-hero img { width: 48px; height: 48px; } .pub-hero h1 { font-size: 20px; } .pub-hero p { font-size: 13px; }
     .pub-sem { width: 100%; justify-content: space-between; }
@@ -382,6 +407,25 @@
   .ts-lock { font-size: 10px; }
   .ts-sheet td.ts-plc { vertical-align: top; padding-top: 8px; }
   .ts-page .signs { margin-top: 18px; font-size: 12px; color: #000; }
+  /* แบบฟอร์มตารางนักเรียนและตารางใช้ห้อง ตามเอกสารของวิทยาลัย */
+  .student-page .ts-head th, .student-page .ts-head td,
+  .room-page .ts-head th, .room-page .ts-head td { height: 24px; }
+  .student-page .ts-person-info, .room-page .ts-person-info { margin-top: 36px; }
+  .student-page .ts-info, .room-page .ts-info { line-height: 1.7; gap: 10px; }
+  .student-page .ts-grid tr:nth-child(-n+2) td,
+  .room-page .ts-grid tr:nth-child(-n+2) td { height: 40px; }
+  .student-page .ts-grid td, .room-page .ts-grid td { height: 64px; }
+  .student-page .ts-head .ts-college, .room-page .ts-head .ts-college { margin-bottom: 0; }
+  .ts-person-info span { min-width: 0; overflow-wrap: anywhere; }
+  .sheet-mode-control { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .sheet-mode-control select { width: auto; min-width: 90px; }
+  .sheet-color .ts-head th, .sheet-color .ts-grid tr:nth-child(-n+2) td, .sheet-color .ts-day { background: #edf3fb; }
+  .sheet-color .ts-grid .ts-bar { background: #f1f4f8; }
+  .sheet-color .ts-s { background: var(--session-color, #cfe2f3); }
+  .ts-grid .ts-s { padding: 4px 2px; }
+  .ts-sheet { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pdf-host .ts-sheet { min-width: 0; }
+  .pdf-host .ts-wrap { overflow: visible; }
   @media print {
     @page { size: A4 landscape; margin: 8mm; }
     .ss, table.tt td.lunch, table.tt td.lock { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

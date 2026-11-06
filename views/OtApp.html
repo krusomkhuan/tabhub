@@ -85,6 +85,68 @@ function weekEval(w) {
   return Ot.evalWeek(w.items, OT.sel[w.index] || {}, OT.ph[w.index] || {}, sch, OT.data.cap, { subQuota: w.subQuota, perHead: OT.data.perHead, courses: IDX.Courses, refAmount: OT.data.refAmount });
 }
 
+function otSignatureName(name) {
+  var text = String(name || '').trim(), match = text.match(/^(ว่าที่[ \t]*ร้อยโท)[ \t]*/);
+  return { prefix: match ? 'ว่าที่ร้อยโท' : '', name: match ? text.slice(match[0].length).trim() : text };
+}
+
+/** แบบหลักฐานการเบิกสำหรับพิมพ์ ใช้ผลคำนวณชุดเดียวกับหน้าจอเลือกชั่วโมง */
+function claimPrintHtml(d, sch, evaluated) {
+  var st = S.settings, teacher = d.teacher, levels = ['vc', 'vs'];
+  if (evaluated.some(function (x) { var b = x.result.byLevel.bd; return b && (b.taught || b.claim || b.perhead); })) levels.push('bd');
+  var sums = {}, total = 0, errors = 0;
+  levels.forEach(function (l) { sums[l] = { taught: 0, hours: 0, perhead: 0, amount: 0, perHeadAmount: 0 }; });
+  evaluated.forEach(function (x) {
+    var r = x.result, w = x.week;
+    total += Number(r.amount) || 0; errors += r.errors.length;
+    levels.forEach(function (l) {
+      var b = r.byLevel[l] || {}, out = sums[l], hours = Number(r.paid[l]) || 0;
+      out.taught += Number(b.taught) || 0; out.hours += hours; out.perhead += Number(b.perhead) || 0;
+      out.amount += hours * Number(sch && sch.levels[l] && sch.levels[l].rate || 0);
+    });
+    w.items.forEach(function (it) {
+      if (!sums[it.level] || it.blocked || it.absent || (OT.sel[w.index] || {})[it.key] !== 'C' || !(OT.ph[w.index] || {})[it.course_id + '|' + it.group_id]) return;
+      var rule = Ot.perHeadRule(it, d.perHead, IDX.Courses[it.course_id]);
+      if (rule) sums[it.level].perHeadAmount += Number(it.students || 0) * Number(rule.rate_per_head || 0);
+    });
+  });
+  var changed = String(d.claim && d.claim.scheme_id || '') !== String(OT.scheme);
+  if (d.claim) d.weeks.forEach(function (w) {
+    var saved = (d.claim.weeks || {})[w.index] || {};
+    function same(a, b) { var keys = Object.keys(a || {}), other = Object.keys(b || {}); return keys.length === other.length && keys.every(function (k) { return a[k] === b[k]; }); }
+    if (!same(saved.sel, OT.sel[w.index]) || !same(saved.ph, OT.ph[w.index])) changed = true;
+  });
+  var draft = !d.claim || d.claim.status === 'draft' || changed || errors > 0;
+  var dateText = function (date) {
+    var p = String(date || '').slice(0, 10).split('-');
+    var months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    return p.length === 3 ? Number(p[2]) + ' ' + months[Number(p[1]) - 1] + ' ' + (Number(p[0]) + 543) : '........................';
+  };
+  var cols = 7 + levels.length * 5;
+  var levelHeaders = function () { return levels.map(function (l) { return '<th>' + esc(LV[l]) + '</th>'; }).join(''); };
+  var amountCell = function (v) { return '<td class="receipt-number">' + (v ? money(v) : '–') + '</td>'; };
+  var numbers = function (field) { return levels.map(function (l) {
+    var v = sums[l][field];
+    return field === 'hours' || field === 'perhead' ? '<td class="receipt-number">' + (v ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : '–') + '</td>' : amountCell(v);
+  }).join(''); };
+  var marks = levels.map(function (l) { return '<td>' + (sums[l].taught || sums[l].hours || sums[l].perhead ? '✓' : '') + '</td>'; }).join('');
+  var signature = function (name, role, title) {
+    var person = otSignatureName(name);
+    return '<td><div>' + title + '</div><div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + '................................................</div><div>(' + esc(person.name || '................................................') + ')</div><div>' + role + '</div><div>วันที่........เดือน................พ.ศ............</div></td>';
+  };
+  var blank = '<tr>' + new Array(cols + 1).join('<td>&nbsp;</td>') + '</tr>';
+  var widths = '<col style="width:3%"><col style="width:14%"><col style="width:6%">' + new Array(levels.length * 5 + 1).join('<col style="width:5%">') + '<col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:8%">';
+  return '<section class="print-only ot-receipt" aria-label="หลักฐานการเบิกค่าสอน">' +
+    (draft ? '<div class="receipt-draft">ฉบับร่าง — ยังไม่ได้ยืนยันล็อกการเบิก ตัวเลขอาจเปลี่ยนได้' + (errors ? ' · มีรายการที่ยังไม่ผ่านกติกา' : '') + '</div>' : '') +
+    '<div class="receipt-heading"><img src="assets/college-seal.png" alt="ตราวิทยาลัย"><h2>หลักฐานการเบิกจ่ายเงินค่าสอนพิเศษและค่าสอนเกินภาระงานสอนในสถานศึกษา</h2><p>' + esc(st.college_name || '') + ' แผนกวิชา' + esc(deptName(teacher.department_id)) + ' ระหว่างวันที่ ' + dateText(d.round.start_date) + ' ถึงวันที่ ' + dateText(d.round.end_date) + '</p></div>' +
+    '<table class="receipt-table"><colgroup>' + widths + '</colgroup><thead><tr><th rowspan="2">ลำดับ<br>ที่</th><th rowspan="2">ชื่อ - นามสกุล</th><th rowspan="2">ตำแหน่งผู้<br>ทำการ<br>สอนพิเศษ</th><th colspan="' + levels.length + '">ระดับการสอน</th><th colspan="' + levels.length + '">จำนวนหน่วย<br>ชั่วโมงทำการสอน<br>พิเศษและสอนเกิน<br>ภาระงานสอน</th><th colspan="' + levels.length + '">จำนวนหน่วย<br>ชั่วโมงทำการสอน<br>พิเศษและสอนเกิน<br>ภาระงานสอน<br>(รายหัว)</th><th colspan="' + levels.length + '">จำนวนเงิน</th><th colspan="' + levels.length + '">จำนวนเงิน<br>รายหัว</th><th rowspan="2">รวม<br>จำนวนเงิน</th><th rowspan="2">ลายมือชื่อ<br>ผู้รับเงิน</th><th rowspan="2">วัน/เดือน/ปี<br>ที่รับเงิน</th><th rowspan="2">หมายเหตุ</th></tr><tr>' +
+    levels.map(function (l) { return '<th>' + (l === 'vc' ? 'มัธยมศึกษาตอนต้นหรือมัธยมศึกษาตอนปลายหรือเทียบเท่า' : l === 'vs' ? 'สูงกว่ามัธยมศึกษาตอนปลายหรือเทียบเท่า' : 'ปริญญาตรี') + '</th>'; }).join('') + levelHeaders() + levelHeaders() + levelHeaders() + levelHeaders() + '</tr></thead><tbody><tr><td>1</td><td class="receipt-name">' + esc(teacher.name) + '</td><td>' + esc(teacher.position || '') + '</td>' + marks + numbers('hours') + numbers('perhead') + numbers('amount') + numbers('perHeadAmount') + amountCell(total) + '<td></td><td></td><td>' + (draft ? 'ฉบับร่าง' : '') + '</td></tr>' + blank + blank + blank +
+    '<tr class="receipt-total"><td></td><td><b>รวม</b></td><td></td>' + levels.map(function () { return '<td></td>'; }).join('') + numbers('hours') + numbers('perhead') + numbers('amount') + numbers('perHeadAmount') + amountCell(total) + '<td></td><td></td><td></td></tr></tbody></table>' +
+    '<table class="receipt-signatures"><tbody><tr><td class="receipt-grand-total">รวมจำนวนเงินค่าสอนพิเศษทั้งสิ้น ' + money(total) + ' บาท<br>(' + esc(Ot.bahtText(total)) + ')</td>' +
+    signature(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้', '') + signature(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ', 'ผู้รับรอง') + '</tr><tr>' +
+    signature(st.signer_finance, 'หัวหน้างานการเงิน', 'ผู้รับรอง') + signature(st.signer_admin_deputy, 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร', 'ผู้รับรอง') + signature(st.signer_director, 'ผู้อำนวยการ' + esc(st.college_name || ''), 'ผู้อนุมัติ') + '</tr></tbody></table></section>';
+}
+
 function renderClaim() {
   var d = OT.data, box = $('#oMain'), sch = schemeObj();
   var locked = d.claim && d.claim.status !== 'draft';
@@ -95,13 +157,14 @@ function renderClaim() {
     return { s: s, amt: amt };
   });
   var best = comp.filter(function (c) { return c.s.cap_method !== 'free'; }).sort(function (a, b) { return b.amt - a.amt; })[0];
-  var total = { h: 0, a: 0, err: 0 };
+  var total = { h: 0, a: 0, err: 0 }, evaluated = [];
   var weeksHtml = d.weeks.map(function (w) {
     var r = weekEval(w) || { errors: [], warnings: [], byLevel: {}, amount: 0, claimHours: 0, paid: {} };
     total.h += r.claimHours; total.a += r.amount; total.err += r.errors.length;
+    evaluated.push({ week: w, result: r });
     return weekHtml(w, r, canEdit);
   }).join('');
-  box.innerHTML = '<div class="card"><div class="row"><div class="grow"><h3 style="margin:0">' + esc(t.name) + '</h3><div class="small muted">' + esc(t.position || '') + ' · ' + esc(Ot.EMPLOY_TH[t.employment] || 'ไม่ระบุสถานะการจ้าง') +
+  box.innerHTML = '<div class="ot-claim-editor no-print"><div class="card"><div class="row"><div class="grow"><h3 style="margin:0">' + esc(t.name) + '</h3><div class="small muted">' + esc(t.position || '') + ' · ' + esc(Ot.EMPLOY_TH[t.employment] || 'ไม่ระบุสถานะการจ้าง') +
     (String(t.is_unit_head) === 'true' ? ' · หัวหน้างาน' : '') + ' · เพดานรายบุคคล ' + d.cap + ' ชม./สัปดาห์' + (d.capNote ? ' (' + esc(d.capNote) + ')' : '') + '</div></div>' +
     (locked ? '<span class="tag ok">ล็อกแล้ว · ' + esc(d.claim.locked_by || '') + '</span>' + (can('admin') ? ' <button class="btn sm" id="oUnlock">ปลดล็อก</button>' : '') : '<span class="tag">ฉบับร่าง</span>') + '</div>' +
     (String(t.ot_enabled) !== 'true' ? '<p class="tag bad">ครูคนนี้ยังไม่เปิดสิทธิ์เบิก — ผู้ดูแลตั้งที่เมนู กำหนดแบบการเบิกให้ครู</p>' : '') +
@@ -117,7 +180,7 @@ function renderClaim() {
     (canEdit ? '<button class="btn sm" id="oAuto">เลือกอัตโนมัติทุกสัปดาห์</button><button class="btn sm" id="oSave">บันทึก</button><button class="btn pri sm" id="oLock">ยืนยันและล็อกการเบิก</button>' : '') +
     '<button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div>' +
     '<div class="small muted" style="margin-top:6px">คลิกชั่วโมงเพื่อสลับ: ไม่ใช้ → <span class="tag ok">ภาระ</span> → <span class="tag">เบิก</span> · สีเทา = ห้ามเบิก · ขีดฆ่า = ลา/ไปราชการ/หยุด (ภาระไม่ลดลง) · ⚠ = สอนชดเชยรอรายงาน</div></div>' +
-    absenceCard(d, canEdit) + weeksHtml;
+    absenceCard(d, canEdit) + weeksHtml + '</div>' + claimPrintHtml(d, sch, evaluated);
   if ($('#oS')) $('#oS').onchange = function () { OT.scheme = this.value; renderClaim(); };
   if ($('#oAuto')) $('#oAuto').onclick = function () { d.weeks.forEach(function (w) { OT.sel[w.index] = Ot.autoSelect(w.items, schemeObj(), d.cap); }); renderClaim(); };
   if ($('#oSave')) $('#oSave').onclick = function () { saveClaim(false); };
@@ -322,33 +385,37 @@ function subModal(kind) {
 /* ---------- สรุปเสนอเบิก ---------- */
 VIEWS['ot-summary'] = function (el) {
   if (!(S.D.OtRounds || []).length) { el.innerHTML = '<div class="card">ยังไม่มีรอบการเบิก</div>'; return; }
-  if (!OT.dept) OT.dept = S.me.department_id || (S.D.Departments[0] || {}).id;
-  el.innerHTML = '<div class="card no-print"><div class="row"><select id="smR" style="width:auto">' + roundOptions() + '</select><select id="smD" style="width:auto">' + deptOptions(OT.dept, '— เลือกแผนก —') + '</select>' +
+  var dept = OT.summaryDept || S.me.department_id || (can('admin') ? '__all' : (S.D.Departments[0] || {}).id);
+  if (!can('admin')) dept = S.me.department_id;
+  var all = dept === '__all';
+  el.innerHTML = '<div class="card no-print"><div class="row"><select id="smR" style="width:auto">' + roundOptions() + '</select><select id="smD" style="width:auto">' + (can('admin') ? '<option value="__all"' + (all ? ' selected' : '') + '>ทุกแผนกวิชา</option>' : '') + deptOptions(dept, '— เลือกแผนก —') + '</select>' +
     '<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / PDF</button><span id="smAct"></span></div></div><div id="smOut" class="muted">กำลังโหลด…</div>';
   $('#smR').onchange = function () { OT.round = this.value; VIEWS['ot-summary'](el); };
-  $('#smD').onchange = function () { OT.dept = this.value; VIEWS['ot-summary'](el); };
-  api('otDeptSummary', S.token, OT.round, OT.dept).then(function (r) {
+  $('#smD').onchange = function () { OT.summaryDept = this.value; VIEWS['ot-summary'](el); };
+  api('otDeptSummary', S.token, OT.round, dept).then(function (r) {
     var round = IDX.OtRounds[OT.round], s = S.settings;
-    function sign(name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
-    var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(OT.dept) && String(t.is_dept_head) === 'true'; })[0];
+    function sign(name, role) { var person = otSignatureName(name); return '<div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + '.................................<br>(' + esc(person.name || '.................................') + ')<br>' + role + '</div>'; }
+    var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(dept) && String(t.is_dept_head) === 'true'; })[0];
     $('#smOut').className = '';
-    $('#smOut').innerHTML = '<div class="page"><h2>ใบสรุปเสนอเบิกค่าสอนเกินภาระงาน</h2><div class="sub">' + esc(s.college_name) + ' · แผนกวิชา' + esc(deptName(OT.dept)) + ' · ' + esc(round.name) + ' ภาคเรียนที่ ' + esc(semLabel(round.semester_id)) + ' (' + thDate(round.start_date) + ' – ' + thDate(round.end_date) + ')</div>' +
+    $('#smOut').innerHTML = '<div class="page"><h2>ใบสรุปเสนอเบิกค่าสอนเกินภาระงาน</h2><div class="sub">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(dept))) + ' · ' + esc(round.name) + ' ภาคเรียนที่ ' + esc(semLabel(round.semester_id)) + ' (' + thDate(round.start_date) + ' – ' + thDate(round.end_date) + ')</div>' +
       (r.notLocked.length ? '<p class="tag warn no-print">ยังไม่ล็อกใบเบิก: ' + esc(r.notLocked.join(', ')) + ' — ใบสรุปนับเฉพาะใบที่ล็อกแล้ว</p>' : '') +
       (r.submission ? '<p class="tag ok">เสนอเบิกแล้ว ' + esc(r.submission.created_at) + ' โดย ' + esc(r.submission.created_by) + (r.submission.note ? ' · ' + esc(r.submission.note) : '') + '</p>' : '') +
-      '<table class="data"><thead><tr><th>ที่</th><th>ชื่อ-สกุล</th><th>ตำแหน่ง</th><th>แบบการเบิก</th><th style="text-align:right">ปวช. (ชม.)</th><th style="text-align:right">ปวส. (ชม.)</th><th style="text-align:right">รายหัว (บาท)</th><th style="text-align:right">รวม (ชม.)</th><th style="text-align:right">จำนวนเงิน (บาท)</th><th class="no-print">สถานะ</th></tr></thead><tbody>' +
+      '<table class="data"><thead><tr><th>ที่</th><th>ชื่อ-สกุล</th>' + (all ? '<th>แผนกวิชา</th>' : '') + '<th>ตำแหน่ง</th><th>แบบการเบิก</th><th style="text-align:right">ปวช. (ชม.)</th><th style="text-align:right">ปวส. (ชม.)</th><th style="text-align:right">รายหัว (บาท)</th><th style="text-align:right">รวม (ชม.)</th><th style="text-align:right">จำนวนเงิน (บาท)</th><th class="no-print">สถานะ</th></tr></thead><tbody>' +
       r.rows.filter(function (x) { return x.status === 'locked'; }).map(function (x, i) {
-        return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name) + '</td><td>' + esc(x.position) + '</td><td class="small">' + esc(x.scheme) + '</td><td style="text-align:right">' + x.vc + '</td><td style="text-align:right">' + x.vs + '</td><td style="text-align:right">' + money(x.perHeadAmount) +
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name) + '</td>' + (all ? '<td>' + esc(x.department_name) + '</td>' : '') + '<td>' + esc(x.position) + '</td><td class="small">' + esc(x.scheme) + '</td><td style="text-align:right">' + x.vc + '</td><td style="text-align:right">' + x.vs + '</td><td style="text-align:right">' + money(x.perHeadAmount) +
           '</td><td style="text-align:right">' + x.hours + '</td><td style="text-align:right">' + money(x.amount) + '</td><td class="no-print"><span class="tag ok">ล็อกแล้ว</span></td></tr>';
       }).join('') +
-      '<tr><td colspan="8" style="text-align:right"><b>รวมเป็นเงินทั้งสิ้น</b></td><td style="text-align:right"><b>' + money(r.total) + '</b></td><td class="no-print"></td></tr>' +
-      '<tr><td colspan="10" style="text-align:center">(' + esc(r.totalText) + ')</td></tr></tbody></table>' +
-      '<div class="signs">' + sign(s.signer_curriculum, 'ผู้ทำ<br>หัวหน้างานพัฒนาหลักสูตรฯ') + sign(head && head.name, 'หัวหน้าแผนกวิชา') + '</div>' +
+      '<tr><td colspan="' + (all ? 9 : 8) + '" style="text-align:right"><b>รวมเป็นเงินทั้งสิ้น</b></td><td style="text-align:right"><b>' + money(r.total) + '</b></td><td class="no-print"></td></tr>' +
+      '<tr><td colspan="' + (all ? 11 : 10) + '" style="text-align:center">(' + esc(r.totalText) + ')</td></tr></tbody></table>' +
+      (all ? '<h3 style="margin-top:20px">ยอดรวมรายแผนกวิชา</h3><table class="data"><thead><tr><th>แผนกวิชา</th><th>ใบเบิกที่ล็อกแล้ว</th><th>รวมชั่วโมง</th><th>จำนวนเงิน (บาท)</th></tr></thead><tbody>' + (r.departments || []).map(function (d) { return '<tr><td>' + esc(d.department_name) + '</td><td>' + d.locked_count + '</td><td>' + d.hours + '</td><td>' + money(d.amount) + '</td></tr>'; }).join('') + '<tr><td colspan="3"><b>รวมทั้งวิทยาลัย</b></td><td><b>' + money(r.total) + '</b></td></tr></tbody></table>' : '') +
+      '<div class="signs">' + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + (all ? '' : sign(head && head.name, 'หัวหน้าแผนกวิชา' + esc(deptName(dept)))) + '</div>' +
       '<div class="signs">' + sign(s.signer_deputy, 'ผู้รับรอง<br>รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_finance, 'ผู้รับรอง<br>หัวหน้างานการเงิน') + sign(s.signer_admin_deputy, 'ผู้รับรอง<br>รองผู้อำนวยการฝ่ายบริหารทรัพยากร') + '</div>' +
       '<div class="signs">' + sign(s.signer_director, 'ผู้อนุมัติ<br>ผู้อำนวยการวิทยาลัย') + '</div></div>';
-    if (can('admin')) {
+    if (can('admin') && all) $('#smAct').innerHTML = '<span class="small muted">เลือกแผนกวิชาเพื่อบันทึกเสนอเบิก</span>';
+    if (can('admin') && !all) {
       $('#smAct').innerHTML = r.submission ? '<button class="btn bad" id="smCancel">ยกเลิกการเสนอเบิก</button>' : '<button class="btn" id="smSubmit">บันทึกเสนอเบิก</button>';
-      if ($('#smSubmit')) $('#smSubmit').onclick = function () { var note = prompt('หมายเหตุ (เช่น เลขที่หนังสือ)', ''); if (note === null) return; api('otSubmit', S.token, OT.round, OT.dept, note, false).then(function () { VIEWS['ot-summary'](el); }); };
-      if ($('#smCancel')) $('#smCancel').onclick = function () { if (confirm('ยกเลิกการเสนอเบิก เพื่อส่งกลับให้แก้ไข?')) api('otSubmit', S.token, OT.round, OT.dept, '', true).then(function () { VIEWS['ot-summary'](el); }); };
+      if ($('#smSubmit')) $('#smSubmit').onclick = function () { var note = prompt('หมายเหตุ (เช่น เลขที่หนังสือ)', ''); if (note === null) return; api('otSubmit', S.token, OT.round, dept, note, false).then(function () { VIEWS['ot-summary'](el); }); };
+      if ($('#smCancel')) $('#smCancel').onclick = function () { if (confirm('ยกเลิกการเสนอเบิก เพื่อส่งกลับให้แก้ไข?')) api('otSubmit', S.token, OT.round, dept, '', true).then(function () { VIEWS['ot-summary'](el); }); };
     }
   });
 };

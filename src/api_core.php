@@ -32,7 +32,7 @@ function auth_user($token, ?string $need = null): array {
   kvPut('cache:tok_' . $token, $raw, 21600); // ต่ออายุ
   $rank = ['teacher' => 1, 'dept' => 2, 'admin' => 3];
   if ($need && ($rank[$u['role'] ?? ''] ?? 0) < ($rank[$need] ?? 99)) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
-  return $u;
+  return normalize_row_names('users', $u);
 }
 
 function api_login($username = '', $password = '') {

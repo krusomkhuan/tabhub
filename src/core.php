@@ -7,7 +7,7 @@ date_default_timezone_set('Asia/Bangkok');
 define('APP_ROOT', dirname(__DIR__));
 // เวอร์ชันของเว็บ: เปลี่ยนทุกครั้งที่ปล่อยงานใหม่ มือถือจะล้างไฟล์ที่เก็บไว้ตามเลขนี้
 const APP_VERSION = '1.0.0';
-const APP_DEVELOPERS = 'ครูสมควร สากำ และครูปฎิภาน พานทอง ครูประจำแผนกวิชาเทคโนโลยีธุรกิจดิจิทัล';
+const APP_DEVELOPERS = 'ครูสมควร สากำ และนายปฏิภาณ พานทอง ครูประจำแผนกวิชาเทคโนโลยีธุรกิจดิจิทัล';
 
 const SCHEMA = [
   'Settings'     => ['key', 'value'],
@@ -63,7 +63,7 @@ const DEFAULT_SETTINGS = [
   'college_name_en' => 'Phon Thong Industrial and Community Education College',
   'periods_per_day' => '12', 'period_start' => '08:00', 'period_minutes' => '60', 'lunch_period' => '5',
   'days' => '0,1,2,3,4', // 0=จันทร์ ... 6=อาทิตย์
-  'signer_curriculum' => '', 'signer_deputy' => '', 'signer_director' => '', 'default_semester_id' => '',
+  'signer_curriculum' => 'นายปฏิภาณ พานทอง', 'signer_deputy' => '', 'signer_director' => '', 'default_semester_id' => '',
   'signer_finance' => '', 'signer_admin_deputy' => '', 'ot_max_cap' => '12',
   'ot_contract_caps' => '0-3:6,4-6:7,7-9:8,10-99:8', 'ot_makeup_report_days' => '7', 'public_enabled' => 'true',
   'color_default' => '#cfe2f3', 'color_workplace' => '#fb8ca6',
@@ -186,6 +186,21 @@ function assert_table(string $name): array {
   return SCHEMA[$name];
 }
 
+/** แก้ชื่อที่สะกดเดิมในข้อมูลเก่า ให้ตรงกันในหน้าจอ รายงาน และข้อมูลที่บันทึกใหม่ */
+function normalize_person_name(string $name): string {
+  return preg_replace('/(?:(?:นาย|ครู)[ \t]*)?ป[ฏฎ]ิภา[นณ][ \t]+พานทอง/u', 'นายปฏิภาณ พานทอง', $name) ?? $name;
+}
+
+function normalize_row_names(string $table, array $row): array {
+  if (($table === 'Teachers' || $table === 'users') && isset($row['name'])) {
+    $row['name'] = normalize_person_name((string)$row['name']);
+  }
+  if ($table === 'Settings' && strpos((string)($row['key'] ?? ''), 'signer_') === 0 && isset($row['value'])) {
+    $row['value'] = normalize_person_name((string)$row['value']);
+  }
+  return $row;
+}
+
 function readTable(string $name): array {
   if (isset(Tbl::$cache[$name])) return Tbl::$cache[$name];
   $cols = assert_table($name);
@@ -196,6 +211,7 @@ function readTable(string $name): array {
       elseif ($v === 'TRUE' || $v === 'FALSE') $r[$k] = strtolower($v);
       else $r[$k] = (string)$v;
     }
+    $r = normalize_row_names($name, $r);
   }
   unset($r);
   return Tbl::$cache[$name] = $rows;
@@ -217,7 +233,7 @@ function norm_rows(string $name, array $rows): array {
     $o = (array)$o;
     $r = [];
     foreach ($cols as $c) $r[$c] = cell($o[$c] ?? null);
-    $out[] = $r;
+    $out[] = normalize_row_names($name, $r);
   }
   return $out;
 }

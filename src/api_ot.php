@@ -340,11 +340,32 @@ function ot_dept_summary($roundId, $deptId): array {
 function api_otDeptSummary($token = '', $roundId = '', $deptId = '') {
   $me = auth_user($token, 'dept');
   if ($me['role'] === 'dept' && str($deptId) !== (string)$me['department_id']) throw new Exception('ดูสรุปได้เฉพาะแผนกตัวเอง');
+  if (str($deptId) === '__all') {
+    $departments = idx_table('Departments');
+    foreach (readTable('Teachers') as $t) {
+      $id = (string)$t['department_id'];
+      if ((string)$t['ot_enabled'] === 'true' && !isset($departments[$id])) $departments[$id] = ['id' => $id, 'name' => 'ไม่ระบุแผนก'];
+    }
+    $rows = []; $totals = []; $notLocked = []; $total = 0;
+    foreach ($departments as $dept) {
+      $summary = ot_dept_summary($roundId, $dept['id']);
+      $hours = 0; $locked = 0;
+      foreach ($summary['rows'] as $row) {
+        $rows[] = $row + ['department_id' => $dept['id'], 'department_name' => $dept['name']];
+        if ($row['status'] === 'locked') { $hours += $row['hours']; $locked++; }
+      }
+      foreach ($summary['notLocked'] as $name) $notLocked[] = $name . ' (' . $dept['name'] . ')';
+      $total += $summary['total'];
+      $totals[] = ['department_id' => $dept['id'], 'department_name' => $dept['name'], 'hours' => $hours, 'amount' => $summary['total'], 'locked_count' => $locked, 'not_locked_count' => count($summary['notLocked'])];
+    }
+    return ['rows' => $rows, 'total' => $total, 'totalText' => ot_baht_text($total), 'notLocked' => $notLocked, 'submission' => null, 'departments' => $totals];
+  }
   return ot_dept_summary($roundId, $deptId);
 }
 
 function api_otSubmit($token = '', $roundId = '', $deptId = '', $note = '', $cancel = false) {
   $me = auth_user($token, 'admin');
+  if (str($deptId) === '__all' || !isset(idx_table('Departments')[str($deptId)])) throw new Exception('กรุณาเลือกแผนกวิชาเพื่อบันทึกเสนอเบิก');
   return with_lock(function () use ($me, $roundId, $deptId, $note, $cancel) {
     $rows = readTable('OtSubmissions');
     $i = null;
