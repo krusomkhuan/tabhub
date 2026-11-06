@@ -139,7 +139,8 @@ var Grid = (function () {
             var isConflict = clash || list.some(function (x) { return opt.conflictIds && opt.conflictIds[x.id]; });
             var cls = 'ss' + (ed ? ' edit' : '') + (isLocked ? ' locked' : '') + (isConflict ? ' conflict' : '');
             h += '<div class="' + cls + '" data-sid="' + esc(s.id) + '"' + (ed ? ' draggable="true"' : '') +
-              ' style="background:' + (opt.color ? opt.color(s) : colorFor(s.course_id)) + '">' + opt.label(s, list) + '</div>';
+              ' style="background:' + (opt.color ? opt.color(s) : colorFor(s.course_id)) + '">' +
+              (ed ? '<button type="button" class="ss-move no-print" data-move-session="' + esc(s.id) + '" draggable="false" title="ย้ายคาบ: กดแล้วเลือกช่องปลายทาง" aria-label="ย้ายคาบ ' + esc(s.id) + '">↔</button>' : '') + opt.label(s, list) + '</div>';
           });
           h += '</td>';
           p += span;
@@ -258,10 +259,13 @@ var Grid = (function () {
   function pageToJpeg(pageEl) {
     var host = document.createElement('div');
     host.className = 'pdf-host';
-    var width = Number(pageEl.getAttribute('data-pdf-width')) || PDF_WIDTH; // หน้าแนวตั้งกำหนดความกว้างเอง
+    var memo = pageEl.classList.contains('rp-memo');
+    // บันทึกข้อความใช้พื้นที่เนื้อหา A4 160 มม. แล้วเติมขอบซ้าย/ขวาใน PDF
+    var width = memo ? 160 * 96 / 25.4 : Number(pageEl.getAttribute('data-pdf-width')) || PDF_WIDTH;
     host.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + width + 'px;background:#fff;';
     var clone = pageEl.cloneNode(true);
     clone.style.cssText += ';border:0;margin:0;box-shadow:none;width:' + width + 'px;';
+    if (memo) clone.style.cssText += ';min-width:0;padding:0;';
     host.appendChild(clone); document.body.appendChild(host);
     var imgs = Array.prototype.map.call(clone.querySelectorAll('img'), function (i) { return i.decode ? i.decode().catch(function () {}) : Promise.resolve(); });
     return Promise.all(imgs).then(function () {
@@ -274,31 +278,72 @@ var Grid = (function () {
       paintTree(ctx, clone, box.left, box.top);
       var data = canvas.toDataURL('image/jpeg', 0.92).split(',')[1], bin = atob(data), bytes = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return { bytes: bytes, width: canvas.width, height: canvas.height, portrait: pageEl.hasAttribute('data-pdf-width') };
+      var avoid = [];
+      if (memo) {
+        var protect = function (r) { if (r.height > 0) avoid.push({ top: (r.top - box.top) * PDF_SCALE, bottom: (r.bottom - box.top) * PDF_SCALE }); };
+        clone.querySelectorAll('p,tr,.rp-memo-line,.rp-sign-one,.rp-memo-head').forEach(function (el) { protect(el.getBoundingClientRect()); });
+        // ถ้าย่อหน้ายาวเกินหน้า ยังหลบตำแหน่งตัวอักษรแต่ละบรรทัดได้
+        var walker = document.createTreeWalker(clone, 4), textNode;
+        while ((textNode = walker.nextNode())) {
+          if (!textNode.nodeValue.trim()) continue;
+          var range = document.createRange(); range.selectNodeContents(textNode);
+          Array.prototype.forEach.call(range.getClientRects(), protect);
+        }
+      }
+      return { bytes: bytes, width: canvas.width, height: canvas.height, portrait: pageEl.hasAttribute('data-pdf-width'), memo: memo, avoidBreaks: avoid };
     }).then(function (img) { host.remove(); return img; }, function (e) { host.remove(); throw e; });
   }
 
   /** เขียนไฟล์ PDF: หน้าละหนึ่งภาพ ขนาด A4 แนวนอนหรือแนวตั้งตามสัดส่วนภาพ */
   function imagesToPdf(images) {
     var M = 22, parts = [], offsets = [], size = 0;
+    // ไม่ย่อเอกสารยาวจนระยะขอบผิด: แบ่งบันทึกข้อความเป็นหน้าต่อเนื่อง
+    var sheets = [];
+    images.forEach(function (img) {
+      if (!img.memo) { sheets.push({ img: img }); return; }
+      var scale = (595.28 - 50 * 72 / 25.4) / img.width;
+      var height = img.height * scale, usable = 841.89 - 30 * 72 / 25.4;
+      var offset = 0, blocks = (img.avoidBreaks || []).map(function (b) { return { top: b.top * scale, bottom: b.bottom * scale }; });
+      do {
+        var end = Math.min(offset + usable, height), limit = end;
+        if (end < height - 0.01) {
+          for (var pass = 0; pass <= blocks.length; pass++) {
+            var prior = end;
+            blocks.forEach(function (b) {
+              if (b.bottom - b.top <= usable && b.top > offset + 0.01 && b.top < end && b.bottom > end + 0.01) end = b.top;
+            });
+            if (end === prior) break;
+          }
+        }
+        if (end <= offset + 0.01) end = limit;
+        sheets.push({ img: img, offset: offset, span: end - offset });
+        offset = end;
+      } while (offset < height - 0.01);
+    });
     var enc = function (s) { var b = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b; };
     var put = function (x) { var b = typeof x === 'string' ? enc(x) : x; parts.push(b); size += b.length; };
     var obj = function (n, body) { offsets[n] = size; put(n + ' 0 obj\n' + body + '\nendobj\n'); };
     put('%PDF-1.4\n');
-    var kids = images.map(function (_, i) { return (3 + i * 3) + ' 0 R'; }).join(' ');
+    var kids = sheets.map(function (_, i) { return (3 + i * 3) + ' 0 R'; }).join(' ');
     obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-    obj(2, '<< /Type /Pages /Count ' + images.length + ' /Kids [' + kids + '] >>');
-    images.forEach(function (img, i) {
+    obj(2, '<< /Type /Pages /Count ' + sheets.length + ' /Kids [' + kids + '] >>');
+    sheets.forEach(function (sheet, i) {
+      var img = sheet.img;
       var page = 3 + i * 3, content = page + 1, xobj = page + 2, tall = img.portrait || img.height > img.width, W = tall ? 595.28 : 841.89, H = tall ? 841.89 : 595.28;
       var s = Math.min((W - 2 * M) / img.width, (H - 2 * M) / img.height), dw = img.width * s, dh = img.height * s;
       var cmd = 'q ' + dw.toFixed(2) + ' 0 0 ' + dh.toFixed(2) + ' ' + ((W - dw) / 2).toFixed(2) + ' ' + (H - M - dh).toFixed(2) + ' cm /Im Do Q';
+      if (img.memo) {
+        var left = 30 * 72 / 25.4, right = 20 * 72 / 25.4, top = 15 * 72 / 25.4, bottom = top;
+        dw = W - left - right; dh = img.height * dw / img.width;
+        cmd = 'q ' + left.toFixed(2) + ' ' + (H - top - sheet.span).toFixed(2) + ' ' + dw.toFixed(2) + ' ' + sheet.span.toFixed(2) + ' re W n ' + dw.toFixed(2) + ' 0 0 ' + dh.toFixed(2) + ' ' + left.toFixed(2) + ' ' + (H - top - dh + sheet.offset).toFixed(2) + ' cm /Im Do Q';
+      }
       obj(page, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im ' + xobj + ' 0 R >> >> /Contents ' + content + ' 0 R >>');
       obj(content, '<< /Length ' + cmd.length + ' >>\nstream\n' + cmd + '\nendstream');
       offsets[xobj] = size;
       put(xobj + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + img.width + ' /Height ' + img.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.bytes.length + ' >>\nstream\n');
       put(img.bytes); put('\nendstream\nendobj\n');
     });
-    var count = 3 + images.length * 3, xref = size, table = 'xref\n0 ' + count + '\n0000000000 65535 f \n';
+    var count = 3 + sheets.length * 3, xref = size, table = 'xref\n0 ' + count + '\n0000000000 65535 f \n';
     for (var n = 1; n < count; n++) table += ('0000000000' + offsets[n]).slice(-10) + ' 00000 n \n';
     put(table + 'trailer\n<< /Size ' + count + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
     return new Blob(parts, { type: 'application/pdf' });

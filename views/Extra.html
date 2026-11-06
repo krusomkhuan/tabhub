@@ -59,10 +59,24 @@
       if (!/^image\/(jpeg|png)$/.test(file.type)) return reject(new Error('type'));
       var url = URL.createObjectURL(file), img = new Image();
       img.onload = function () {
-        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
-        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
-        var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.85));
+        try {
+          var k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+          var w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+          for (;;) {
+            c.width = w; c.height = h;
+            var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+            var qualities = [0.78, 0.68, 0.58];
+            for (var i = 0; i < qualities.length; i++) {
+              var data = c.toDataURL('image/jpeg', qualities[i]), encoded = data.split(',')[1];
+              var bytes = encoded.length * 3 / 4 - (encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0);
+              if (bytes <= 200 * 1024) { resolve(data); return; }
+            }
+            if (Math.max(w, h) <= 480) throw new Error('size');
+            var ratio = Math.max(480 / Math.max(w, h), 0.8);
+            w = Math.max(1, Math.floor(w * ratio)); h = Math.max(1, Math.floor(h * ratio));
+          }
+        } catch (e) { reject(e); }
+        finally { URL.revokeObjectURL(url); }
       };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('read')); };
       img.src = url;
@@ -85,9 +99,8 @@
     var dots = '.............................................';
     var opinion = function (title, lines, name, role) { return '<td><b>' + title + '</b><div>เรียน ผู้อำนวยการ' + esc(college) + '</div>' + lines.map(function (l) { return '<div class="rp-ind">- ' + l + '</div>'; }).join('') + '<div class="rp-sig">ลงชื่อ' + dots + '<br>( ' + esc(name || dots) + ' )<br>' + esc(role) + '</div></td>'; };
     var sign = function (name, role, suffix) { return '<div>ลงชื่อ' + dots + (suffix || '') + '<br>( ' + esc(name || dots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
-    var memo = '<div class="page rp-page" data-pdf-width="760"><div class="rp-memo-head"><img src="assets/krut.png" alt="ตราครุฑ"><h1>บันทึกข้อความ</h1></div>' +
-      '<div class="rp-line"><b>ส่วนราชการ</b>' + f(college, 'grow') + '</div><div class="rp-line"><b>ที่</b>' + f(r.memo_no, 'grow') + '<b>วันที่</b>' + f(thLongDate(r.memo_date || r.date), 'grow') + '</div><div class="rp-line"><b>เรื่อง</b>' + f('รายงานการสอนออนไลน์', 'grow') + '</div>' +
-      '<p class="rp-to">เรียน ผู้อำนวยการ' + esc(college) + '</p><p class="rp-para">' + esc(thNum(r.memo_reason || memoTemplate(r.date))) + '</p>' +
+    var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('รายงานการสอนออนไลน์', r.memo_no, r.memo_date || r.date) +
+      '<p class="rp-para">' + esc(thNum(r.memo_reason || memoTemplate(r.date))) + '</p>' +
       '<p class="rp-para">ในการนี้ ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' แผนกวิชา' + esc(dept) + ' ได้ดำเนินการจัดการเรียนการสอนออนไลน์ ในช่วงเวลาดังกล่าวเสร็จสิ้นเป็นที่เรียบร้อยแล้ว จึงขออนุญาตรายงานผลการจัดการเรียนการสอนดังกล่าว ดังรายละเอียดที่แนบมาพร้อมนี้</p>' +
       '<p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและพิจารณา</p><div class="rp-sign-one">' + sign(t.name, 'ตำแหน่ง ' + rank, 'ครูผู้สอน') + '</div>' +
       '<table class="rp-opinions"><tr>' + opinion('ความเห็นของหัวหน้าแผนกวิชา', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], head.name, 'หัวหน้าแผนกวิชา' + dept) + opinion('ความเห็นของหัวหน้างานพัฒนาหลักสูตรฯ', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</tr><tr>' +
@@ -127,7 +140,8 @@
   var deptHead = function (t) { return S.D.Teachers.filter(function (x) { return String(x.department_id) === String(t.department_id) && String(x.is_dept_head) === 'true'; })[0] || {}; };
   var rpMemoHead = function (subject, no, date) {
     var st = S.settings;
-    return '<div class="rp-memo-head"><img src="assets/krut.png" alt="ตราครุฑ"><h1>บันทึกข้อความ</h1></div><div class="rp-line"><b>ส่วนราชการ</b> ' + esc(st.college_name) + '</div><div class="rp-line"><b>ที่</b><span class="rp-f grow">' + esc(thNum(no)) + '</span><b>วันที่</b><span class="rp-f grow">' + esc(thLongDate(date)) + '</span></div><div class="rp-line"><b>เรื่อง</b> ' + esc(subject) + '</div><p class="rp-to"><b>เรียน</b> ผู้อำนวยการ' + esc(st.college_name) + '</p>';
+    var field = function (value) { return '<span class="rp-memo-field">' + esc(thNum(value || '')) + '</span>'; };
+    return '<div class="rp-memo-head"><img src="assets/krut.png" alt="ตราครุฑ"><h1>บันทึกข้อความ</h1></div><div class="rp-line rp-memo-line"><b class="rp-memo-label">ส่วนราชการ</b>' + field(st.college_name) + '</div><div class="rp-memo-ref"><div class="rp-line rp-memo-line"><b class="rp-memo-label">ที่</b>' + field(no) + '</div><div class="rp-line rp-memo-line"><b class="rp-memo-label">วันที่</b>' + field(thLongDate(date)) + '</div></div><div class="rp-line rp-memo-line"><b class="rp-memo-label">เรื่อง</b>' + field(subject) + '</div><p class="rp-to">เรียน ผู้อำนวยการ' + esc(st.college_name) + '</p>';
   };
   /* ช่องเสนอตามสายงาน: หัวหน้าแผนกและงานหลักสูตรทางซ้าย รองฯ และผู้อำนวยการทางขวา */
   var rpApproval = function (t, want) {
@@ -161,12 +175,12 @@
     var head = rpMemoHead(kind === 'makeup' ? 'รายงานการสอนชดเชย' : 'รายงานการสอนแทนและดูแลแทน', first.memo_no, first.memo_date || first.date);
     var sign = '<div class="rp-sign-one">' + rpSign(t.name, 'ตำแหน่ง ' + rank) + '</div>';
     if (kind === 'makeup') {
-      return '<div class="page rp-page" data-pdf-width="760">' + head + '<p class="rp-para">' + esc(thNum(first.memo_reason || '')) + '</p><table class="rp-table"><thead><tr><th>วัน/เดือน/ปี</th><th>เวลาที่สอน</th><th>รหัส/ชื่อวิชา</th><th>เนื้อหา/เรื่องที่สอน</th><th>หมายเหตุ</th></tr></thead><tbody>' +
+      return '<div class="page rp-page rp-memo" data-pdf-width="760">' + head + '<p class="rp-para">' + esc(thNum(first.memo_reason || '')) + '</p><table class="rp-table"><thead><tr><th>วัน/เดือน/ปี</th><th>เวลาที่สอน</th><th>รหัส/ชื่อวิชา</th><th>เนื้อหา/เรื่องที่สอน</th><th>หมายเหตุ</th></tr></thead><tbody>' +
         sorted.map(function (r) { var c = courseOf(r.course_id); return '<tr><td>' + shortDate(r.date) + '</td><td>' + timeRange(r.start, r.length) + '</td><td>' + esc(thNum(c.code)) + '<br>' + esc(c.name) + '</td><td class="rp-left">' + esc(thNum(r.topic)).replace(/\n/g, '<br>') + '</td><td>' + thNum(r.length) + ' คาบ</td></tr>'; }).join('') +
         '</tbody></table><p class="rp-para" style="margin-top:10px">จึงเรียนมาเพื่อโปรดทราบ</p>' + sign + rpApproval(t, 'เพื่อโปรดพิจารณา') + '</div>';
     }
     var sub = first.sub || {}, o = IDX.Teachers[sub.original_teacher_id] || {}, from = sorted[0].date, to = sorted[sorted.length - 1].date, a = dateParts(from), b = dateParts(to);
-    return '<div class="page rp-page" data-pdf-width="760">' + head + '<p class="rp-para">ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' ประจำแผนกวิชา' + esc(dept) + ' ' + esc(thNum(first.memo_reason || '')) + ' วันที่ ' + thNum(a.day) + ' เดือน ' + a.month + ' พ.ศ. ' + thNum(a.year) + ' ถึงวันที่ ' + thNum(b.day) + ' เดือน ' + b.month + ' พ.ศ. ' + thNum(b.year) + ' บัดนี้ เพื่อไม่ให้เกิดผลเสียต่อการจัดการเรียนการสอนในชั้นเรียน ที่ครูประจำรายวิชา' + (o.name ? ' (' + esc(o.name) + ')' : '') + ' ไม่สามารถมาปฏิบัติราชการได้</p><p class="rp-para">จึงขอรายงานการเข้าสอนแทนและดูแลแทน ตามวันเวลาและรายวิชา ดังนี้</p>' +
+    return '<div class="page rp-page rp-memo" data-pdf-width="760">' + head + '<p class="rp-para">ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' ประจำแผนกวิชา' + esc(dept) + ' ' + esc(thNum(first.memo_reason || '')) + ' วันที่ ' + thNum(a.day) + ' เดือน ' + a.month + ' พ.ศ. ' + thNum(a.year) + ' ถึงวันที่ ' + thNum(b.day) + ' เดือน ' + b.month + ' พ.ศ. ' + thNum(b.year) + ' บัดนี้ เพื่อไม่ให้เกิดผลเสียต่อการจัดการเรียนการสอนในชั้นเรียน ที่ครูประจำรายวิชา' + (o.name ? ' (' + esc(o.name) + ')' : '') + ' ไม่สามารถมาปฏิบัติราชการได้</p><p class="rp-para">จึงขอรายงานการเข้าสอนแทนและดูแลแทน ตามวันเวลาและรายวิชา ดังนี้</p>' +
       '<table class="rp-table"><thead><tr><th rowspan="2">ว/ด/ป</th><th rowspan="2">ชื่อรายวิชา</th><th rowspan="2">รหัสวิชา</th><th rowspan="2">ชั้น</th><th rowspan="2">ห้อง</th><th rowspan="2">คาบสอน/เวลา</th><th colspan="2">จำนวน(คาบ)</th></tr><tr><th>ปกติ</th><th>พิเศษ</th></tr></thead><tbody>' +
       sorted.map(function (r) {
         var c = courseOf(r.course_id), parts = reportGroupIds(r).map(function (g) { return splitClass(groupCode(g)); });
@@ -174,9 +188,29 @@
       }).join('') + '</tbody></table><p class="rp-para" style="margin-top:10px">จึงเรียนมาเพื่อโปรดพิจารณา</p>' + sign + rpApproval(t, 'เพื่อโปรดพิจารณา') + '</div>';
   }
 
-  function docToolbar(el, html, title, view) {
-    el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button><button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button></div><div class="rp-doc">' + html + '</div>';
+  function docToolbar(el, html, title, view, editable) {
+    el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button>' + (editable ? '<button class="btn" id="rdEdit">✏️ แก้ไขเอกสาร</button><button class="btn" id="rdReset">คืนค่าต้นฉบับ</button>' : '') + '<button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button></div>' + (editable ? '<p class="small muted no-print">กดแก้ไขเอกสาร แล้วคลิกข้อความที่ต้องการแก้ รวมถึงข้อมูลในตารางและหนังสือผู้ปกครอง การแก้ไขใช้สำหรับพิมพ์และแชร์ PDF ครั้งนี้ เมื่อออกจากหน้านี้จะไม่เก็บข้อความที่แก้ไข และไม่เปลี่ยนข้อมูลตารางสอน</p>' : '') + '<div class="rp-doc">' + html + '</div>';
     document.getElementById('rdBack').onclick = function () { go(view); };
+    if (editable) {
+      var doc = el.querySelector('.rp-doc'), editing = false, editButton = document.getElementById('rdEdit');
+      function setEditing(on) {
+        editing = on;
+        doc.classList.toggle('rp-doc-editing', on);
+        doc.querySelectorAll('.rp-page').forEach(function (page) {
+          page.setAttribute('contenteditable', on ? 'plaintext-only' : 'false');
+          page.setAttribute('spellcheck', 'false');
+        });
+        editButton.textContent = on ? '✓ เสร็จสิ้นการแก้ไข' : '✏️ แก้ไขเอกสาร';
+      }
+      editButton.onclick = function () { setEditing(!editing); };
+      document.getElementById('rdReset').onclick = function () {
+        if (!confirm('คืนค่าข้อความทั้งหมดเป็นต้นฉบับ?')) return;
+        doc.innerHTML = html;
+        setEditing(false);
+      };
+      // รับเฉพาะข้อความ ป้องกันการลากไฟล์หรือ HTML มาเปลี่ยนโครงเอกสาร
+      doc.addEventListener('drop', function (e) { if (editing) e.preventDefault(); });
+    }
     Grid.bindShareButton(document.getElementById('rdShare'), function () { return el.querySelectorAll('.rp-page'); }, function () { return title; }, function (m, bad) { toast(m, bad); });
     window.scrollTo(0, 0);
   }
@@ -194,10 +228,70 @@
     });
   }
 
+  /* รายงานจากรายการสอนแทน/ชดเชย ตามแบบฟอร์ม Word ของวิทยาลัย */
+  window.subTeachingReportForm = function (rows) {
+    if (!rows.length) return;
+    var first = rows[0], t = IDX.Teachers[first.teacher_id] || {};
+    var m = modal('<h3>รายงานการสอนแทน / สอนชดเชย</h3><p class="small muted">' + esc(t.name) + ' · ' + rows.length + ' รายการ เลือกรูปแบบเอกสารได้โดยไม่เปลี่ยนประเภทรายการในระบบ ข้อความและรูปใช้สำหรับเอกสารครั้งนี้เท่านั้น</p>' +
+      '<div class="form-grid"><div><label class="form-label">รูปแบบรายงาน</label><select id="srKind" class="form-select"><option value="sub">การสอนแทน</option><option value="makeup">การสอนชดเชย</option></select></div><div><label class="form-label">วันที่บันทึกข้อความ</label><input id="srDate" type="date" class="form-control"></div><div><label class="form-label">เลขที่บันทึกข้อความ</label><input id="srNo" class="form-control"></div><div><label class="form-label">ตำแหน่งผู้รายงาน</label><input id="srRank" class="form-control" value="' + esc(rankText(t.position)) + '"></div></div>' +
+      '<label class="form-label mt-2">เหตุผล / รายละเอียดการมอบหมาย</label><textarea id="srReason" class="form-control" rows="2">' + esc(first.reason + (first.note ? ' ' + first.note : '')) + '</textarea>' +
+      ['เนื้อหาที่สอน', 'กิจกรรมการเรียนการสอน', 'การวัดผลการประเมินผล', 'งานที่มอบหมาย'].map(function (label, i) { return '<label class="form-label mt-2">' + label + '</label><textarea id="srText' + i + '" class="form-control" rows="2"></textarea>'; }).join('') +
+      '<div class="form-grid mt-2">' + ['ผู้เรียนทั้งหมด', 'เข้าเรียน', 'ขาดเรียน'].map(function (label, i) { return '<div><label class="form-label">' + label + ' (คน)</label><input id="srCount' + i + '" type="number" min="0" step="1" class="form-control"></div>'; }).join('') + '</div>' +
+      '<label class="form-label mt-2">ภาพประกอบหน้าที่ 2 (จำเป็น 1–4 ภาพ JPG/PNG ระบบย่อไม่เกิน 200 KB ต่อภาพ)</label><input id="srImages" type="file" accept="image/jpeg,image/png" multiple class="form-control"><div id="srPreview" class="sr-photo-preview"></div>' +
+      '<div class="actions mt-2"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="srGo">สร้างรายงาน</button></div>', true);
+    $j('#srKind', m).val(first.type === 'sub' ? 'sub' : 'makeup');
+    $j('#srDate', m).val(todayStr());
+    var images = [], loading = false, imageVersion = 0;
+    $j('#srImages', m).on('change', function () {
+      var files = Array.prototype.slice.call(this.files || []), version = ++imageVersion;
+      images = []; $j('#srPreview', m).empty();
+      if (!files.length || files.length > MAX_IMAGES) { loading = false; this.value = ''; return toast('กรุณาเลือกภาพ 1–4 ภาพ', 1); }
+      loading = true;
+      Promise.all(files.map(shrinkImage)).then(function (urls) {
+        if (version !== imageVersion) return;
+        images = urls.map(function (url) { return { url: url }; }); loading = false;
+        $j('#srPreview', m).html(images.map(function (img) { return '<img src="' + img.url + '" alt="ภาพประกอบรายงาน">'; }).join(''));
+      }).catch(function () { if (version !== imageVersion) return; loading = false; images = []; toast('อ่านรูปไม่สำเร็จ กรุณาใช้ JPG หรือ PNG', 1); });
+    });
+    $j('#srGo', m).on('click', function () {
+      if (loading) return toast('กำลังเตรียมภาพ กรุณารอสักครู่', 1);
+      if (!images.length) return toast('กรุณาแนบภาพประกอบรายงานอย่างน้อย 1 ภาพ', 1);
+      if (!val('#srDate')) return toast('กรุณาระบุวันที่บันทึกข้อความ', 1);
+      var counts = [0, 1, 2].map(function (i) { return String(val('#srCount' + i) || '').trim(); });
+      if (counts.some(function (v) { return v && !/^\d+$/.test(v); })) return toast('จำนวนผู้เรียนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป', 1);
+      if (counts.every(function (v) { return v !== ''; }) && Number(counts[1]) + Number(counts[2]) !== Number(counts[0])) return toast('จำนวนเข้าเรียนและขาดเรียนต้องรวมเท่ากับผู้เรียนทั้งหมด', 1);
+      var f = { kind: val('#srKind'), date: val('#srDate'), no: val('#srNo'), rank: val('#srRank'), reason: val('#srReason'), texts: [0, 1, 2, 3].map(function (i) { return val('#srText' + i); }), counts: counts };
+      closeModal();
+      var el = document.getElementById('content'), view = S.view;
+      docToolbar(el, subTeachingReportHtml(rows, f, images), 'รายงาน' + KIND[f.kind] + ' ' + (t.name || '') + ' ' + f.date, view, true);
+    });
+  };
+
+  function subTeachingReportHtml(rows, f, images) {
+    var first = rows[0], t = IDX.Teachers[first.teacher_id] || {}, original = IDX.Teachers[first.original_teacher_id] || {}, dates = rows.map(function (r) { return r.original_date; }).sort();
+    var blank = '................................', text = function (v) { return esc(thNum(v || blank)); }, kind = f.kind === 'sub' ? 'สอนแทน' : 'สอนชดเชย';
+    var intro = 'ข้าพเจ้า ' + text(t.name) + ' ตำแหน่ง ' + text(f.rank) + ' ประจำแผนกวิชา' + text(deptName(t.department_id));
+    intro += f.kind === 'sub' ? ' ได้รับมอบหมายให้ทำการสอนแทน ' + text(original.name) + ' เนื่องจาก' + text(f.reason) + ' ไม่สามารถมาปฏิบัติการสอน' : ' ได้ดำเนินการสอนชดเชย เนื่องจาก' + text(f.reason) + ' จึงไม่สามารถทำการสอนตามปกติได้';
+    intro += ' วันที่ ' + thLongDate(dates[0]) + ' ถึงวันที่ ' + thLongDate(dates[dates.length - 1]) + ' บัดนี้ เพื่อไม่ให้เกิดผลเสียต่อการจัดการเรียนการสอนในชั้นเรียน ที่ครูประจำรายวิชาไม่สามารถมาปฏิบัติราชการได้';
+    var html = '<div class="page rp-page rp-memo sr-memo" data-pdf-width="760">' + rpMemoHead('รายงานการ' + kind, f.no, f.date) + '<p class="rp-para">' + intro + '</p><p class="rp-para">จึงขอรายงานการเข้า' + kind + 'และดูแลผู้เรียน ตามวันเวลาและรายวิชา ดังนี้</p>' +
+      '<table class="rp-table sr-table"><thead><tr><th rowspan="2">ว/ด/ป</th><th rowspan="2">ชื่อรายวิชา</th><th rowspan="2">รหัสวิชา</th><th rowspan="2">ชั้น</th><th rowspan="2">ห้อง</th><th rowspan="2">คาบสอน/เวลา<br>ทำการสอน</th><th colspan="2">จำนวน(คาบ)</th><th rowspan="2">ผู้รับ<br>มอบหมาย</th></tr><tr><th>ปกติ</th><th>พิเศษ</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        var c = courseOf(r.course_id), parts = splitClass(groupCode(r.group_id)), session = S.sessions.filter(function (x) { return String(x.id) === String(r.session_id); })[0] || {}, plan = (IDX.Plans || {})[session.plan_id] || {}, outside = (session.hour_type || plan.hour_type) === 'out';
+        return '<tr><td>' + shortDate(r.date) + '</td><td>' + text(c.name) + '</td><td>' + text(c.code) + '</td><td>' + text(parts[0]) + '</td><td>' + text(parts[1]) + '</td><td>' + timeRange(r.start, r.length) + '</td><td>' + (outside ? '' : thNum(r.length)) + '</td><td>' + (outside ? thNum(r.length) : '') + '</td><td>' + text((IDX.Teachers[r.teacher_id] || {}).name) + '</td></tr>';
+      }).join('') + '</tbody></table><p class="rp-para">จึงเรียนมาเพื่อโปรดพิจารณา</p><div class="rp-sign-one">' + rpSign(t.name, 'ตำแหน่ง ' + (f.rank || blank)) + '</div>' + rpApproval(t, 'เพื่อโปรดพิจารณา') + '</div>';
+    // ภาพและเนื้อหาอยู่หน้าถัดจากบันทึกข้อความ แยกตามวิชา/วัน/กลุ่ม
+    rows.forEach(function (r) {
+      var c = courseOf(r.course_id), g = IDX.Groups[r.group_id] || {};
+      html += '<div class="page rp-page sr-activity" data-pdf-width="760"><h2 class="rp-title">ภาพประกอบกิจกรรมการเรียนการสอน</h2><div class="rp-center">ชื่อวิชา ' + text(c.name) + ' รหัสวิชา ' + text(c.code) + '<br>ระดับชั้น ' + text(g.level) + ' กลุ่มเรียน ' + text(groupCode(r.group_id)) + ' สาขาวิชา ' + text(nm('Majors', g.major_id)) + '<br>' + text(dayLabel(r.date)) + ' เวลา ' + timeRange(r.start, r.length) + '</div><h3>รูปภาพประกอบการเรียนการสอน</h3><div class="rp-pics rp-pics-' + images.length + '">' + images.map(function (img) { return '<img src="' + esc(img.url) + '" alt="ภาพประกอบการรายงาน">'; }).join('') + '</div>' +
+        ['เนื้อหาที่สอน', 'กิจกรรมการเรียนการสอน', 'การวัดผลการประเมินผล', 'งานที่มอบหมาย'].map(function (label, i) { return '<h3>' + label + '</h3><p class="rp-text">' + text(f.texts[i]).replace(/\n/g, '<br>') + '</p>'; }).join('') + '<p class="rp-room">จำนวนผู้เรียน ทั้งหมด ' + text(f.counts[0]) + ' คน เข้าเรียน ' + text(f.counts[1]) + ' คน ขาด ' + text(f.counts[2]) + ' คน</p></div>';
+    });
+    return html;
+  }
+
   /* ใบขออนุญาตสอนชดเชยและหนังสือถึงผู้ปกครอง เปิดจากหน้าสอนแทน/สอนชดเชย */
   window.makeupRequestForm = function (rows) {
     var first = rows[0], t = IDX.Teachers[first.original_teacher_id] || {}, dates = rows.map(function (r) { return r.date; }).sort();
-    var m = modal('<h3>ขออนุญาตสอนชดเชย</h3><p class="small muted">' + esc(t.name) + ' · ' + rows.length + ' รายการ ข้อมูลในหน้าต่างนี้ใช้สร้างเอกสารเท่านั้น ไม่ได้บันทึกลงระบบ</p><div class="form-grid"><div><label class="form-label mb-1">เลขที่บันทึกข้อความ</label><input id="mqNo" class="form-control" placeholder="คม. .../2569"></div><div><label class="form-label mb-1">เลขที่หนังสือผู้ปกครอง</label><input id="mqPa" class="form-control" placeholder="ศธ ..../...."></div><div><label class="form-label mb-1">ลงวันที่</label><input id="mqD" type="date" class="form-control"></div><div><label class="form-label mb-1">โทรศัพท์ครูผู้สอน</label><input id="mqT" class="form-control"></div></div>' +
+    var m = modal('<h3>ขออนุญาตสอนชดเชย</h3><p class="small muted">' + esc(t.name) + ' · ' + rows.length + ' รายการ ข้อมูลในหน้าต่างนี้ใช้สร้างเอกสารเท่านั้น ไม่ได้บันทึกลงระบบ</p><div class="form-grid"><div><label class="form-label mb-1">เลขที่บันทึกข้อความ</label><input id="mqNo" class="form-control" placeholder="คม. .../2569"></div><div><label class="form-label mb-1">เลขที่หนังสือผู้ปกครอง</label><input id="mqPa" class="form-control" value="ศธ 0633.18/............" placeholder="ศธ 0633.18/เลขที่หนังสือ"></div><div><label class="form-label mb-1">ลงวันที่</label><input id="mqD" type="date" class="form-control"></div><div><label class="form-label mb-1">โทรศัพท์ครูผู้สอน</label><input id="mqT" class="form-control"></div></div>' +
       '<label class="form-label mb-1 mt-2">เหตุผลที่สอนตามปกติไม่ได้ *</label><textarea id="mqR" class="form-control mb-2" rows="4" placeholder="ได้รับคำสั่งให้นำนักเรียน นักศึกษา เข้าร่วม ... ระหว่างวันที่ ...">' + esc(first.reason + (first.note ? ' ' + first.note : '')) + '</textarea><label class="form-label mb-1">สถานที่เรียนชดเชย</label><input id="mqP" class="form-control mb-2" placeholder="อาคาร ชั้น แผนกวิชา">' +
       '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="mqGo">สร้างเอกสาร</button></div>', true);
     $j('#mqD').val(todayStr());
@@ -212,17 +306,17 @@
     var el = document.getElementById('content'), view = S.view, st = S.settings, first = rows[0], t = IDX.Teachers[first.original_teacher_id] || {}, dept = deptName(t.department_id), college = st.college_name || '';
     var sessionOf = function (id) { return S.sessions.filter(function (s) { return String(s.id) === String(id); })[0] || {}; };
     var groupsText = rows.map(function (r) { return groupCode(r.group_id); }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).join(', ');
-    var memo = '<div class="page rp-page" data-pdf-width="760">' + rpMemoHead('ขออนุญาตทำการสอนชดเชย', f.no, f.date) + '<p class="rp-para">ด้วยข้าพเจ้า ' + esc(t.name) + ' ครูประจำแผนกวิชา' + esc(dept) + ' ' + esc(thNum(f.reason)) + ' จึงไม่สามารถทำการสอนปกติได้ ข้าพเจ้าจึงขออนุญาตดำเนินการจัดสอนชดเชย ดังนี้</p>' +
+    var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('ขออนุญาตทำการสอนชดเชย', f.no, f.date) + '<p class="rp-para">ด้วยข้าพเจ้า ' + esc(t.name) + ' ครูประจำแผนกวิชา' + esc(dept) + ' ' + esc(thNum(f.reason)) + ' จึงไม่สามารถทำการสอนปกติได้ ข้าพเจ้าจึงขออนุญาตดำเนินการจัดสอนชดเชย ดังนี้</p>' +
       '<table class="rp-table"><thead><tr><th colspan="4">รายวิชาที่ไม่สามารถทำการสอนปกติได้</th><th colspan="3">รายละเอียดการสอนชดเชย</th></tr><tr><th>วัน/เดือน/ปี</th><th>เวลา</th><th>รหัส/วิชา</th><th>แผนก/ชั้นปี</th><th>วัน/เดือน/ปี</th><th>เวลา</th><th>หมายเหตุ</th></tr></thead><tbody>' +
       rows.map(function (r) { var c = courseOf(r.course_id), s = sessionOf(r.session_id); return '<tr><td>' + shortDate(r.original_date) + '</td><td>' + (s.start ? timeRange(s.start, s.length) : '') + '</td><td>' + esc(thNum(c.code)) + '<br>' + esc(c.name) + '</td><td>' + esc(thNum(groupCode(r.group_id))) + '</td><td>' + shortDate(r.date) + '</td><td>' + timeRange(r.start, r.length) + '</td><td>' + thNum(r.length) + ' คาบ</td></tr>'; }).join('') +
       '</tbody></table><p class="rp-para" style="margin-top:10px">จึงเรียนมาเพื่อโปรดพิจารณา</p><div class="rp-sign-one">' + rpSign(t.name, 'ครูผู้สอน') + '</div>' + rpApproval(t, 'เพื่อโปรดพิจารณาอนุมัติ') + '</div>';
     var from = dates[0], to = dates[dates.length - 1], when = from === to ? thLongDate(from) : thLongDate(from) + ' ถึงวันที่ ' + thLongDate(to);
-    var letter = '<div class="page rp-page" data-pdf-width="760"><div class="rp-letter-head"><div>ที่ ' + esc(thNum(f.parentNo)) + '</div><img src="assets/krut.png" alt="ตราครุฑ"><div class="rp-letter-addr">' + esc(college) + (st.college_address ? '<br>' + esc(thNum(st.college_address)) : '') + '</div></div><p class="rp-center">' + esc(thLongDate(f.date)) + '</p>' +
-      '<p><b>เรื่อง</b> ขออนุญาตให้นักศึกษามาเรียนชดเชย</p><p><b>เรียน</b> ผู้ปกครองนาย/นางสาว......................................... นักศึกษา ' + esc(thNum(groupsText)) + '</p>' +
+    var letter = '<div class="page rp-page" data-pdf-width="760"><div class="rp-letter-head"><div>ที่ ' + esc(thNum(String(f.parentNo || '').trim() || 'ศธ 0633.18/............')) + '</div><img src="assets/krut.png" alt="ตราครุฑ"><div class="rp-letter-addr">' + esc(college) + (st.college_address ? '<br>' + esc(thNum(st.college_address)) : '') + '</div></div><p class="rp-center">' + esc(thLongDate(f.date)) + '</p>' +
+      '<p><b class="rp-memo-label">เรื่อง</b> ขออนุญาตให้นักศึกษามาเรียนชดเชย</p><p><b>เรียน</b> ผู้ปกครองนาย/นางสาว......................................... นักศึกษา ' + esc(thNum(groupsText)) + '</p>' +
       '<p class="rp-para">เนื่องด้วย ' + esc(t.name) + ' ครูประจำแผนกวิชา' + esc(dept) + ' ' + esc(thNum(f.reason)) + ' จึงไม่สามารถทำการสอนตามตารางสอนปกติได้</p><p class="rp-para">ทาง' + esc(college) + ' จึงมีหนังสือขออนุญาตผู้ปกครอง อนุญาตให้นักศึกษากลุ่มดังกล่าวมาเรียนชดเชย ในวันที่ ' + esc(when) + (f.place ? ' ณ ' + esc(thNum(f.place)) : '') + (f.phone ? ' และผู้ปกครองทำการตรวจสอบการมาเรียนได้ที่ครู' + esc(String(t.name || '').replace(/^(นางสาว|นาย|นาง)/, '')) + ' เบอร์โทรศัพท์ ' + esc(thNum(f.phone)) : '') + '</p><p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและหวังว่าคงจะได้รับความร่วมมือเป็นอย่างดี</p>' +
       '<div class="rp-center" style="margin:14px 0 34px">ขอแสดงความนับถือ</div><div class="rp-center">( ' + esc(st.signer_director || rpDots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div><hr class="rp-dash" style="margin:16px 0">' +
       '<h3 class="rp-center">ใบตอบรับจากผู้ปกครอง</h3><p>ข้าพเจ้านาย/นาง/นางสาว................................................................ ผู้ปกครองนาย/นางสาว................................................................ นักศึกษาสาขางาน........................................... ระดับ..................... ชั้นปีที่.......... กลุ่ม.......... มีความเห็นสมควรว่า</p><p class="rp-center">☐ อนุญาต &nbsp;&nbsp;&nbsp;&nbsp; ☐ ไม่อนุญาตเนื่องจาก..........................................</p><div class="rp-center" style="margin-top:18px">ลงชื่อ' + rpDots + '<br>(' + rpDots + ')<br>ผู้ปกครองนักศึกษา</div></div>';
-    docToolbar(el, memo + letter, 'ขออนุญาตสอนชดเชย ' + (t.name || '') + ' ' + f.date, view);
+    docToolbar(el, memo + letter, 'ขออนุญาตสอนชดเชย ' + (t.name || '') + ' ' + f.date, view, true);
   }
 
   /* ---------- รายงานการสอนของฉัน ---------- */
@@ -248,15 +342,45 @@
       var done = rows.filter(function (s) { return s.report && (s.report.status === 'submitted' || s.report.status === 'approved'); }).length;
       $j('#trCount').text('ส่งแล้ว ' + done + ' จาก ' + rows.length + ' คาบ (' + thDate(d.from) + ' – ' + thDate(d.to) + ')');
       if (!d.slots.length) { $j('#trOut').html('<div class="card muted">สัปดาห์นี้ไม่มีคาบสอนในภาคเรียนที่เลือก</div>'); return; }
-      $j('#trOut').html('<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th>วัน</th><th>คาบ</th><th>วิชา</th><th>กลุ่ม</th><th>หัวข้อที่สอน</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      var eligible = function (s) { return !s.replaced && s.date <= d.today && (!s.report || s.report.status !== 'approved' || S.me.role === 'admin'); };
+      var dates = rows.filter(eligible).map(function (s) { return s.date; }).filter(function (x, i, all) { return all.indexOf(x) === i; }).sort();
+      var selection = '<div class="card no-print"><div class="actions"><label><input type="checkbox" id="trAll"> เลือกทั้งหมด</label>' + dates.map(function (date) { return '<label><input type="checkbox" data-tr-date="' + esc(date) + '"> ' + esc(dayLabel(date)) + '</label>'; }).join(' ') + '<button class="btn pri" id="trSelected" disabled>รายงานที่เลือก (0)</button></div><p class="small muted mb-0 mt-2">เลือกทั้งวันหรือเฉพาะคาบ แล้วกรอกข้อมูลและแนบรูปของแต่ละรายการตามลำดับ รายการที่ยังไม่บันทึกจะไม่ถูกส่ง</p></div>';
+      $j('#trOut').html(selection + '<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th class="no-print">เลือก</th><th>วัน</th><th>คาบ</th><th>วิชา</th><th>กลุ่ม</th><th>หัวข้อที่สอน</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
         d.slots.map(function (s, n) {
           var r = s.report;
-          if (s.replaced) return '<tr class="table-light"><td>' + esc(dayLabel(s.date)) + '</td><td>' + periodLabel(s.start, s.length) + '</td><td>' + courseLabel(s.course_id) + '</td><td>' + esc(groupNames(s.group_ids)) + '</td><td colspan="3" class="muted small">มีผู้สอนแทนหรือย้ายไปสอนชดเชยแล้ว ไม่ต้องรายงานคาบนี้</td></tr>';
+          if (s.replaced) return '<tr class="table-light"><td class="no-print"></td><td>' + esc(dayLabel(s.date)) + '</td><td>' + periodLabel(s.start, s.length) + '</td><td>' + courseLabel(s.course_id) + '</td><td>' + esc(groupNames(s.group_ids)) + '</td><td colspan="3" class="muted small">มีผู้สอนแทนหรือย้ายไปสอนชดเชยแล้ว ไม่ต้องรายงานคาบนี้</td></tr>';
           var future = s.date > d.today;
-          return '<tr><td class="text-nowrap">' + esc(dayLabel(s.date)) + '</td><td class="text-nowrap">' + periodLabel(s.start, s.length) + (KIND[s.kind] ? ' <span class="badge text-bg-info">' + KIND[s.kind] + '</span>' : '') + '</td><td>' + courseLabel(s.course_id) + '</td><td>' + esc(groupNames(s.group_ids)) + '</td><td class="small">' + esc(r ? firstLine(r.topic) : '') +
+          return '<tr><td class="no-print">' + (eligible(s) ? '<input type="checkbox" data-tr-slot="' + n + '" aria-label="เลือก ' + esc(dayLabel(s.date) + ' ' + periodLabel(s.start, s.length)) + '">' : '') + '</td><td class="text-nowrap">' + esc(dayLabel(s.date)) + '</td><td class="text-nowrap">' + periodLabel(s.start, s.length) + (KIND[s.kind] ? ' <span class="badge text-bg-info">' + KIND[s.kind] + '</span>' : '') + '</td><td>' + courseLabel(s.course_id) + '</td><td>' + esc(groupNames(s.group_ids)) + '</td><td class="small">' + esc(r ? firstLine(r.topic) : '') +
             (r && r.status === 'returned' && r.review_note ? '<div class="text-danger">เหตุผล: ' + esc(r.review_note) + '</div>' : '') + '</td><td>' + (r ? badge(r.status) : (future ? '<span class="small muted">ยังไม่ถึงวัน</span>' : badge(''))) + '</td><td class="text-end">' +
             (future ? '' : '<button class="btn sm pri" data-n="' + n + '">' + (r ? (r.status === 'approved' ? 'ดู' : 'แก้ไข') : 'รายงาน') + '</button>' + (r ? ' <button class="btn sm" data-doc="' + n + '">เอกสาร</button>' : '')) + '</td></tr>';
         }).join('') + '</tbody></table></div></div>');
+      function updateSelection() {
+        var boxes = $j('#trOut [data-tr-slot]'), checked = boxes.filter(':checked').length;
+        $j('#trSelected').prop('disabled', !checked).text('รายงานที่เลือก (' + checked + ')');
+        $j('#trAll').prop('checked', boxes.length > 0 && checked === boxes.length).prop('indeterminate', checked > 0 && checked < boxes.length);
+        $j('#trOut [data-tr-date]').each(function () {
+          var date = this.getAttribute('data-tr-date'), dayBoxes = boxes.filter(function () { return d.slots[Number(this.getAttribute('data-tr-slot'))].date === date; }), count = dayBoxes.filter(':checked').length;
+          this.checked = dayBoxes.length > 0 && count === dayBoxes.length;
+          this.indeterminate = count > 0 && count < dayBoxes.length;
+        });
+      }
+      $j('#trOut [data-tr-slot]').on('change', updateSelection);
+      $j('#trAll').on('change', function () { $j('#trOut [data-tr-slot]').prop('checked', this.checked); updateSelection(); });
+      $j('#trOut [data-tr-date]').on('change', function () {
+        var date = this.getAttribute('data-tr-date'), checked = this.checked;
+        $j('#trOut [data-tr-slot]').each(function () { if (d.slots[Number(this.getAttribute('data-tr-slot'))].date === date) this.checked = checked; });
+        updateSelection();
+      });
+      $j('#trSelected').on('click', function () {
+        var selected = $j('#trOut [data-tr-slot]:checked').map(function () { return d.slots[Number(this.getAttribute('data-tr-slot'))]; }).get().filter(eligible), index = 0;
+        if (!selected.length) return;
+        function next() {
+          if (index >= selected.length) { load(); return; }
+          var slot = selected[index++];
+          form(slot, next, 'รายการที่ ' + index + ' / ' + selected.length);
+        }
+        next();
+      });
       $j('#trOut [data-n]').on('click', function () { form(d.slots[Number($j(this).data('n'))]); });
       $j('#trOut [data-doc]').on('click', function () { var s = d.slots[Number($j(this).data('doc'))]; s.report.sub = s.sub; showReportDoc(s.report); });
       // เอกสารรวมของสัปดาห์: รวมทุกคาบสอนแทนหรือสอนชดเชยที่รายงานแล้วในใบเดียว
@@ -264,7 +388,7 @@
       var tools = ['makeup', 'sub'].filter(function (k) { return batch(k).length; }).map(function (k) { return '<button class="btn sm" data-batch="' + k + '">📄 เอกสารรวม' + KIND[k] + 'สัปดาห์นี้ (' + batch(k).length + ' คาบ)</button>'; }).join(' ');
       if (tools) { $j('#trOut').prepend('<div class="card no-print">' + tools + '</div>'); $j('#trOut [data-batch]').on('click', function () { showSubDocs(batch(String($j(this).data('batch')))); }); }
     }
-    function form(s) {
+    function form(s, onSaved, progress) {
       var r = s.report || {}, locked = r.status === 'approved' && S.me.role !== 'admin';
       var dis = locked ? ' disabled' : '';
       var old = {}; parseAttendance(r).forEach(function (a) { old[a.group_id] = a; });
@@ -273,9 +397,9 @@
         var a = old[g] || { total: (IDX.Groups[g] || {}).students || '', present: '', absent: '', numbers: '' };
         return '<div class="rp-att" data-g="' + esc(g) + '"><b>' + esc(groupCode(g)) + '</b><label>ทั้งหมด<input class="form-control a-t" type="number" min="0" value="' + esc(a.total) + '"' + dis + '></label><label>เข้าเรียน<input class="form-control a-p" type="number" min="0" value="' + esc(a.present) + '"' + dis + '></label><label>ลา<input class="form-control a-l" type="number" min="0" value="' + esc(a.leave || '') + '"' + dis + '></label><label>ขาดเรียน<input class="form-control a-b" type="number" min="0" value="' + esc(a.absent) + '"' + dis + '></label><label class="rp-att-no">เลขที่ขาดเรียน<input class="form-control a-n" placeholder="เช่น 1, 4, 5" value="' + esc(a.numbers) + '"' + dis + '></label></div>';
       }).join('');
-      var m = modal('<h3>' + (KIND[s.kind] ? 'รายงาน' + KIND[s.kind] : 'รายงานการสอนออนไลน์') + '</h3><p class="small muted mb-2">' + esc(dayLabel(s.date)) + ' · ' + periodLabel(s.start, s.length) + ' · ' + courseLabel(s.course_id) + ' · ' + esc(groupNames(s.group_ids)) + '</p>' +
+      var m = modal((progress ? '<p class="small muted">' + esc(progress) + '</p>' : '') + '<h3>' + (KIND[s.kind] ? 'รายงาน' + KIND[s.kind] : 'รายงานการสอนออนไลน์') + '</h3><p class="small muted mb-2">' + esc(dayLabel(s.date)) + ' · ' + periodLabel(s.start, s.length) + ' · ' + courseLabel(s.course_id) + ' · ' + esc(groupNames(s.group_ids)) + '</p>' +
         '<h4 class="rp-h">รูปภาพประกอบการเรียนการสอนออนไลน์</h4><div id="rpImgs" class="rp-imgs"></div>' + (locked ? '' : '<label class="btn sm" for="rpFile">📷 เลือกรูป (ไม่เกิน ' + MAX_IMAGES + ' รูป)</label><input type="file" id="rpFile" accept="image/jpeg,image/png" multiple hidden>') +
-        '<p class="small muted mt-1 mb-2">รูปหน้าจออาจเห็นหน้าและชื่อนักเรียน ผู้เห็นได้คือครูผู้สอน ตัวแทนแผนก และผู้ดูแลระบบ</p>' +
+        '<p class="small muted mt-1 mb-2">ระบบย่อรูปด้านยาวไม่เกิน 1280 พิกเซล และไม่เกิน 200 KB ต่อภาพก่อนอัปโหลด · รูปหน้าจออาจเห็นหน้าและชื่อนักเรียน ผู้เห็นได้คือครูผู้สอน ตัวแทนแผนก และผู้ดูแลระบบ</p>' +
         '<h4 class="rp-h">เนื้อหาและการจัดการเรียนการสอน</h4>' +
         area('rpT', 'เนื้อหาที่สอน * (บรรทัดละหนึ่งหัวข้อ)', 'องค์ประกอบของระบบคอมพิวเตอร์') +
         area('rpA', 'กิจกรรมการเรียนการสอน', '', 2) + area('rpM', 'สื่อการสอน (บรรทัดละหนึ่งรายการ)', 'ตำราเรียน') + area('rpE', 'การวัดและประเมินผล (บรรทัดละหนึ่งรายการ)', 'การสังเกต') + area('rpG', 'งานที่มอบหมาย', '', 2) +
@@ -314,7 +438,7 @@
           .then(function (res) {
             // ส่งรูปทีละรูปหลังบันทึกรายงาน เพราะรูปต้องผูกกับรายงานที่มีอยู่แล้ว
             return pending.reduce(function (p, url) { return p.then(function () { return api('teachReportImageAdd', S.token, res.id, url.split(',')[1]); }); }, Promise.resolve());
-          }).then(function () { closeModal(); toast(submit ? 'ส่งรายงานแล้ว' : 'บันทึกร่างแล้ว'); load(); });
+          }).then(function () { closeModal(); toast(submit ? 'ส่งรายงานแล้ว' : 'บันทึกร่างแล้ว'); if (onSaved) onSaved(); else load(); });
       };
       $j('#rpDraft', m).on('click', function () { save(false); });
       $j('#rpSend', m).on('click', function () { save(true); });

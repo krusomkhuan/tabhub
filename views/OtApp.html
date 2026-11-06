@@ -326,14 +326,18 @@ function listSubs() {
           : '<span class="tag ' + (today > r.report_due ? 'bad' : 'warn') + '">ครบกำหนด ' + thDate(r.report_due) + (today > r.report_due ? ' (เลยกำหนด)' : '') + '</span>';
         return '<tr' + (cancelled ? ' style="opacity:.45;text-decoration:line-through"' : '') + '><td>' + (r.type === 'sub' ? 'สอนแทน' : 'สอนชดเชย') + '<br><span class="small muted">' + esc(r.reason) + '</span></td><td>' + esc(nm('Teachers', r.original_teacher_id)) + '</td><td>' + esc(nm('Teachers', r.teacher_id)) +
           '</td><td>' + esc(c.code) + ' ' + esc(groupCode(r.group_id)) + '</td><td>' + thDate(r.original_date) + '</td><td>' + thDate(r.date) + ' คาบ ' + Grid.periodRange(S.settings, r.start, r.length) + '</td><td>' + rep + '</td><td style="white-space:nowrap">' +
-          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ใบขออนุญาต</button> ' : '') + (!cancelled && can('dept') ? (r.type === 'makeup' && String(r.report_done) !== 'true' ? '<button class="btn sm" data-rep="' + esc(r.id) + '">แนบรายงาน</button> ' : '') + '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
+          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled && can('dept') ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' + (r.type === 'makeup' && String(r.report_done) !== 'true' ? '<button class="btn sm" data-send-report="' + esc(r.id) + '">บันทึกส่งรายงาน</button> ' : '') + '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
       }).join('') || '<tr><td colspan="8" class="muted">ไม่มีรายการ</td></tr>') + '</tbody></table></div></div>';
     // ใบขออนุญาตรวมทุกรายการสอนชดเชยของครูคนเดียวกันที่มีเหตุผลเดียวกัน
     $$('[data-req]').forEach(function (b) { b.onclick = function () {
       var r = rows.filter(function (x) { return String(x.id) === b.dataset.req; })[0];
       makeupRequestForm(rows.filter(function (x) { return x.type === 'makeup' && x.status !== 'cancelled' && String(x.original_teacher_id) === String(r.original_teacher_id) && x.reason === r.reason && x.note === r.note; }));
     }; });
-    $$('[data-rep]').forEach(function (b) { b.onclick = function () { var l = prompt('ลิงก์ไฟล์รายงานผลการสอนชดเชย (Google Drive) — หรือเว้นว่างถ้ายื่นเป็นเอกสาร'); if (l === null) return; api('otSubReport', S.token, b.dataset.rep, l, true).then(listSubs); }; });
+    $$('[data-rep]').forEach(function (b) { b.onclick = function () {
+      var r = rows.filter(function (x) { return String(x.id) === b.dataset.rep; })[0];
+      if (r) subTeachingReportForm([r]);
+    }; });
+    $$('[data-send-report]').forEach(function (b) { b.onclick = function () { var l = prompt('ลิงก์ไฟล์รายงานผลการสอนชดเชย (Google Drive) — หรือเว้นว่างถ้ายื่นเป็นเอกสาร'); if (l === null) return; api('otSubReport', S.token, b.dataset.sendReport, l, true).then(listSubs); }; });
     $$('[data-cx]').forEach(function (b) { b.onclick = function () { if (confirm('ยกเลิกรายการนี้?')) api('otCancelSub', S.token, b.dataset.cx).then(listSubs); }; });
   });
 }

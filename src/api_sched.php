@@ -33,10 +33,11 @@ function api_getSchedule($token = '', $semesterId = '') {
   ];
 }
 
-/** วาง/ย้ายคาบ payload: {id?, plan_id, day, start, length, room_id?, force?} */
+/** วาง/ย้ายคาบ payload: {id?, plan_id, day, start, length, room_id?, hour_type?: ''|'in'|'out'|'none', force?} */
 function api_placeSession($token = '', $payload = []) {
   $me = auth_user($token, 'dept');
   $payload = (array)$payload;
+  if (array_key_exists('hour_type', $payload) && (!is_string($payload['hour_type']) || !in_array($payload['hour_type'], ['', 'in', 'out', 'none'], true))) throw new Exception('ประเภทคาบไม่ถูกต้อง กรุณาเลือกคาบในหรือคาบนอก');
   return with_lock(function () use ($me, $payload) {
     $allPlans = readTable('Plans');
     $pi = find_row($allPlans, str($payload['plan_id'] ?? ''));
@@ -74,6 +75,7 @@ function api_placeSession($token = '', $payload = []) {
         'id' => $old ? $old['id'] : new_id(), 'semester_id' => $p['semester_id'], 'plan_id' => $p['id'], 'group_id' => $p['group_id'], 'course_id' => $p['course_id'],
         'teacher_ids' => $p['teacher_ids'], 'room_id' => $room, 'day' => num($payload['day'] ?? 0), 'start' => num($payload['start'] ?? 0), 'length' => $len,
         'locked' => $old ? $old['locked'] : false, 'updated_by' => $me['name'], 'updated_at' => now_dt(),
+        'hour_type' => array_key_exists('hour_type', $payload) ? $payload['hour_type'] : ($old['hour_type'] ?? ''),
       ];
     }
     foreach ($cands as $c) $problems = array_merge($problems, sched_check($c, $others, $ctx));
@@ -246,7 +248,7 @@ function api_getPublicData($semesterId = '') {
   $pick = fn(array $rows, array $cols) => array_map(fn($r) => array_intersect_key($r, array_flip($cols)), $rows);
   $ctx = sched_ctx_now();
   $rawSessions = sem_sessions($sem);
-  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)($ctx['plans'][$x['plan_id']]['hour_type'] ?? '')], $rawSessions);
+  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)(js_true($x['hour_type'] ?? '') ? $x['hour_type'] : ($ctx['plans'][$x['plan_id']]['hour_type'] ?? ''))], $rawSessions);
   return [
     'incomplete' => plan_incomplete(str($sem), $rawSessions, $ctx),
     'settings' => [

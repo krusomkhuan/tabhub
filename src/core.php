@@ -21,7 +21,7 @@ const SCHEMA = [
   'Courses'      => ['id', 'code', 'name', 'theory', 'practice', 'credits', 'level', 'course_type', 'kind', 'subject_group', 'color'],
   'Groups'       => ['id', 'code', 'name', 'level', 'year_level', 'major_id', 'department_id', 'students', 'room_id', 'advisor_id', 'student_code', 'tab_id'],
   'Plans'        => ['id', 'semester_id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'periods', 'split', 'joint_key', 'workplace', 'note', 'hour_type'],
-  'Sessions'     => ['id', 'semester_id', 'plan_id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length', 'locked', 'updated_by', 'updated_at'],
+  'Sessions'     => ['id', 'semester_id', 'plan_id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length', 'locked', 'updated_by', 'updated_at', 'hour_type'],
   'LockedSlots'  => ['id', 'day', 'period', 'label'],
   'Windows'      => ['id', 'semester_id', 'department_id', 'start_date', 'end_date', 'sort'],
   // คาบ PLC: ไม่ระบุ teacher_id = ทั้งแผนก, ระบุ teacher_id = เฉพาะครูคนนั้น และใช้แทนคาบของแผนก

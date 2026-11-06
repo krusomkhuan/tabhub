@@ -376,7 +376,7 @@ function groupListHtml(filterDept, selected, linkAttr) {
   sortBy(groups, function (g) { return g.code; }).forEach(function (g) { var l = g.year_level || g.level || 'อื่นๆ'; (byLevel[l] = byLevel[l] || []).push(g); });
   return Object.keys(byLevel).sort().map(function (l) {
     return '<div class="h">' + esc(l) + '</div>' + byLevel[l].map(function (g) {
-      return '<a href="javascript:void 0" ' + linkAttr + '="' + esc(g.id) + '" class="' + (String(g.id) === String(selected) ? 'on' : '') + '">' + esc(g.code || g.name) + '</a>';
+      return '<a href="javascript:void 0" draggable="false" title="คลิกเพื่อเลือกกลุ่มเรียน แล้วลากก้อนรายวิชาลงตาราง" ' + linkAttr + '="' + esc(g.id) + '" class="' + (String(g.id) === String(selected) ? 'on' : '') + '">' + esc(g.code || g.name) + '</a>';
     }).join('');
   }).join('') || '<p class="muted small" style="padding:8px">ไม่มีกลุ่มเรียน</p>';
 }
@@ -458,6 +458,16 @@ function plcLocks(teacherId) {
 function sessionColor(s) {
   var c = courseOf(s.course_id);
   return Grid.sessionColor({ settings: S.settings, groups: S.D.ColorGroups || [], course_id: s.course_id, color: c.color, course_type: c.course_type, name: c.name, teacher_ids: s.teacher_ids, room_id: s.room_id, room: s.room_id ? roomName(s.room_id) : '', department_id: (IDX.Groups[s.group_id] || {}).department_id, workplace: Sched.isWorkplace(s, ctx()) });
+}
+
+function sessionHourType(s) {
+  return s.hour_type || (IDX.Plans[s.plan_id] || {}).hour_type || 'in';
+}
+
+function hourTypeOptions(value, inherited) {
+  return [['', 'ตามแผนการเรียน' + (inherited ? ' (' + ({ in: 'คาบใน', out: 'คาบนอก', none: 'ไม่นับ' }[inherited] || 'คาบใน') + ')' : '')], ['in', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].map(function (x) {
+    return '<option value="' + x[0] + '"' + (String(value || '') === x[0] ? ' selected' : '') + '>' + x[1] + '</option>';
+  }).join('');
 }
 
 /* คาบอื่นที่แสดงรวมช่องเดียวกับคาบนี้ (รวมตัวคาบเองด้วย) */
@@ -590,8 +600,10 @@ function renderPlanBox(gid, editable) {
       '</td><td class="plan-c"><span class="plan-st">' + state[1] + '</span> (' + placed + '/' + need + ')' + (left > 0 && chips ? '<div>' + chips + (editable && left > 1 ? ' <button class="btn sm" data-custom="' + esc(p.id) + '" title="ลงจำนวนคาบอื่น">±</button>' : '') + '</div>' : '') + '</td></tr>';
   }).join('');
   box.innerHTML = '<div class="row"><h3 class="grow" style="margin:0 0 8px">รายวิชาที่ต้องจัด' + (editable ? ' — คลิกแถวเพื่อเริ่มจัดตาราง' : '') + '</h3><a class="small" href="#plans">แก้ไขแผนการเรียน</a></div>' +
+    (editable ? '<label class="row small" style="margin:0 0 10px">ประเภทคาบที่จะลงใหม่ <select id="placeHourType" style="width:auto">' + hourTypeOptions(S.sel.placeHourType || '') + '</select></label>' : '') +
     '<div class="tablewrap"><table class="data plan-status"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>ท-ป-น</th><th>ชั่วโมง</th><th>สถานะ</th></tr></thead><tbody>' + rows +
     '<tr class="plan-total"><td></td><td>ครบแล้ว ' + totals.done + ' จาก ' + plans.length + ' วิชา</td><td class="plan-c">' + totals.t + '-' + totals.p + '-' + totals.u + '</td><td class="plan-c">' + totals.need + '</td><td class="plan-c">ลงแล้ว ' + totals.placed + '/' + totals.need + '</td></tr></tbody></table></div>';
+  if ($('#placeHourType', box)) $('#placeHourType', box).onchange = function () { S.sel.placeHourType = this.value; };
   /* คลิกแถวเท่ากับเลือกก้อนคาบแรกที่ยังไม่ได้วาง */
   $$('[data-plan-row]', box).forEach(function (tr) {
     var first = $('.chip', tr);
@@ -600,7 +612,7 @@ function renderPlanBox(gid, editable) {
     tr.onclick = function (e) { if (!e.target.closest('.chip, button, a')) first.click(); };
   });
   $$('.chip', box).forEach(function (ch) {
-    ch.ondragstart = function (e) { startDrag({ plan_id: ch.dataset.plan, length: Number(ch.dataset.len) }); e.dataTransfer.setData('text/plain', 'x'); };
+    ch.ondragstart = function (e) { startDrag({ plan_id: ch.dataset.plan, length: Number(ch.dataset.len) }, e); };
     ch.ondragend = endDrag;
     ch.onclick = function () {
       var same = S.sel.chip && S.sel.chip.plan_id === ch.dataset.plan && S.sel.chip.i === Number(ch.dataset.i);
@@ -621,7 +633,15 @@ function renderPlanBox(gid, editable) {
 
 /* ---------- ลากวาง ---------- */
 var DRAG = null;
-function startDrag(d) { DRAG = d; markCells(d); }
+function startDrag(d, e) {
+  DRAG = d;
+  if (e && e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/x-tabhub-schedule', JSON.stringify(d));
+    e.dataTransfer.setData('text/plain', JSON.stringify(d));
+  }
+  markCells(d);
+}
 function endDrag() { DRAG = null; if (!S.sel.chip) clearMarks(); }
 function clearMarks() { $$('#gridBox td.cell').forEach(function (td) { td.classList.remove('ok', 'soft', 'hard', 'hover'); td.title = ''; }); }
 
@@ -661,24 +681,54 @@ function bindGrid() {
   $$('#gridBox .ss.edit').forEach(function (div) {
     div.ondragstart = function (e) {
       var s = S.sessions.filter(function (x) { return String(x.id) === div.dataset.sid; })[0];
-      startDrag({ plan_id: s.plan_id, length: Number(s.length), sid: s.id });
-      e.dataTransfer.setData('text/plain', 'x'); e.stopPropagation();
+      if (!s) { e.preventDefault(); return; }
+      startDrag({ plan_id: s.plan_id, length: Number(s.length), sid: s.id }, e);
+      e.stopPropagation();
     };
     div.ondragend = endDrag;
   });
   $$('#gridBox .ss').forEach(function (div) {
-    div.onclick = function (e) { e.stopPropagation(); if (S.sel.chip) return dropAt(S.sel.chip, div.parentNode); sessionModal(div.dataset.sid); };
+    div.onclick = function (e) {
+      e.stopPropagation();
+      if (e.target.closest('[data-move-session]')) return selectSessionMove(div.dataset.sid);
+      if (S.sel.chip) return dropAt(S.sel.chip, div.parentNode);
+      sessionModal(div.dataset.sid);
+    };
   });
   $$('#gridBox td.cell').forEach(function (td) {
-    td.ondragover = function (e) { if (DRAG) { e.preventDefault(); td.classList.add('hover'); } };
+    td.ondragover = function (e) { if (DRAG) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; td.classList.add('hover'); } };
     td.ondragleave = function () { td.classList.remove('hover'); };
-    td.ondrop = function (e) { e.preventDefault(); td.classList.remove('hover'); if (DRAG) { var d = DRAG; DRAG = null; dropAt(d, td); } };
+    td.ondrop = function (e) {
+      e.preventDefault(); e.stopPropagation(); td.classList.remove('hover');
+      var d = DRAG;
+      if (!d && e.dataTransfer) {
+        try { d = JSON.parse(e.dataTransfer.getData('application/x-tabhub-schedule')); } catch (err) {}
+      }
+      DRAG = null;
+      if (d && IDX.Plans[d.plan_id] && Number(d.length) > 0) dropAt(d, td);
+    };
     td.onclick = function () { if (S.sel.chip) dropAt(S.sel.chip, td); };
   });
 }
 
+/** ทางเลือกแทนการลาก: กดปุ่มลูกศรบนคาบ แล้วคลิก/แตะช่องปลายทาง */
+function selectSessionMove(sid) {
+  var s = S.sessions.filter(function (x) { return String(x.id) === String(sid); })[0];
+  if (!s || !$$('#gridBox .ss.edit').some(function (div) { return div.dataset.sid === String(s.id); })) return;
+  closeModal();
+  S.sel.chip = { plan_id: s.plan_id, length: Number(s.length), sid: s.id, i: -1 };
+  markCells(S.sel.chip);
+  var old = $('#moveBar'); if (old) old.remove();
+  var bar = document.createElement('div'); bar.className = 'move-bar'; bar.id = 'moveBar';
+  bar.innerHTML = '<span class="grow">กำลังย้าย ' + esc(courseOf(s.course_id).code) + ' — คลิกหรือแตะช่องปลายทางในตาราง</span><button class="btn sm" id="moveCancel">ยกเลิก</button>';
+  var grid = $('#gridBox'); grid.parentNode.insertBefore(bar, grid);
+  bar.scrollIntoView({ block: 'nearest' });
+  $('#moveCancel').onclick = function () { S.sel.chip = null; bar.remove(); clearMarks(); };
+}
+
 function dropAt(d, td, force) {
   var payload = { id: d.sid || '', plan_id: d.plan_id, day: Number(td.dataset.day), start: Number(td.dataset.period), length: d.length, force: !!force };
+  if (!d.sid) payload.hour_type = S.sel.placeHourType || '';
   api('placeSession', S.token, payload).then(function (r) {
     if (!r.ok) {
       clearMarks();
@@ -714,7 +764,9 @@ function sessionModal(sid) {
     '<p>ครู: ' + esc(teacherNames(allTeacherIds(peers))) + '</p>' +
     (probs.length ? '<ul class="problems">' + probs.map(function (p) { return '<li class="' + (p.hard ? 'hard' : 'soft') + '">' + esc(p.msg) + '</li>'; }).join('') + '</ul>' : '') +
     (editable ? '<label class="f">ห้องเรียน</label><select id="smRoom">' + roomOpts + '</select>' +
-      '<label class="f">จำนวนคาบ</label><input id="smLen" type="number" min="1" max="' + S.settings.periods_per_day + '" value="' + s.length + '">' : '') +
+      '<label class="f">จำนวนคาบ</label><input id="smLen" type="number" min="1" max="' + S.settings.periods_per_day + '" value="' + s.length + '">' +
+      '<label class="f" for="smHourType">คาบใน / คาบนอก</label><select id="smHourType">' + hourTypeOptions(s.hour_type || '', plan.hour_type || 'in') + '</select><div class="small muted">ใช้กับคาบช่วงนี้' + (plan.joint_key ? 'และกลุ่มเรียนร่วมที่ย้ายตามกัน' : '') + ' · ใช้นับยอดรวมใน/รวมนอกในตารางสอนครู</div>'
+      : '<p>ประเภทคาบ: ' + esc({ in: 'คาบใน', out: 'คาบนอก', none: 'ไม่นับ' }[sessionHourType(s)] || 'คาบใน') + '</p>') +
     '<p class="small muted">แก้ไขล่าสุด: ' + esc(s.updated_by || '-') + '</p>' +
     '<div class="actions">' +
     '<button class="btn sm" id="smT">ดูตารางครู</button>' + (s.room_id ? '<button class="btn sm" id="smR">ดูตารางห้อง</button>' : '') +
@@ -725,20 +777,13 @@ function sessionModal(sid) {
   if ($('#smR', m)) $('#smR', m).onclick = function () { closeModal(); S.sel.mode = 'room'; S.sel.room = s.room_id; VIEWS.schedule($('#content')); };
   if (!editable) return;
   /* ย้ายด้วยการแตะ: จอสัมผัสลากวางแบบเดสก์ท็อปไม่ได้ */
-  $('#smMove', m).onclick = function () {
-    closeModal();
-    S.sel.chip = { plan_id: s.plan_id, length: Number(s.length), sid: s.id, i: -1 };
-    markCells(S.sel.chip);
-    var bar = document.createElement('div'); bar.className = 'move-bar'; bar.id = 'moveBar';
-    bar.innerHTML = '<span class="grow">กำลังย้าย ' + esc(c.code) + ' แตะช่องใหม่ในตาราง</span><button class="btn sm" id="moveCancel">ยกเลิก</button>';
-    var grid = $('#gridBox'); grid.parentNode.insertBefore(bar, grid);
-    bar.scrollIntoView({ block: 'nearest' });
-    $('#moveCancel').onclick = function () { S.sel.chip = null; renderSchedMain(); };
-  };
+  $('#smMove', m).onclick = function () { selectSessionMove(s.id); };
   $('#smDel', m).onclick = function () { api('removeSession', S.token, s.id).then(function (ss) { S.sessions = ss; closeModal(); renderSchedMain(); }); };
   $('#smLock', m).onclick = function () { api('toggleLock', S.token, s.id).then(function (ss) { S.sessions = ss; closeModal(); renderSchedMain(); }); };
   $('#smSave', m).onclick = function () {
-    api('placeSession', S.token, { id: s.id, plan_id: s.plan_id, day: s.day, start: s.start, length: Number($('#smLen').value), room_id: $('#smRoom').value }).then(function (r) {
+    var payload = { id: s.id, plan_id: s.plan_id, day: s.day, start: s.start, length: Number($('#smLen').value), room_id: $('#smRoom').value };
+    if ($('#smHourType').value !== (s.hour_type || '')) payload.hour_type = $('#smHourType').value;
+    api('placeSession', S.token, payload).then(function (r) {
       if (!r.ok) return toast(r.problems.filter(function (p) { return p.hard; }).map(function (p) { return p.msg; }).join(' · '), 1);
       S.sessions = r.sessions; closeModal(); renderSchedMain();
     });
@@ -843,7 +888,7 @@ function teacherSheet(id) {
   var t = IDX.Teachers[id] || {};
   return Grid.teacherSheet({
     settings: S.settings, dayNames: S.days, locked: S.D.LockedSlots, teacher: t, teacherId: id, sessions: S.sessions, groups: S.D.Groups,
-    hourType: function (s) { return (IDX.Plans[s.plan_id] || {}).hour_type || 'in'; }, plc: S.D.PlcSlots,
+    hourType: sessionHourType, plc: S.D.PlcSlots,
     course: courseOf, group: groupCode, room: roomName, color: sessionColor, deptName: deptName(t.department_id), semLabel: semLabel(S.sem), sign: signBlock(t.department_id)
   });
 }

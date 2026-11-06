@@ -222,6 +222,8 @@ function api_teachReportDelete($token = '', $id = '') {
 // ----- รูปประกอบรายงาน: เห็นหน้าและชื่อนักเรียน จึงเก็บใน data/ ซึ่งเปิดตรงจากเว็บไม่ได้ และส่งผ่าน API ที่ตรวจสิทธิ์ -----
 const REPORT_MAX_IMAGES = 4;
 const REPORT_MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const REPORT_STORED_IMAGE_BYTES = 200 * 1024;
+const REPORT_IMAGE_MAX_SIDE = 1280;
 const REPORT_IMAGE_NAME = '/^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/';
 
 function report_image_dir(): string {
@@ -237,6 +239,39 @@ function report_image_names(array $r): array {
 function report_image_ext(string $bytes): string {
   $info = @getimagesizefromstring($bytes);
   return [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png'][$info[2] ?? 0] ?? '';
+}
+/** ภาพใหม่ต้องเล็กก่อนเก็บ แม้ส่งมาจากหน้าเว็บรุ่นเก่า */
+function report_prepare_image(string $bytes): array {
+  $info = @getimagesizefromstring($bytes);
+  $ext = report_image_ext($bytes);
+  if (!$info || $ext === '') throw new Exception('รองรับเฉพาะรูป JPG และ PNG');
+  $w = (int)$info[0]; $h = (int)$info[1];
+  if ($w < 1 || $h < 1 || $w * $h > 20000000) throw new Exception('รูปมีความละเอียดสูงเกินไป กรุณาย่อรูปก่อนอัปโหลด');
+  if (strlen($bytes) <= REPORT_STORED_IMAGE_BYTES && max($w, $h) <= REPORT_IMAGE_MAX_SIDE) return ['bytes' => $bytes, 'ext' => $ext];
+  if (!function_exists('imagecreatefromstring') || !function_exists('imagejpeg')) throw new Exception('กรุณารีเฟรชหน้าเว็บแล้วเลือกภาพใหม่ ระบบจะย่อรูปไม่เกิน 200 KB ก่อนส่ง');
+  $source = @imagecreatefromstring($bytes);
+  if (!$source) throw new Exception('อ่านไฟล์รูปไม่สำเร็จ');
+  try {
+    $scale = min(1, REPORT_IMAGE_MAX_SIDE / max($w, $h));
+    $nw = max(1, (int)round($w * $scale)); $nh = max(1, (int)round($h * $scale));
+    while (true) {
+      $canvas = imagecreatetruecolor($nw, $nh);
+      if (!$canvas) throw new Exception('เตรียมภาพไม่สำเร็จ');
+      try {
+        imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+        imagecopyresampled($canvas, $source, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        foreach ([78, 68, 58] as $quality) {
+          ob_start();
+          try { $ok = imagejpeg($canvas, null, $quality); $out = (string)ob_get_contents(); }
+          finally { ob_end_clean(); }
+          if ($ok && strlen($out) <= REPORT_STORED_IMAGE_BYTES) return ['bytes' => $out, 'ext' => 'jpg'];
+        }
+      } finally { imagedestroy($canvas); }
+      if (max($nw, $nh) <= 480) throw new Exception('ย่อรูปไม่สำเร็จ กรุณาเลือกภาพใหม่');
+      $ratio = max(480 / max($nw, $nh), 0.8);
+      $nw = max(1, (int)floor($nw * $ratio)); $nh = max(1, (int)floor($nh * $ratio));
+    }
+  } finally { imagedestroy($source); }
 }
 function report_row(array $me, $id, array &$rows, bool $forEdit): int {
   $rows = readTable('TeachReports');
@@ -259,6 +294,8 @@ function api_teachReportImageAdd($token = '', $id = '', $base64 = '') {
     $i = report_row($me, $id, $rows, true);
     $names = report_image_names($rows[$i]);
     if (count($names) >= REPORT_MAX_IMAGES) throw new Exception('แนบรูปได้ไม่เกิน ' . REPORT_MAX_IMAGES . ' รูปต่อรายงาน');
+    $prepared = report_prepare_image($bytes);
+    $bytes = $prepared['bytes']; $ext = $prepared['ext'];
     $name = strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string)$rows[$i]['id'])) . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
     if (file_put_contents(report_image_dir() . '/' . $name, $bytes) !== strlen($bytes)) throw new Exception('บันทึกรูปไม่สำเร็จ');
     $names[] = $name;
