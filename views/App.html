@@ -198,6 +198,7 @@ function renderShell() {
   $('#userBtn').onclick = function (e) { if (e.target.closest('#umenu')) return; $('#umenu').classList.toggle('open'); };
   $('#mb').onclick = function () { $('#side').classList.toggle('open'); $('#sideBg').classList.toggle('open'); };
   $('#sideBg').onclick = function () { $('#side').classList.remove('open'); this.classList.remove('open'); };
+  TableFilter.watch($('#content'));
 }
 
 function go(v) {
@@ -220,6 +221,91 @@ function go(v) {
 }
 
 var VIEWS = {};
+
+/* ===================== ตัวกรองตารางข้อมูล (ทุกเมนู) =====================
+   ติดให้ทุกตารางข้อมูลในหน้าเนื้อหาโดยอัตโนมัติ: ช่องค้นหา และช่องเลือกของคอลัมน์ที่เป็นหมวดหมู่
+   (เช่น บทบาท แผนก สถานะ) ตัวเลือกสร้างจากค่าที่มีในตารางจริง จึงใช้ได้กับทุกเมนูโดยไม่ต้องตั้งค่ารายหน้า
+   ไม่ติดกับตารางเล็ก เอกสารสำหรับพิมพ์ ตารางในหน้าต่าง และตารางที่มีแถวรวมเซลล์ */
+var TableFilter = (function () {
+  var MIN_ROWS = 8, MAX_CHOICES = 40, MAX_LEN = 40, MAX_SELECTS = 4, state = {};
+  // คอลัมน์ที่ไม่ใช่หมวดหมู่ ค้นหาด้วยช่องค้นหาแทน
+  var NOT_CATEGORY = /อีเมล|วันที่|วันเริ่ม|เวลา|หมายเหตุ|ชื่อ|ลำดับ|รหัส|เลขที่|ลิงก์|รายละเอียด|ที่อยู่|โทร/;
+  var NUMBER = /^[\d.,\s\-–/:]+$/;
+  function text(el) { return String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(); }
+  function usable(tbl) {
+    if (tbl.getAttribute('data-tf') || tbl.closest('.page, .rp-doc, .modal, [data-nofilter]')) return false;
+    var body = tbl.tBodies[0];
+    if (!body || body.rows.length < MIN_ROWS || (tbl.tHead && tbl.tHead.rows.length > 1)) return false;
+    return ![].some.call(body.rows, function (r) { return [].some.call(r.cells, function (c) { return c.rowSpan > 1; }); });
+  }
+  function attach(tbl, idx) {
+    tbl.setAttribute('data-tf', '1');
+    var head = tbl.tHead ? tbl.tHead.rows[0] : null;
+    var heads = head ? [].map.call(head.cells, text) : [];
+    // แถวข้อมูลคือแถวที่มีช่องครบตามหัวตาราง แถวอื่น (ไม่มีข้อมูล ยอดรวม) แสดงเสมอ
+    var rows = [].filter.call(tbl.tBodies[0].rows, function (r) { return r.cells.length === heads.length && !/total|sum/.test(r.className); });
+    if (rows.length < MIN_ROWS) return;
+    var cells = rows.map(function (r) { return [].map.call(r.cells, text); });
+    var whole = rows.map(function (r, i) { return cells[i].join(' ').toLowerCase(); });
+    var cols = [];
+    heads.forEach(function (h, i) {
+      if (!h || NOT_CATEGORY.test(h) || cols.length >= MAX_SELECTS) return;
+      var seen = {}, list = [];
+      cells.forEach(function (c) { var v = c[i]; if (v && !seen[v]) { seen[v] = 1; list.push(v); } });
+      // หมวดหมู่ต้องมีค่าซ้ำกันพอสมควร ไม่ใช่ตัวเลข และข้อความไม่ยาว
+      if (list.length >= 2 && list.length <= MAX_CHOICES && list.length * 2 <= rows.length &&
+          list.every(function (v) { return v.length <= MAX_LEN; }) && list.filter(function (v) { return NUMBER.test(v); }).length * 2 < list.length) {
+        cols.push({ i: i, head: h, values: list.sort(function (a, b) { return a.localeCompare(b, 'th', { numeric: true }); }) });
+      }
+    });
+    var box = tbl.closest('.tablewrap') || tbl, card = tbl.closest('.card') || box.parentNode;
+    var ownSearch = card && card.querySelector('input[placeholder^="ค้นหา"]:not(.tf-q)');
+    if (!cols.length && ownSearch) return;
+    var key = S.view + '|' + idx + '|' + heads.join('/'), st = state[key] = state[key] || { q: '', cols: {} };
+    var bar = document.createElement('div');
+    bar.className = 'tf-bar no-print';
+    bar.innerHTML = (ownSearch ? '' : '<input class="tf-q" type="search" placeholder="ค้นหาในตาราง…" aria-label="ค้นหาในตาราง">') +
+      cols.map(function (c) {
+        if (c.values.indexOf(st.cols[c.i]) < 0) delete st.cols[c.i];
+        return '<select data-tf-col="' + c.i + '" aria-label="กรองตาม' + esc(c.head) + '"><option value="">' + esc(c.head) + ': ทั้งหมด</option>' +
+          c.values.map(function (v) { return '<option value="' + esc(v) + '"' + (st.cols[c.i] === v ? ' selected' : '') + '>' + esc(c.head) + ': ' + esc(v) + '</option>'; }).join('') + '</select>';
+      }).join('') + '<button type="button" class="btn sm tf-clear">ล้างตัวกรอง</button><span class="tf-count small muted"></span>';
+    box.parentNode.insertBefore(bar, box);
+    var q = bar.querySelector('.tf-q');
+    if (q) q.value = st.q;
+    function apply() {
+      var needle = (st.q || '').toLowerCase().trim(), shown = 0;
+      rows.forEach(function (r, i) {
+        var ok = (!needle || whole[i].indexOf(needle) >= 0) && Object.keys(st.cols).every(function (ci) { return cells[i][ci] === st.cols[ci]; });
+        r.style.display = ok ? '' : 'none';
+        if (ok) shown++;
+      });
+      var active = needle || Object.keys(st.cols).length;
+      bar.querySelector('.tf-count').textContent = active ? 'แสดง ' + shown + ' จาก ' + rows.length + ' รายการ' : rows.length + ' รายการ';
+      bar.querySelector('.tf-clear').hidden = !active;
+    }
+    if (q) q.oninput = function () { st.q = q.value; apply(); };
+    [].forEach.call(bar.querySelectorAll('[data-tf-col]'), function (s) {
+      s.onchange = function () { var i = s.getAttribute('data-tf-col'); if (s.value) st.cols[i] = s.value; else delete st.cols[i]; apply(); };
+    });
+    bar.querySelector('.tf-clear').onclick = function () {
+      st.q = ''; st.cols = {}; if (q) q.value = '';
+      [].forEach.call(bar.querySelectorAll('[data-tf-col]'), function (s) { s.value = ''; });
+      apply();
+    };
+    apply();
+  }
+  // table.data คือตารางของระบบ table.table คือตารางแบบ Bootstrap ในเมนูนิเทศและรายงานการสอน
+  function scan(root) { [].forEach.call(root.querySelectorAll('table.data, table.table'), function (t, i) { if (usable(t)) attach(t, i); }); }
+  function watch(root) {
+    if (!root || root._tf) return;
+    var timer;
+    root._tf = new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(function () { scan(root); }, 60); });
+    root._tf.observe(root, { childList: true, subtree: true });
+    scan(root);
+  }
+  return { watch: watch, scan: scan };
+})();
 
 /* ย่อรูปบนเครื่องก่อนส่ง ตัดกลางเป็นจัตุรัส และลดคุณภาพจนเล็กพอเก็บในแถวผู้ใช้ */
 function avatarFromFile(file) {

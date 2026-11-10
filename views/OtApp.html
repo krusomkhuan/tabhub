@@ -302,7 +302,7 @@ VIEWS['ot-subs'] = function (el) {
   if (!(S.D.OtRounds || []).length) { el.innerHTML = '<div class="card">ยังไม่มีรอบการเบิก</div>'; return; }
   el.innerHTML = '<div class="card"><div class="row"><select id="sbR" style="width:auto">' + roundOptions() + '</select><span class="grow"></span>' +
     (can('dept') || S.me.teacher_id ? '<div class="sb-add"><button class="btn pri sm" id="sbAdd" aria-haspopup="true" aria-expanded="false">+ บันทึกสอนแทน / สอนชดเชย ▾</button><div class="umenu" id="sbMenu">' +
-      '<a href="javascript:void 0" data-sb-type="sub">🔁 สอนแทน<small>ครูคนอื่นสอนแทนในวันเดิม</small></a><a href="javascript:void 0" data-sb-type="makeup">📅 สอนชดเชย<small>ครูคนเดิมสอนในวันอื่น</small></a></div></div>' : '') + '</div>' +
+      '<a href="javascript:void 0" data-sb-type="sub">🔁 สอนแทน/ดูแลแทน<small>ครูคนอื่นสอนแทนในวันเดิม</small></a><a href="javascript:void 0" data-sb-type="makeup">📅 สอนชดเชย<small>ครูคนเดิมสอนในวันอื่น</small></a></div></div>' : '') + '</div>' +
     '<div class="small muted" style="margin-top:8px;line-height:1.7">ระเบียบข้อ 8: ครูผู้สอนแทนเบิกชั่วโมงนั้นได้ โดยรวมกับชั่วโมงเบิกปกติแล้วไม่เกิน 12 ชม./สัปดาห์ และไม่เกินสิทธิ์ของครูผู้สอนเดิม · สอนชดเชยกรณีไปราชการ ต้องแนบรายงานผลการสอนภายใน 7 วัน มิฉะนั้นเบิกชั่วโมงนั้นไม่ได้ · ข้อ 6: วิชาฝึกงาน/ทวิภาคี ห้ามสอนชดเชยหรือสอนแทน</div></div><div id="sbList"></div>';
   $('#sbR').onchange = function () { OT.round = this.value; listSubs(); };
   if ($('#sbAdd')) {
@@ -362,7 +362,7 @@ function subModal(kind) {
   var myDept = S.me.role === 'dept' ? S.me.department_id : '';
   var round = IDX.OtRounds[OT.round];
   var isSub = kind === 'sub';
-  var m = modal('<h3>' + (isSub ? 'บันทึกการสอนแทน' : 'บันทึกการสอนชดเชย') + '</h3><p class="small muted" style="margin:0 0 6px">' + (isSub ? 'ครูคนอื่นสอนแทนในวันเดิม' : 'ครูคนเดิมสอนในวันอื่น') + '</p>' +
+  var m = modal('<h3>' + (isSub ? 'บันทึกการสอนแทน/ดูแลแทน' : 'บันทึกการสอนชดเชย') + '</h3><p class="small muted" style="margin:0 0 6px">' + (isSub ? 'ครูคนอื่นสอนแทนในวันเดิม' : 'ครูคนเดิมสอนในวันอื่น') + '</p>' +
     '<label class="f">เหตุผล</label><select id="sbWhy"><option>ลา</option><option>ไปราชการ</option><option>ลาป่วย</option><option>อื่นๆ</option></select>' +
     '<label class="f">ครูผู้สอนเดิม</label><select id="sbO">' + tOpts(myDept) + '</select>' +
     '<label class="f">วันที่ของคาบเดิม</label><input type="date" id="sbOD" min="' + round.start_date + '" max="' + round.end_date + '">' +
