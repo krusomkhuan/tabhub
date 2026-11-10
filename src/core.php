@@ -47,7 +47,9 @@ const SCHEMA = [
                      'group_ids', 'media', 'evaluation', 'assignment', 'attendance', 'images', 'memo_no', 'memo_date', 'memo_reason'],
   // ---- นิเทศออนไลน์: วิชาที่สอนในสถานประกอบการ (unit_key = J:รหัสเรียนร่วม หรือ P:รหัสแผน) ----
   'SupervisionVisits' => ['id', 'semester_id', 'unit_key', 'company_name', 'visit_date', 'visit_type', 'meeting_link', 'topic', 'findings', 'suggestions', 'score', 'evidence_link',
-                     'next_visit_date', 'status', 'created_by', 'created_at', 'images'],
+                     'next_visit_date', 'status', 'created_by', 'created_at', 'images', 'visit_time', 'week_no', 'sites', 'tasks_assigned'],
+  // ---- รายงานการนิเทศนักศึกษาฝึกอาชีพ (แบบรายงานรายสัปดาห์) ที่บันทึกเก็บไว้ รวมหลายรายวิชาในฉบับเดียว ----
+  'SupervisionDocs' => ['id', 'semester_id', 'teacher_id', 'visit_ids', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
   // ---- เอกสารสอนแทน/สอนชดเชยที่บันทึกเก็บไว้ (kind = makeup_request | sub_report) ----
   'SubDocs'      => ['id', 'kind', 'sub_ids', 'round_id', 'original_teacher_id', 'teacher_id', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
 ];
@@ -66,7 +68,7 @@ const DEFAULT_SETTINGS = [
   'periods_per_day' => '12', 'period_start' => '08:00', 'period_minutes' => '60', 'lunch_period' => '5',
   'days' => '0,1,2,3,4', // 0=จันทร์ ... 6=อาทิตย์
   'signer_curriculum' => 'นายปฏิภาณ พานทอง', 'signer_deputy' => '', 'signer_director' => '', 'default_semester_id' => '',
-  'signer_finance' => '', 'signer_admin_deputy' => '', 'ot_max_cap' => '12',
+  'signer_finance' => '', 'signer_admin_deputy' => '', 'signer_dvt' => '', 'ot_max_cap' => '12',
   'ot_contract_caps' => '0-3:6,4-6:7,7-9:8,10-99:8', 'ot_makeup_report_days' => '7', 'public_enabled' => 'true',
   'color_default' => '#cfe2f3', 'color_workplace' => '#fb8ca6',
 ];

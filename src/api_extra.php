@@ -495,6 +495,22 @@ function api_visitList($token = '', $semesterId = '', $key = '') {
   return $rows;
 }
 
+/** ตารางสถานประกอบการในแบบรายงานนิเทศ: [{type: onsite|online, company, major, students}] */
+function visit_clean_sites($sites): array {
+  if (is_string($sites)) $sites = json_decode($sites, true);
+  if (!is_array($sites)) return [];
+  $out = [];
+  foreach (array_slice(array_values($sites), 0, 20) as $x) {
+    if (!is_array($x)) continue;
+    $n = trim(str($x['students'] ?? ''));
+    $row = ['type' => ($x['type'] ?? '') === 'onsite' ? 'onsite' : 'online', 'company' => clean_text($x['company'] ?? '', 300), 'major' => clean_text($x['major'] ?? '', 200),
+      'students' => preg_match('/^\d{1,4}$/', $n) ? $n : ''];
+    if ($row['company'] === '' && $row['major'] === '' && $row['students'] === '') continue;
+    $out[] = $row;
+  }
+  return $out;
+}
+
 function api_visitSave($token = '', $rec = []) {
   $me = auth_user($token);
   $rec = (array)$rec;
@@ -505,8 +521,14 @@ function api_visitSave($token = '', $rec = []) {
   $status = ($rec['status'] ?? '') === 'planned' ? 'planned' : 'done';
   if ($status === 'done' && $rec['visit_date'] > date('Y-m-d')) throw new Exception('บันทึกผลนิเทศล่วงหน้าไม่ได้ ถ้ายังไม่ถึงวันให้เลือก "นัดหมาย"');
   $meet = clean_link($rec['meeting_link'] ?? ''); $evid = array_key_exists('evidence_link', $rec) ? clean_link($rec['evidence_link']) : null;
-  if ($status === 'done' && clean_text($rec['findings'] ?? '') === '') throw new Exception('กรุณาบันทึกผลการนิเทศ');
-  return with_lock(function () use ($me, $rec, $type, $status, $meet, $evid) {
+  if ($status === 'done' && clean_text($rec['findings'] ?? '') === '') throw new Exception('กรุณาบันทึกงานที่นักเรียนนักศึกษาได้ปฏิบัติ');
+  $time = trim(str($rec['visit_time'] ?? ''));
+  if ($time !== '' && !preg_match('/^([01]\d|2[0-3])[:.][0-5]\d$/', $time)) throw new Exception('เวลานิเทศไม่ถูกต้อง');
+  $week = trim(str($rec['week_no'] ?? ''));
+  if ($week !== '' && (!preg_match('/^[0-9]{1,2}$/', $week) || (int)$week < 1 || (int)$week > 40)) throw new Exception('สัปดาห์ที่นิเทศต้องเป็นตัวเลข 1–40');
+  $sites = visit_clean_sites($rec['sites'] ?? null);
+  if ($sites) { $type = $sites[0]['type']; $rec['company_name'] = $sites[0]['company']; }
+  return with_lock(function () use ($me, $rec, $type, $status, $meet, $evid, $time, $week, $sites) {
     $rows = readTable('SupervisionVisits');
     $id = $rec['id'] ?? '';
     $i = js_true($id) ? find_row($rows, $id) : null;
@@ -516,6 +538,7 @@ function api_visitSave($token = '', $rec = []) {
       'semester_id' => $rec['semester_id'], 'unit_key' => $rec['unit_key'], 'company_name' => clean_text($rec['company_name'] ?? '', 300), 'visit_date' => $rec['visit_date'], 'visit_type' => $type, 'meeting_link' => $meet, 'topic' => clean_text($rec['topic'] ?? '', 500),
       'findings' => clean_text($rec['findings'] ?? ''), 'suggestions' => clean_text($rec['suggestions'] ?? ''), 'evidence_link' => $evid === null ? ($rows[$i]['evidence_link'] ?? '') : $evid,
       'next_visit_date' => $rec['next_visit_date'] ?? '', 'status' => $status,
+      'visit_time' => str_replace('.', ':', $time), 'week_no' => $week, 'sites' => $sites ? json_encode($sites, JSON_UNESCAPED_UNICODE) : '', 'tasks_assigned' => clean_text($rec['tasks_assigned'] ?? ''),
     ]);
     $newId = $rows[$i]['id'];
     writeTable('SupervisionVisits', $rows);

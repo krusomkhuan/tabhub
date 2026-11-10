@@ -9,6 +9,7 @@ require_once __DIR__ . '/api_core.php';
 require_once __DIR__ . '/api_sched.php';
 require_once __DIR__ . '/api_ot.php';
 require_once __DIR__ . '/sub_docs.php';
+require_once __DIR__ . '/visit_docs.php';
 require_once __DIR__ . '/tab_import.php';
 require_once __DIR__ . '/api_extra.php';
 require_once __DIR__ . '/backup.php';
@@ -23,7 +24,7 @@ const API_ALLOW = [
   'otTeacherData', 'otSaveClaim', 'otUnlockClaim', 'otSaveSub', 'otSubReport', 'otCancelSub', 'otListSubs', 'subDocList', 'subDocGet', 'subDocSave', 'subDocDelete', 'otAlerts', 'otDeptSummary', 'otSubmit', 'otSuggestSchemes',
   'importFromTAB', 'listTabSemesters',
   'teachReportImageAdd', 'teachReportImages', 'teachReportImageDelete', 'teachReportSlots', 'teachReportSave', 'teachReportList', 'teachReportReview', 'teachReportDelete', 'teachReportSummary',
-  'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'otCoverSheet',
+  'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet',
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
   'issueList', 'issueSave', 'issueReply', 'issueDelete', 'backupList', 'backupCreate', 'backupDownload', 'backupDelete', 'backupUploadChunk', 'backupRestore',
 ];

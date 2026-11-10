@@ -228,7 +228,7 @@
   function docToolbar(el, html, title, view, editable, save) {
     el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button>' + (editable ? '<button class="btn" id="rdEdit">✏️ แก้ไขเอกสาร</button><button class="btn" id="rdReset">คืนค่าต้นฉบับ</button>' : '') + (save ? '<button class="btn ok" id="rdSave">💾 บันทึกเอกสาร</button>' : '') + '<button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button>' + (save ? '<span class="small muted" id="rdSaved"></span>' : '') + '</div>' +
       (editable ? '<p class="small muted no-print">กดแก้ไขเอกสาร แล้วคลิกข้อความที่ต้องการแก้ รวมถึงข้อมูลในตารางและหนังสือผู้ปกครอง ใช้เครื่องมือเพิ่ม–ลบแถวหรือตารางด้านล่างได้ พิมพ์รหัสหรือชื่อวิชา/กลุ่มในช่องตารางเพื่อเลือกจากข้อมูลในระบบ ' +
-        (save ? 'กด <b>บันทึกเอกสาร</b> เพื่อเก็บฉบับที่แก้ไว้ แล้วเปิดกลับมาแก้ได้จากปุ่มเดิมในหน้าสอนแทน / สอนชดเชย' : 'การแก้ไขใช้สำหรับพิมพ์และแชร์ PDF ครั้งนี้ เมื่อออกจากหน้านี้จะไม่เก็บข้อความที่แก้ไข') + ' การแก้เอกสารไม่เปลี่ยนข้อมูลตารางสอน</p>' : '') + '<div class="rp-doc">' + html + '</div>';
+        (save ? 'กด <b>บันทึกเอกสาร</b> เพื่อเก็บฉบับที่แก้ไว้ แล้วเปิดกลับมาพิมพ์หรือแก้ได้จากปุ่มเดิมที่ใช้สร้างเอกสารนี้' : 'การแก้ไขใช้สำหรับพิมพ์และแชร์ PDF ครั้งนี้ เมื่อออกจากหน้านี้จะไม่เก็บข้อความที่แก้ไข') + ' การแก้เอกสารไม่เปลี่ยนข้อมูลตารางสอน</p>' : '') + '<div class="rp-doc">' + html + '</div>';
     var dirty = false;
     document.getElementById('rdBack').onclick = function () {
       if (save && dirty && !confirm('ยังไม่ได้บันทึกเอกสารที่แก้ไข ออกจากหน้านี้หรือไม่?')) return;
@@ -785,6 +785,117 @@
     list();
   };
 
+  var uniq = function (a) { return a.filter(function (x, i) { return x && a.indexOf(x) === i; }); };
+  /* ---------- แบบรายงานการนิเทศนักศึกษาฝึกอาชีพในสถานประกอบการ (รายสัปดาห์) ---------- */
+  /* สัปดาห์ที่ นับจากสัปดาห์ของวันเปิดภาคเรียน (จันทร์–อาทิตย์) */
+  function semWeek(date) {
+    var sem = IDX.Semesters[S.sem] || {};
+    if (!sem.start_date || !date) return '';
+    var a = new Date(String(sem.start_date).slice(0, 10) + 'T00:00:00'), b = new Date(String(date).slice(0, 10) + 'T00:00:00');
+    if (isNaN(a) || isNaN(b)) return '';
+    a.setDate(a.getDate() - (a.getDay() + 6) % 7);
+    var w = Math.floor((b - a) / 604800000) + 1;
+    return w >= 1 && w <= 40 ? w : '';
+  }
+  /* ตารางสถานประกอบการของรายการนิเทศ รายการเก่าที่ยังไม่มีตารางใช้ชื่อสถานประกอบการและรูปแบบเดิม */
+  function visitSites(x) {
+    try { var s = JSON.parse(x.sites || '[]'); if (Array.isArray(s) && s.length) return s; } catch (e) {}
+    return x.company_name || x.visit_type ? [{ type: x.visit_type === 'onsite' ? 'onsite' : 'online', company: x.company_name || '', major: '', students: '' }] : [];
+  }
+  function visitCourseLabel(v) { var c = courseOf(v.course_id); return c.code + ' ' + c.name + ' · ' + groupNames(v.group_ids); }
+
+  function visitReportHtml(teacherId, list, imgs) {
+    var st = S.settings, t = IDX.Teachers[teacherId] || {}, dept = t.department_id, blank = '................................';
+    var head = S.D.Teachers.filter(function (x) { return String(x.department_id) === String(dept) && String(x.is_dept_head) === 'true'; })[0] || {};
+    var box = function (on) { return on ? '☑' : '☐'; };
+    var text = function (v) { return v ? esc(thNum(v)).replace(/\n/g, '<br>') : blank; };
+    var sign = function (name, role) { return '<div class="vr-sign">ลงชื่อ .................................<br>(' + esc(name || '.................................') + ')' + (role ? '<br>' + role : '') + '</div>'; };
+    var html = '<div class="page rp-page vr-page" data-pdf-width="760"><div class="rp-center"><b>' + esc(st.college_name || '') + '</b><br><b>แบบรายงานการนิเทศนักศึกษาฝึกอาชีพในสถานประกอบการ (รายสัปดาห์)</b><br><b>ภาคเรียนที่ ' + esc(thNum(semLabel(S.sem))) + '</b><br>ครูนิเทศก์ ชื่อ ' + esc(t.name || blank) + ' แผนกวิชา' + esc(deptName(dept).replace(/^แผนก(วิชา)?\s*/, '') || blank) + '</div>';
+    list.forEach(function (v) {
+      var c = courseOf(v.course_id), d = dateParts(v.visit_date), sites = visitSites(v);
+      if (!sites.length) sites = [{}];
+      html += '<div class="vr-course"><table class="rp-table vr-table"><tbody>' +
+        '<tr><td colspan="2" class="rp-left">นิเทศสัปดาห์ที่ ' + text(v.week_no) + '</td><td colspan="2" class="rp-left">วันที่ ' + thNum(d.day) + ' เดือน ' + d.month + ' พ.ศ. ' + thNum(d.year) + (v.visit_time ? ' เวลา ' + esc(thNum(String(v.visit_time).replace(':', '.'))) + ' น.' : '') + '</td></tr>' +
+        '<tr><th>รูปแบบการนิเทศ</th><th>ชื่อ - สถานประกอบการ</th><th>สาขางาน</th><th>จำนวนผู้เรียน</th></tr>' +
+        sites.map(function (s) { return '<tr><td class="rp-left">' + box(s.type === 'onsite') + ' Onsite ' + box(s.type !== 'onsite' && s.type) + ' Online</td><td class="rp-left">' + text(s.company) + '</td><td>' + text(s.major) + '</td><td>' + text(s.students) + '</td></tr>'; }).join('') +
+        '<tr><td colspan="2" class="rp-left">ชื่อวิชา ' + esc(c.name) + '<br><span class="small">กลุ่มเรียน ' + esc(groupNames(v.group_ids)) + '</span></td><td colspan="2" class="rp-left">รหัสวิชา ' + esc(thNum(c.code)) + '</td></tr></tbody></table>' +
+        '<table class="rp-table vr-table"><tbody><tr><th>งานที่นักเรียนนักศึกษาได้ปฏิบัติ</th><th>งานที่ครูมอบหมายเพิ่มเติม</th></tr><tr><td class="rp-left vr-text">' + text(v.findings) + '</td><td class="rp-left vr-text">' + text(v.tasks_assigned) + '</td></tr></tbody></table>' +
+        '<p class="vr-label"><b>สำหรับครูนิเทศ</b><br>ปัญหาที่พบ/วิธีแก้ปัญหา</p><p class="rp-text">' + text(v.suggestions) + '</p></div>';
+    });
+    // ชื่อในวงเล็บอยู่กึ่งกลางใต้เส้นลงชื่อ ไม่รวมคำว่า "ลงชื่อ" และตำแหน่ง
+    html += '<div class="rp-sign-one"><div class="vr-tsign"><span>ลงชื่อ</span><span class="vr-tsign-name">.................................<br>(' + esc(t.name || '.................................') + ')</span><span>ครูนิเทศก์ประจำวิชา</span></div></div>' +
+      '<table class="rp-table vr-approve"><tbody><tr><th class="rp-left">' + esc(Grid.deptHeadTitle(deptName(dept))) + '</th><th class="rp-left">หัวหน้างานอาชีวศึกษาระบบทวิภาคี</th></tr>' +
+      '<tr><td class="rp-left">☐ ทราบ<br>☐ อื่น ๆ ' + blank + sign(head.name) + '</td><td class="rp-left">☐ เสนอรองฝ่ายวิชาการ<br>☐ อื่น ๆ ' + blank + sign(st.signer_dvt) + '</td></tr>' +
+      '<tr><th class="rp-left">รองผู้อำนวยการฝ่ายวิชาการ</th><th class="rp-left">ผู้อำนวยการสถานศึกษา</th></tr>' +
+      '<tr><td class="rp-left">☐ ทราบ/ รวบรวม<br>☐ เชิญ นร./นศ. พร้อมผู้ปกครองมาพบ<br>☐ อื่น ๆ ' + blank + sign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</td><td class="rp-left">☐ ทราบ/ รวบรวม<br>☐ เชิญ นร./นศ. พร้อมผู้ปกครองมาพบ<br>☐ อื่น ๆ ' + blank + sign(st.signer_director, 'ผู้อำนวยการ' + esc(st.college_name || '')) + '</td></tr></tbody></table></div>';
+    // ภาพประกอบแยกตามรายวิชา
+    var withImages = list.filter(function (v) { return (imgs[v.id] || []).length; });
+    if (withImages.length) html += '<div class="page rp-page vr-page" data-pdf-width="760"><h2 class="rp-title">ภาพประกอบการนิเทศ</h2>' + withImages.map(function (v) {
+      var images = imgs[v.id];
+      return '<div class="vr-photos"><p class="rp-center"><b>' + esc(thNum(visitCourseLabel(v))) + '</b><br>' + esc(thLongDate(v.visit_date)) + '</p><div class="rp-pics rp-pics-' + images.length + '">' + images.map(function (img) { return '<img src="' + esc(img.url) + '" alt="ภาพประกอบการนิเทศ">'; }).join('') + '</div></div>';
+    }).join('') + '</div>';
+    return html;
+  }
+
+  function visitDocSaver(teacherId, ids, id, title) {
+    return function (html) {
+      return api('visitDocSave', S.token, { id: id || '', semester_id: S.sem, teacher_id: teacherId, visit_ids: ids, title: title, html: html }).then(function (r) { id = r.id; return r; });
+    };
+  }
+  function openVisitDoc(id, teacherId) {
+    api('visitDocGet', S.token, id).then(function (d) {
+      closeModal();
+      docToolbar(document.getElementById('content'), cleanDocHtml(d.html), d.title, S.view, true, visitDocSaver(teacherId, String(d.visit_ids).split(','), d.id, d.title));
+      document.getElementById('rdSaved').textContent = 'ฉบับที่บันทึกเมื่อ ' + savedAt(d);
+    });
+  }
+
+  /* เลือกรายวิชาที่บันทึกนิเทศแล้ว รวมเป็นรายงานฉบับเดียว และเปิดรายงานที่บันทึกเก็บไว้ */
+  window.visitReportForm = function (teacherId) {
+    var t = IDX.Teachers[teacherId] || {};
+    var m = modal('<h3>📄 รายงานการนิเทศ</h3><p class="small muted">' + esc(t.name || '') + ' · เลือกรายวิชาที่บันทึกนิเทศแล้วเพื่อรวมเป็นแบบรายงานการนิเทศนักศึกษาฝึกอาชีพ (รายสัปดาห์) ฉบับเดียว แก้ไขข้อความ เพิ่ม–ลบแถวหรือตารางได้ก่อนบันทึกเก็บ</p><div id="vrSaved"></div><div id="vrList" class="muted">กำลังโหลด…</div>' +
+      '<div class="actions"><button class="btn" onclick="closeModal()">ปิด</button><button class="btn pri" id="vrGo" disabled>สร้างรายงาน</button></div>', true);
+    function savedBox() {
+      api('visitDocList', S.token, S.sem, teacherId).then(function (docs) {
+        $j('#vrSaved', m).html(!docs.length ? '' : '<div class="alert alert-success sd-box"><b>รายงานที่บันทึกไว้ (' + docs.length + ' ฉบับ)</b> เปิดเพื่อพิมพ์หรือแก้ไขต่อ หรือเลือกรายวิชาด้านล่างเพื่อสร้างฉบับใหม่' + docs.map(function (d) {
+          return '<div class="sd-item"><span><b>' + esc(d.title) + '</b><small>บันทึกล่าสุด ' + esc(savedAt(d)) + ' โดย ' + esc(d.updated_by || d.created_by) + '</small></span><button type="button" class="btn sm pri" data-vr-open="' + esc(d.id) + '">เปิด / แก้ไข</button><button type="button" class="btn sm bad" data-vr-del="' + esc(d.id) + '">ลบ</button></div>';
+        }).join('') + '</div>');
+        $j('#vrSaved [data-vr-open]', m).on('click', function () { openVisitDoc(this.getAttribute('data-vr-open'), teacherId); });
+        $j('#vrSaved [data-vr-del]', m).on('click', function () { if (confirm('ลบรายงานที่บันทึกไว้ฉบับนี้? ลบแล้วกู้คืนไม่ได้')) api('visitDocDelete', S.token, this.getAttribute('data-vr-del')).then(function () { toast('ลบรายงานแล้ว'); savedBox(); }); });
+      }).catch(function () {});
+    }
+    var rows = [];
+    api('visitTeacherList', S.token, S.sem, teacherId).then(function (all) {
+      rows = all.filter(function (v) { return v.status === 'done'; });
+      if (!rows.length) { $j('#vrList', m).html('ยังไม่มีรายวิชาที่บันทึกนิเทศแล้ว — กดปุ่ม "นิเทศ" ของแต่ละวิชาเพื่อบันทึกก่อน'); return; }
+      var weekOf = function (v) { return String(v.week_no || semWeek(v.visit_date) || ''); };
+      var latest = weekOf(rows[rows.length - 1]) || rows[rows.length - 1].visit_date;
+      var byWeek = {}, order = [];
+      rows.forEach(function (v) { var k = weekOf(v) || v.visit_date; if (!byWeek[k]) { byWeek[k] = []; order.push(k); } byWeek[k].push(v); });
+      $j('#vrList', m).removeClass('muted').html(order.slice().reverse().map(function (k) {
+        return '<fieldset class="vr-week"><legend>' + (/^\d+$/.test(k) ? 'สัปดาห์ที่ ' + esc(k) : esc(thDate(k))) + ' <button type="button" class="btn sm" data-vr-week="' + esc(k) + '">เลือกทั้งสัปดาห์</button></legend>' + byWeek[k].map(function (v) {
+          return '<label class="d-flex gap-2 align-items-start small mb-1"><input type="checkbox" data-vr="' + esc(v.id) + '" data-week="' + esc(k) + '"' + (k === latest ? ' checked' : '') + ' style="width:auto;margin-top:3px"><span><b>' + esc(visitCourseLabel(v)) + '</b><br>' + thDate(v.visit_date) + (v.visit_time ? ' ' + esc(v.visit_time) + ' น.' : '') + ' · ' + esc(visitSites(v).map(function (s) { return s.company; }).filter(Boolean).join(', ') || 'ยังไม่ระบุสถานประกอบการ') + (v.images && v.images !== '[]' ? ' · มีภาพ' : ' · <span class="text-danger">ยังไม่มีภาพ</span>') + '</span></label>';
+        }).join('') + '</fieldset>';
+      }).join(''));
+      $j('#vrList [data-vr-week]', m).on('click', function () { var k = this.getAttribute('data-vr-week'); $j('#vrList [data-vr]', m).each(function () { this.checked = this.getAttribute('data-week') === k; }); });
+      $j('#vrGo', m).prop('disabled', false);
+    });
+    $j('#vrGo', m).on('click', function () {
+      var ids = $j('#vrList [data-vr]:checked', m).get().map(function (x) { return x.getAttribute('data-vr'); });
+      var list = rows.filter(function (v) { return ids.indexOf(String(v.id)) >= 0; });
+      if (!list.length) return toast('เลือกรายวิชาอย่างน้อย 1 รายการ', 1);
+      this.disabled = true;
+      Promise.all(list.map(function (v) { return v.images && v.images !== '[]' ? api('visitImages', S.token, v.id).then(function (im) { return [v.id, im]; }) : Promise.resolve([v.id, []]); })).then(function (pairs) {
+        var imgs = {}; pairs.forEach(function (p) { imgs[p[0]] = p[1]; });
+        var weeks = uniq(list.map(function (v) { return String(v.week_no || semWeek(v.visit_date) || ''); }).filter(String));
+        var title = 'รายงานการนิเทศ ' + (t.name || '') + (weeks.length ? ' สัปดาห์ที่ ' + weeks.join(', ') : ' ' + thDate(list[0].visit_date));
+        closeModal();
+        docToolbar(document.getElementById('content'), visitReportHtml(teacherId, list, imgs), title, S.view, true, visitDocSaver(teacherId, ids, '', title));
+      }).catch(function () { $j('#vrGo', m).prop('disabled', false); });
+    });
+    savedBox();
+  };
+
   /* ---------- นิเทศออนไลน์: วิชาที่สอนในสถานประกอบการ ---------- */
   var groupsOf = function (u) { return u.group_ids.map(groupCode).join(', '); };
   var teachersOf = function (u) { return u.teacher_ids.map(function (t) { return nm('Teachers', t); }).filter(Boolean).join(', '); };
@@ -805,7 +916,8 @@
       var teachers = sortBy(Object.keys(byTeacher).map(function (t) { return { id: t, name: nm('Teachers', t) || 'ยังไม่กำหนดครูผู้สอน', units: byTeacher[t] }; }), function (x) { return x.name; });
       $j('#inOut').html(teachers.map(function (x) {
         var done = x.units.filter(function (u) { return Number(u.visits_done) > 0; }).length;
-        return '<div class="card"><div class="d-flex flex-wrap gap-2 align-items-center mb-2"><h3 class="mb-0">' + esc(x.name) + '</h3><span class="grow"></span><span class="small muted">นิเทศแล้ว ' + done + ' จาก ' + x.units.length + ' รายวิชา</span></div>' +
+        var canReport = x.id && (S.me.role !== 'teacher' || String(x.id) === String(S.me.teacher_id));
+        return '<div class="card"><div class="d-flex flex-wrap gap-2 align-items-center mb-2"><h3 class="mb-0">' + esc(x.name) + '</h3><span class="grow"></span><span class="small muted">นิเทศแล้ว ' + done + ' จาก ' + x.units.length + ' รายวิชา</span>' + (canReport ? '<button class="btn sm pri no-print" data-vr-teacher="' + esc(x.id) + '">📄 รายงานการนิเทศ</button>' : '') + '</div>' +
           '<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th>รายวิชา</th><th>กลุ่มเรียน</th><th>เวลาในตาราง</th><th class="text-end">นิเทศแล้ว</th><th class="no-print"></th></tr></thead><tbody>' +
           sortBy(x.units, function (u) { return courseOf(u.course_id).code; }).map(function (u) {
             var c = courseOf(u.course_id);
@@ -814,34 +926,64 @@
               '</td><td class="no-print text-end"><button class="btn sm pri" data-v="' + esc(u.key) + '">นิเทศ</button></td></tr>';
           }).join('') + '</tbody></table></div></div>';
       }).join(''));
+      $j('#inOut [data-vr-teacher]').on('click', function () { visitReportForm(String($j(this).data('vr-teacher'))); });
       $j('#inOut [data-v]').on('click', function () { var k = String($j(this).data('v')); visits(rows.filter(function (x) { return x.key === k; })[0]); });
     }
     function visits(u) {
-      var c = courseOf(u.course_id);
-      var m = modal('<h3>บันทึกนิเทศ: ' + esc(c.code + ' ' + c.name) + '</h3><p class="small muted mb-2">' + esc(groupsOf(u)) + ' · ครูผู้สอน ' + esc(teachersOf(u) || '-') + '</p><div id="vList" class="mb-3"></div><hr>' +
+      var c = courseOf(u.course_id), groups = u.group_ids.map(function (g) { return IDX.Groups[g] || {}; });
+      var defaultMajor = uniq(groups.map(function (g) { return nm('Majors', g.major_id).replace(/\s*\((ปวช|ปวส)\.?\)\s*$/, ''); })).join(', ');
+      var defaultStudents = groups.reduce(function (n, g) { return n + (Number(g.students) || 0); }, 0) || '';
+      var m = modal('<h3>บันทึกนิเทศ: ' + esc(c.code + ' ' + c.name) + '</h3><p class="small muted mb-2">' + esc(groupsOf(u)) + ' · ครูผู้สอน ' + esc(teachersOf(u) || '-') + ' · บันทึกทีละรายวิชา แล้วรวมเป็นแบบรายงานการนิเทศได้จากปุ่ม "📄 รายงานการนิเทศ" ของครูนิเทศก์</p><div id="vList" class="mb-3"></div><hr>' +
         '<h3 id="vTitle" class="h6">เพิ่มการนิเทศ</h3><div class="form-grid"><div><label class="form-label mb-1">วันที่ *</label><input id="vD" type="date" class="form-control"></div>' +
-        '<div><label class="form-label mb-1">สถานประกอบการ</label><input id="vK" class="form-control"></div>' +
-        '<div><label class="form-label mb-1">รูปแบบ</label><select id="vY" class="form-select"><option value="online">ออนไลน์</option><option value="onsite">ไปสถานประกอบการ</option></select></div>' +
+        '<div><label class="form-label mb-1">เวลา</label><input id="vTm" type="time" class="form-control"></div>' +
+        '<div><label class="form-label mb-1">นิเทศสัปดาห์ที่</label><input id="vW" type="number" min="1" max="40" class="form-control" placeholder="นับจากวันเปิดภาคเรียน"></div>' +
         '<div><label class="form-label mb-1">สถานะ</label><select id="vS" class="form-select"><option value="done">นิเทศแล้ว</option><option value="planned">นัดหมาย</option></select></div>' +
         '<div><label class="form-label mb-1">ลิงก์ประชุมออนไลน์</label><input id="vM" type="url" class="form-control" placeholder="https://"></div>' +
         '<div><label class="form-label mb-1">นิเทศครั้งถัดไป</label><input id="vN" type="date" class="form-control"></div></div>' +
-        '<label class="form-label mb-1 mt-2">หัวข้อ</label><input id="vT" class="form-control mb-2"><label class="form-label mb-1">ผลการนิเทศ *</label><textarea id="vF" class="form-control mb-2" rows="3"></textarea>' +
-        '<label class="form-label mb-1">ข้อเสนอแนะ</label><textarea id="vG" class="form-control mb-2" rows="2"></textarea><label class="form-label mb-1">ภาพหลักฐานการนิเทศ (ไม่เกิน 4 ภาพ)</label><div id="vImages" class="rp-imgs"></div><input id="vFile" type="file" accept="image/jpeg,image/png" multiple class="form-control"><p class="small muted">ระบบย่อภาพด้านยาวไม่เกิน 1280 พิกเซล และไม่เกิน 200 KB ต่อภาพก่อนเก็บ ภาพเปิดดูได้เฉพาะผู้มีสิทธิ์</p>' +
-        '<div class="actions"><button class="btn" onclick="closeModal()">ปิด</button><button class="btn pri" id="vSave">บันทึกการนิเทศ</button></div>', true);
-      var cur = '', savedImages = [], pendingImages = [], imageLoading = false, savingVisit = false, imageVersion = 0;
-      var reset = function () { cur = ''; savedImages = []; pendingImages = []; imageVersion++; imageLoading = false; drawVisitImages(); $j('#vTitle').text('เพิ่มการนิเทศ'); $j('#vD').val(todayStr()); $j('#vY').val('online'); $j('#vS').val('done'); $j('#vK,#vM,#vN,#vT,#vF,#vG').val(''); };
+        '<label class="form-label mb-1 mt-2">สถานประกอบการที่นิเทศ</label><div class="table-responsive" data-nofilter><table class="table table-sm align-middle mb-1 v-sites"><thead><tr><th>รูปแบบการนิเทศ</th><th>ชื่อ - สถานประกอบการ</th><th>สาขางาน</th><th style="width:96px">จำนวนผู้เรียน</th><th></th></tr></thead><tbody id="vSites"></tbody></table></div>' +
+        '<button type="button" class="btn sm mb-2" id="vSiteAdd">+ เพิ่มสถานประกอบการ</button>' +
+        '<label class="form-label mb-1 d-block">หัวข้อ</label><input id="vT" class="form-control mb-2">' +
+        '<div class="form-grid"><div><label class="form-label mb-1">งานที่นักเรียนนักศึกษาได้ปฏิบัติ *</label><textarea id="vF" class="form-control" rows="4"></textarea></div><div><label class="form-label mb-1">งานที่ครูมอบหมายเพิ่มเติม</label><textarea id="vA" class="form-control" rows="4"></textarea></div></div>' +
+        '<label class="form-label mb-1 mt-2">ปัญหาที่พบ / วิธีแก้ปัญหา (สำหรับครูนิเทศ)</label><textarea id="vG" class="form-control mb-2" rows="3"></textarea><label class="form-label mb-1">ภาพประกอบการนิเทศ (ไม่เกิน 4 ภาพ)</label><div id="vImages" class="rp-imgs"></div><input id="vFile" type="file" accept="image/jpeg,image/png" multiple class="form-control"><p class="small muted">ระบบย่อภาพด้านยาวไม่เกิน 1280 พิกเซล และไม่เกิน 200 KB ต่อภาพก่อนเก็บ ภาพเปิดดูได้เฉพาะผู้มีสิทธิ์</p>' +
+        '<div class="actions"><button class="btn" onclick="closeModal()">ปิด</button><button class="btn pri" id="vSave">💾 บันทึกการนิเทศรายวิชานี้</button></div>', true);
+      var cur = '', savedImages = [], pendingImages = [], imageLoading = false, savingVisit = false, imageVersion = 0, weekTouched = false;
+      function siteRow(x) {
+        x = x || {};
+        return '<tr><td><select class="form-select form-select-sm" data-site="type"><option value="online"' + (x.type !== 'onsite' ? ' selected' : '') + '>Online</option><option value="onsite"' + (x.type === 'onsite' ? ' selected' : '') + '>Onsite</option></select></td>' +
+          '<td><input class="form-control form-control-sm" data-site="company" value="' + esc(x.company || '') + '"></td><td><input class="form-control form-control-sm" data-site="major" value="' + esc(x.major || '') + '"></td>' +
+          '<td><input class="form-control form-control-sm" data-site="students" type="number" min="0" value="' + esc(x.students === undefined ? '' : x.students) + '"></td><td><button type="button" class="btn sm bad" data-site-del title="ลบแถว">✕</button></td></tr>';
+      }
+      function setSites(list) { $j('#vSites', m).html((list.length ? list : [{}]).map(siteRow).join('')); }
+      function readSites() {
+        return $j('#vSites tr', m).get().map(function (tr) { var o = {}; $j(tr).find('[data-site]').each(function () { o[this.getAttribute('data-site')] = this.value.trim(); }); return o; })
+          .filter(function (o) { return o.company || o.major || o.students; });
+      }
+      $j('#vSites', m).on('click', '[data-site-del]', function () { $j(this).closest('tr').remove(); if (!$j('#vSites tr', m).length) setSites([]); });
+      $j('#vSiteAdd', m).on('click', function () { $j('#vSites', m).append(siteRow({ major: defaultMajor })); });
+      $j('#vD', m).on('change', function () { if (!weekTouched) $j('#vW').val(semWeek(val('#vD'))); });
+      $j('#vW', m).on('input', function () { weekTouched = true; });
+      var reset = function () {
+        cur = ''; savedImages = []; pendingImages = []; imageVersion++; imageLoading = false; weekTouched = false; drawVisitImages(); $j('#vTitle').text('เพิ่มการนิเทศ');
+        $j('#vD').val(todayStr()); $j('#vW').val(semWeek(todayStr())); $j('#vS').val('done'); $j('#vTm,#vM,#vN,#vT,#vF,#vA,#vG').val('');
+        setSites([{ type: 'online', major: defaultMajor, students: defaultStudents }]);
+      };
       function list() {
         api('visitList', S.token, S.sem, u.key).then(function (v) {
-          $j('#vList').html(v.length ? '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>วันที่</th><th>รูปแบบ</th><th>ผล / หลักฐาน</th><th></th></tr></thead><tbody>' + v.map(function (x) {
-            return '<tr><td class="text-nowrap small">' + thDate(x.visit_date) + (x.status === 'planned' ? ' <span class="badge text-bg-info">นัดหมาย</span>' : '') + '</td><td class="small">' + (x.visit_type === 'onsite' ? 'ไปสถานประกอบการ' : 'ออนไลน์') + (x.company_name ? '<br>' + esc(x.company_name) : '') + (x.meeting_link ? '<br>' + safeLink(x.meeting_link, 'เข้าประชุม') : '') + '</td><td class="small"><b>' + esc(x.topic) + '</b> ' + esc(x.findings) + (x.suggestions ? '<div class="text-muted">แนะนำ: ' + esc(x.suggestions) + '</div>' : '') + (x.evidence_link ? '<div>' + safeLink(x.evidence_link, 'หลักฐาน') + '</div>' : '') + (x.images && x.images !== '[]' ? '<div><button type="button" class="btn sm" data-vp="' + esc(x.id) + '">ดูภาพหลักฐาน</button><div data-vphotos class="rp-imgs"></div></div>' : '') + '</td><td class="text-nowrap text-end"><button class="btn sm" data-ve="' + esc(x.id) + '">แก้ไข</button> <button class="btn sm bad" data-vd="' + esc(x.id) + '">ลบ</button></td></tr>';
+          $j('#vList').html(v.length ? '<div class="table-responsive" data-nofilter><table class="table table-sm align-middle mb-0"><thead><tr><th>วันที่</th><th>สถานประกอบการ</th><th>ผล / หลักฐาน</th><th></th></tr></thead><tbody>' + v.map(function (x) {
+            var sites = visitSites(x);
+            return '<tr><td class="text-nowrap small">' + thDate(x.visit_date) + (x.visit_time ? '<br>' + esc(x.visit_time) + ' น.' : '') + (x.week_no ? '<br>สัปดาห์ที่ ' + esc(x.week_no) : '') + (x.status === 'planned' ? ' <span class="badge text-bg-info">นัดหมาย</span>' : '') + '</td><td class="small">' +
+              sites.map(function (s) { return (s.type === 'onsite' ? 'Onsite' : 'Online') + (s.company ? ' · ' + esc(s.company) : '') + (s.students ? ' (' + esc(s.students) + ' คน)' : ''); }).join('<br>') + (x.meeting_link ? '<br>' + safeLink(x.meeting_link, 'เข้าประชุม') : '') + '</td><td class="small">' +
+              (x.topic ? '<b>' + esc(x.topic) + '</b> ' : '') + esc(x.findings) + (x.tasks_assigned ? '<div class="text-muted">มอบหมาย: ' + esc(x.tasks_assigned) + '</div>' : '') + (x.suggestions ? '<div class="text-muted">ปัญหา/วิธีแก้: ' + esc(x.suggestions) + '</div>' : '') + (x.evidence_link ? '<div>' + safeLink(x.evidence_link, 'หลักฐาน') + '</div>' : '') + (x.images && x.images !== '[]' ? '<div><button type="button" class="btn sm" data-vp="' + esc(x.id) + '">ดูภาพหลักฐาน</button><div data-vphotos class="rp-imgs"></div></div>' : '') + '</td><td class="text-nowrap text-end"><button class="btn sm" data-ve="' + esc(x.id) + '">แก้ไข</button> <button class="btn sm bad" data-vd="' + esc(x.id) + '">ลบ</button></td></tr>';
           }).join('') + '</tbody></table></div>' : '<div class="small muted">ยังไม่มีบันทึกนิเทศ</div>');
           $j('#vList [data-ve]', m).on('click', function () {
             if (savingVisit || imageLoading) return toast('กำลังบันทึกหรือเตรียมภาพ กรุณารอสักครู่', 1);
             var id = String($j(this).data('ve')), x = v.filter(function (i) { return String(i.id) === id; })[0];
-            imageVersion++; savedImages = []; pendingImages = []; drawVisitImages();
-            cur = x.id; $j('#vTitle').text('แก้ไขการนิเทศ'); $j('#vD').val(x.visit_date); $j('#vK').val(x.company_name); $j('#vY').val(x.visit_type); $j('#vS').val(x.status); $j('#vM').val(x.meeting_link); $j('#vN').val(x.next_visit_date); $j('#vT').val(x.topic); $j('#vF').val(x.findings); $j('#vG').val(x.suggestions);
+            imageVersion++; savedImages = []; pendingImages = []; drawVisitImages(); weekTouched = true;
+            cur = x.id; $j('#vTitle').text('แก้ไขการนิเทศ'); $j('#vD').val(x.visit_date); $j('#vTm').val(x.visit_time || ''); $j('#vW').val(x.week_no || semWeek(x.visit_date)); $j('#vS').val(x.status); $j('#vM').val(x.meeting_link); $j('#vN').val(x.next_visit_date);
+            $j('#vT').val(x.topic); $j('#vF').val(x.findings); $j('#vA').val(x.tasks_assigned || ''); $j('#vG').val(x.suggestions); setSites(visitSites(x));
             var editId = String(x.id), version = imageVersion; imageLoading = true;
             api('visitImages', S.token, editId).then(function (images) { if (String(cur) === editId && version === imageVersion) { savedImages = images; imageLoading = false; drawVisitImages(); } }).catch(function () { if (version === imageVersion) imageLoading = false; });
+            m.querySelector('#vTitle').scrollIntoView({ block: 'start', behavior: 'smooth' });
           });
           $j('#vList [data-vp]').on('click', function () {
             var box = $j(this).closest('tr').find('[data-vphotos]');
@@ -872,14 +1014,15 @@
       $j('#vSave', m).on('click', function () {
         if (savingVisit) return;
         if (imageLoading) return toast('กำลังเตรียมภาพ กรุณารอสักครู่', 1);
+        var sites = readSites();
         savingVisit = true; $j('#vSave,#vFile', m).prop('disabled', true);
-        api('visitSave', S.token, { id: cur, semester_id: S.sem, unit_key: u.key, company_name: val('#vK'), visit_date: val('#vD'), visit_type: val('#vY'), status: val('#vS'), meeting_link: val('#vM'), next_visit_date: val('#vN'), topic: val('#vT'), findings: val('#vF'), suggestions: val('#vG') })
+        api('visitSave', S.token, { id: cur, semester_id: S.sem, unit_key: u.key, sites: sites, company_name: (sites[0] || {}).company || '', visit_type: (sites[0] || {}).type || 'online', visit_date: val('#vD'), visit_time: val('#vTm'), week_no: val('#vW'), status: val('#vS'), meeting_link: val('#vM'), next_visit_date: val('#vN'), topic: val('#vT'), findings: val('#vF'), tasks_assigned: val('#vA'), suggestions: val('#vG') })
           .then(function (id) {
             cur = id;
             return pendingImages.slice().reduce(function (chain, url) { return chain.then(function () {
               return api('visitImageAdd', S.token, id, url.split(',')[1]).then(function (name) { savedImages.push({ name: name, url: url }); pendingImages.shift(); });
             }); }, Promise.resolve());
-          }).then(function () { toast('บันทึกการนิเทศและภาพแล้ว'); reset(); list(); load(); })
+          }).then(function () { toast('บันทึกการนิเทศรายวิชานี้แล้ว'); reset(); list(); load(); })
           .catch(function () { drawVisitImages(); list(); })
           .then(function () { savingVisit = false; $j('#vSave,#vFile', m).prop('disabled', false); });
       });

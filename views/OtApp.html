@@ -390,19 +390,40 @@ function subModal(kind) {
   $('#sbOD').onchange = fillSessions;
   var me = String(S.me.teacher_id || '');
   // ครู: สอนชดเชยทำได้เฉพาะคาบของตนเอง · สอนแทน/ดูแลแทน บันทึกได้ทั้งครูที่ลา (เลือกผู้สอนแทน) และครูผู้สอนแทน (เลือกครูผู้สอนเดิม)
+  // พิมพ์ชื่อครูเพื่อกรองรายการ แล้วเลือกคนแรกที่ตรงให้อัตโนมัติ (ตัวเลือกที่ล็อกไว้ไม่แสดง)
+  function teacherSearch(sel) {
+    var inp = document.createElement('input');
+    inp.placeholder = '🔍 พิมพ์ชื่อครูเพื่อค้นหา…'; inp.className = 'sb-search'; inp.style.marginBottom = '4px';
+    sel.parentNode.insertBefore(inp, sel);
+    inp.filter = function (pick) {
+      var q = inp.value.trim().toLowerCase(), first = null;
+      $$('option', sel).forEach(function (o) {
+        if (!o.value) return;
+        var hit = !q || o.text.toLowerCase().indexOf(q) >= 0;
+        o.hidden = o.disabled || !hit;
+        if (hit && !o.disabled && !first) first = o;
+      });
+      if (pick && q && first && sel.value !== first.value) { sel.value = first.value; sel.dispatchEvent(new Event('change')); }
+    };
+    inp.oninput = function () { inp.filter(true); };
+    inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); sel.focus(); } };
+    return inp;
+  }
+  var origSearch = teacherSearch($('#sbO')), bySearch = teacherSearch($('#sbBy'));
   function lockSelf() {
     if (can('dept') || !isSub) return;
     var by = $('#sbBy'), orig = $('#sbO').value;
-    $$('option', by).forEach(function (o) { o.hidden = o.disabled = !orig ? false : orig === me ? o.value === me : (o.value !== me && o.value !== ''); });
+    $$('option', by).forEach(function (o) { o.disabled = !orig ? false : orig === me ? o.value === me : (o.value !== me && o.value !== ''); });
     if (orig && orig !== me) { by.value = me; by.disabled = true; }
     else { by.disabled = false; if (by.value === me) by.value = ''; }
+    bySearch.hidden = by.disabled; bySearch.filter(false);
   }
   $('#sbO').onchange = function () { lockSelf(); fillSessions(); };
   if (!can('dept')) {
     if (isSub) {
       $('#sbO').insertAdjacentHTML('afterend', '<p class="small muted" style="margin:4px 0 0">ครูที่ลาเลือกชื่อตนเองแล้วเลือกครูผู้สอนแทน หรือครูผู้สอนแทนเลือกชื่อครูที่ลา (ระบบใส่ชื่อท่านเป็นผู้สอนแทนให้)</p>');
       lockSelf();
-    } else { $('#sbO').value = me; $('#sbO').disabled = true; }
+    } else { $('#sbO').value = me; $('#sbO').disabled = true; origSearch.hidden = true; }
   }
   $('#sbS').onchange = function () { var o = this.selectedOptions[0]; if (o && o.dataset.len) $('#sbL').value = o.dataset.len; };
   $('#sbGo').onclick = function () {
