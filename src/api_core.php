@@ -307,6 +307,7 @@ function api_bootstrap($token = '', $semesterId = '') {
   $me = auth_user($token);
   // สำรองอัตโนมัติตอนเปิดหน้าเว็บ (วันละครั้ง) ไม่พึ่งการทำงานหลังส่งคำตอบ ซึ่งโฮสติ้งบางแห่งหยุดสคริปต์
   backup_auto_run('page_load');
+  groups_thai_digits_once();
   $s = readSettings();
   $sems = readTable('Semesters');
   $known = false;

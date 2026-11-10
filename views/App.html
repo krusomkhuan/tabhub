@@ -64,6 +64,8 @@ function nm(table, id, field) { var r = IDX[table] && IDX[table][id]; return r ?
 function teacherNames(ids) { return Sched.ids(ids).map(function (t) { return nm('Teachers', t) || '?'; }).join(', '); }
 function courseOf(id) { return (IDX.Courses && IDX.Courses[id]) || { code: '', name: '' }; }
 function groupCode(id) { var g = IDX.Groups[id]; return g ? (g.code || g.name) : ''; }
+/* ข้อความสำหรับค้นหา: ตัวพิมพ์เล็ก และเลขไทยเป็นเลขอารบิก (กลุ่มเรียนเก็บเป็นเลขไทย ผู้ใช้พิมพ์เลขแบบไหนก็หาเจอ) */
+function digitsKey(s) { return String(s === undefined || s === null ? '' : s).toLowerCase().replace(/[๐-๙]/g, function (d) { return String('๐๑๒๓๔๕๖๗๘๙'.indexOf(d)); }); }
 function roomName(id) { var r = IDX.Rooms[id]; if (!r) return ''; return r.name; }
 function semLabel(id) { var s = IDX.Semesters[id]; return s ? (s.label || (s.term + '/' + s.year)) : ''; }
 function ctx() {
@@ -247,7 +249,7 @@ var TableFilter = (function () {
     var rows = [].filter.call(tbl.tBodies[0].rows, function (r) { return r.cells.length === heads.length && !/total|sum/.test(r.className); });
     if (rows.length < MIN_ROWS) return;
     var cells = rows.map(function (r) { return [].map.call(r.cells, text); });
-    var whole = rows.map(function (r, i) { return cells[i].join(' ').toLowerCase(); });
+    var whole = rows.map(function (r, i) { return digitsKey(cells[i].join(' ')); });
     var cols = [];
     heads.forEach(function (h, i) {
       if (!h || NOT_CATEGORY.test(h) || cols.length >= MAX_SELECTS) return;
@@ -275,7 +277,7 @@ var TableFilter = (function () {
     var q = bar.querySelector('.tf-q');
     if (q) q.value = st.q;
     function apply() {
-      var needle = (st.q || '').toLowerCase().trim(), shown = 0;
+      var needle = digitsKey(st.q || '').trim(), shown = 0;
       rows.forEach(function (r, i) {
         var ok = (!needle || whole[i].indexOf(needle) >= 0) && Object.keys(st.cols).every(function (ci) { return cells[i][ci] === st.cols[ci]; });
         r.style.display = ok ? '' : 'none';
@@ -334,10 +336,10 @@ var TeacherSearch = (function () {
     inp.hidden = sel.disabled;
     sel.parentNode.insertBefore(inp, sel);
     function filter(pick) {
-      var q = inp.value.trim().toLowerCase(), hits = [];
+      var q = digitsKey(inp.value.trim()), hits = [];
       Array.prototype.forEach.call(sel.options, function (o) {
         if (!o.value) return;
-        var hit = !q || o.text.toLowerCase().indexOf(q) >= 0;
+        var hit = !q || digitsKey(o.text).indexOf(q) >= 0;
         o.hidden = !hit;
         if (hit && !o.disabled) hits.push(o);
       });
@@ -1002,8 +1004,8 @@ function teacherPicker(id, selected) {
   return '<input placeholder="ค้นหาชื่อครู…" oninput="filterSelect(this)" style="margin-bottom:4px"><select id="' + id + '" multiple size="7">' + opts + '</select><div class="small muted">กด Ctrl/⌘ ค้างเพื่อเลือกหลายคน</div>';
 }
 function filterSelect(inp) {
-  var q = inp.value.trim().toLowerCase(), sel = inp.nextElementSibling;
-  Array.prototype.forEach.call(sel.options, function (o) { o.hidden = q && o.text.toLowerCase().indexOf(q) < 0 && !o.selected; });
+  var q = digitsKey(inp.value.trim()), sel = inp.nextElementSibling;
+  Array.prototype.forEach.call(sel.options, function (o) { o.hidden = q && digitsKey(o.text).indexOf(q) < 0 && !o.selected; });
 }
 function selectedValues(sel) { return Array.prototype.filter.call(sel.options, function (o) { return o.selected; }).map(function (o) { return o.value; }); }
 
@@ -1185,7 +1187,7 @@ VIEWS.colors = function (el) {
     var on = Sched.ids(g.items), list = cat.table ? sortBy(S.D[cat.table] || [], cat.label) : [];
     return '<div class="cg-row" data-id="' + esc(g.id || '') + '" data-cat="' + cat.id + '"><div class="cg-top"><input type="color" class="cg-color" value="' + esc(g.color || '#cfe2f3') + '" aria-label="เลือกสี"><input class="cg-name" placeholder="ชื่อกลุ่มสี เช่น วิชาสามัญ" value="' + esc(g.name || '') + '"><span class="cg-sample" style="background:' + esc(g.color || '#cfe2f3') + '">ตัวอย่าง</span><button class="btn sm pri cg-save">บันทึก</button><button class="btn sm bad cg-del">ลบกลุ่ม</button></div>' +
       (cat.table ? '<details class="cg-pick"><summary>เลือก' + esc(cat.title) + ' — <span class="cg-count">' + (on.length ? 'เลือกแล้ว ' + on.length + ' รายการ' : 'ยังไม่ได้เลือก') + '</span></summary><input class="cg-q" placeholder="ค้นหา…"><div class="cg-items">' +
-        list.map(function (x) { return '<label data-text="' + esc(cat.label(x).toLowerCase()) + '"><input type="checkbox" value="' + esc(x.id) + '"' + (on.indexOf(String(x.id)) >= 0 ? ' checked' : '') + '> ' + esc(cat.label(x)) + '</label>'; }).join('') + '</div></details>' : '') + '</div>';
+        list.map(function (x) { return '<label data-text="' + esc(digitsKey(cat.label(x))) + '"><input type="checkbox" value="' + esc(x.id) + '"' + (on.indexOf(String(x.id)) >= 0 ? ' checked' : '') + '> ' + esc(cat.label(x)) + '</label>'; }).join('') + '</div></details>' : '') + '</div>';
   };
   var st = S.settings;
   el.innerHTML = '<div class="card"><p style="margin:0">กำหนดสีของคาบเรียนที่แสดงในหน้าจัดตาราง รายงาน ไฟล์ PDF และหน้าเผยแพร่ ถ้าคาบหนึ่งตรงหลายเงื่อนไข ระบบใช้ตามลำดับนี้: <b>กลุ่มสีรายวิชา → สถานประกอบการ → สีประจำวิชา → ครูผู้สอน → ห้องเรียน → โฮมรูม/กิจกรรม → แผนกวิชา → สีเริ่มต้น</b> ในหมวดเดียวกัน กลุ่มที่อยู่ด้านบนมาก่อน</p></div>' +
@@ -1198,7 +1200,7 @@ VIEWS.colors = function (el) {
   function bind(row) {
     var color = $('.cg-color', row), sample = $('.cg-sample', row), q = $('.cg-q', row);
     color.oninput = function () { sample.style.background = color.value; };
-    if (q) q.oninput = function () { var t = q.value.trim().toLowerCase(); $$('.cg-items label', row).forEach(function (l) { l.style.display = !t || l.dataset.text.indexOf(t) >= 0 ? '' : 'none'; }); };
+    if (q) q.oninput = function () { var t = digitsKey(q.value.trim()); $$('.cg-items label', row).forEach(function (l) { l.style.display = !t || l.dataset.text.indexOf(t) >= 0 ? '' : 'none'; }); };
     $$('.cg-items input', row).forEach(function (c) { c.onchange = function () { var n = $$('.cg-items input:checked', row).length; $('.cg-count', row).textContent = n ? 'เลือกแล้ว ' + n + ' รายการ' : 'ยังไม่ได้เลือก'; }; });
     $('.cg-save', row).onclick = function () {
       var name = $('.cg-name', row).value.trim();
@@ -1448,7 +1450,7 @@ function viewTable(el, name) {
   var def = TABLES[name], q = S.sel['q_' + name] || '';
   var rows = S.D[name] || [];
   if (plcDeptOnly(name)) rows = rows.filter(function (r) { return String(r.department_id) === String(S.me.department_id); });
-  if (q) rows = rows.filter(function (r) { return JSON.stringify(r).toLowerCase().indexOf(q.toLowerCase()) >= 0 || def.fields.some(function (f) { return f[2].indexOf('ref:') === 0 && refLabel(f[2].slice(4), r[f[0]]).toLowerCase().indexOf(q.toLowerCase()) >= 0; }); });
+  if (q) rows = rows.filter(function (r) { return digitsKey(JSON.stringify(r)).indexOf(digitsKey(q)) >= 0 || def.fields.some(function (f) { return f[2].indexOf('ref:') === 0 && refLabel(f[2].slice(4), r[f[0]]).toLowerCase().indexOf(q.toLowerCase()) >= 0; }); });
   var sortField = def.fields[0][2].indexOf('ref:') === 0 ? def.fields[1][0] : def.fields[0][0];
   rows = sortBy(rows, function (r) { return (def.fields[0][2].indexOf('ref:') === 0 ? refLabel(def.fields[0][2].slice(4), r[def.fields[0][0]]) + ' ' : '') + r[sortField]; });
   var show = rows.slice(0, 500);
@@ -1572,7 +1574,7 @@ function fieldForHeader(def, h) {
 function importCell(f, raw, miss) {
   var t = f[2], v = String(raw === undefined ? '' : raw).trim().replace(/^'(?=[=+\-@])/, '');
   var refId = function (tb, x) {
-    var hit = (S.D[tb] || []).filter(function (r) { return String(r.id) === x || refLabel(tb, r.id) === x; })[0];
+    var hit = (S.D[tb] || []).filter(function (r) { return String(r.id) === x || digitsKey(refLabel(tb, r.id)) === digitsKey(x); })[0];
     if (!hit) miss.push(x);
     return hit ? hit.id : '';
   };

@@ -195,10 +195,26 @@ function normalize_person_name(string $name): string {
   return preg_replace('/(?:(?:นาย|ครู)[ \t]*)?ป[ฏฎ]ิภา[นณ][ \t]+พานทอง/u', 'นายปฏิภาณ พานทอง', $name) ?? $name;
 }
 
+function thai_digits(string $s): string { return strtr($s, ['0' => '๐', '1' => '๑', '2' => '๒', '3' => '๓', '4' => '๔', '5' => '๕', '6' => '๖', '7' => '๗', '8' => '๘', '9' => '๙']); }
+
+/** แปลงรหัส/ชื่อกลุ่มเรียนที่มีอยู่เดิมเป็นเลขไทยครั้งเดียว (บันทึกครั้งต่อไปแปลงเองใน normalize_row_names) */
+function groups_thai_digits_once(): void {
+  if ((readSettings()['groups_thai_digits'] ?? '') === '1') return;
+  with_lock(function () {
+    $rows = readTable('Groups');
+    $changed = false;
+    foreach ($rows as $r) foreach (['code', 'name', 'year_level'] as $c) if (thai_digits((string)$r[$c]) !== (string)$r[$c]) $changed = true;
+    if ($changed) writeTable('Groups', $rows);
+    saveSetting('groups_thai_digits', '1');
+  });
+}
+
 function normalize_row_names(string $table, array $row): array {
   if (($table === 'Teachers' || $table === 'users') && isset($row['name'])) {
     $row['name'] = normalize_person_name((string)$row['name']);
   }
+  // กลุ่มเรียนใช้เลขไทยเสมอ เช่น ช.คอม.๒/๑ ไม่ว่าจะเพิ่มเอง นำเข้า หรือดึงจาก TAB
+  if ($table === 'Groups') foreach (['code', 'name', 'year_level'] as $c) if (isset($row[$c])) $row[$c] = thai_digits((string)$row[$c]);
   if ($table === 'Settings' && strpos((string)($row['key'] ?? ''), 'signer_') === 0 && isset($row['value'])) {
     $row['value'] = normalize_person_name((string)$row['value']);
   }

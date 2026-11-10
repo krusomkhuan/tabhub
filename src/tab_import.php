@@ -213,7 +213,7 @@ function tab_import_semester($tabSid): array {
     $upGroup = function ($gid, $code, $name, $level, $deptName) use (&$groups, &$gByTab, $deptId) {
       $gid = (string)$gid;
       $g = $gByTab[$gid] ?? null;
-      if (!$g) foreach ($groups as $x) if ($x->code === (string)$code) { $g = $x; break; }
+      if (!$g) foreach ($groups as $x) if (thai_digits((string)$x->code) === thai_digits((string)$code)) { $g = $x; break; }
       if (!$g) {
         $g = (object)array_merge(array_fill_keys(SCHEMA['Groups'], ''), ['id' => new_id(), 'code' => $code, 'name' => js_true($name) ? $name : $code, 'tab_id' => $gid]);
         $groups[] = $g;

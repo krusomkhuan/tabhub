@@ -97,12 +97,13 @@
       }).join('') + '</div></section>';
     }).join('') + '</div>';
   }
+  function digitsKey(s) { return String(s || '').toLowerCase().replace(/[๐-๙]/g, function (d) { return String('๐๑๒๓๔๕๖๗๘๙'.indexOf(d)); }); }
   function filterItems(pick) {
-    var q = document.getElementById('pQ').value.trim().toLowerCase(), isel = document.getElementById('pItem'), hits = [];
-    Array.prototype.forEach.call(isel.options, function (o) { if (!o.value) return; var hit = !q || o.text.toLowerCase().indexOf(q) >= 0; o.hidden = !hit; if (hit) hits.push(o.value); });
+    var q = digitsKey(document.getElementById('pQ').value.trim()), isel = document.getElementById('pItem'), hits = [];
+    Array.prototype.forEach.call(isel.options, function (o) { if (!o.value) return; var hit = !q || digitsKey(o.text).indexOf(q) >= 0; o.hidden = !hit; if (hit) hits.push(o.value); });
     Array.prototype.forEach.call(document.querySelectorAll('#pOut .pub-picker section'), function (sec) {
       var shown = 0;
-      Array.prototype.forEach.call(sec.querySelectorAll('[data-pick]'), function (b) { var hit = !q || b.textContent.toLowerCase().indexOf(q) >= 0; b.hidden = !hit; if (hit) shown++; });
+      Array.prototype.forEach.call(sec.querySelectorAll('[data-pick]'), function (b) { var hit = !q || digitsKey(b.textContent).indexOf(q) >= 0; b.hidden = !hit; if (hit) shown++; });
       sec.hidden = !shown;
     });
     if (q && hits.length && (pick || hits.length === 1) && P.id !== hits[0]) { P.id = hits[0]; isel.value = P.id; draw(); }
