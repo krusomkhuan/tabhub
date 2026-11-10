@@ -47,8 +47,13 @@ function modal(html, wide) {
 }
 function closeModal() { var m = $('#mbg'); if (m) m.remove(); }
 
-function rank(r) { return { teacher: 1, dept: 2, admin: 3 }[r] || 0; }
+var ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', curriculum: 'เจ้าหน้าที่งานพัฒนาหลักสูตรฯ', dept: 'วิชาการแผนก', teacher: 'ครูผู้สอน' };
+var ROLE_SCOPES = { admin: 'จัดการบัญชีผู้ใช้ สำรองข้อมูล ตั้งค่าระบบ และงานวิชาการทั้งหมด', curriculum: 'จัดการข้อมูลและงานวิชาการทุกแผนก จัดตาราง ตรวจรายงาน นิเทศ และค่าสอน โดยไม่จัดการบัญชีผู้ใช้ สำรองข้อมูล หรือตั้งค่าระบบ', dept: 'จัดแผนและตาราง ตรวจรายงาน นิเทศ และงานเบิกเฉพาะแผนกที่ได้รับมอบหมาย', teacher: 'ดูตารางและข้อมูลเผยแพร่ จัดทำรายงานการสอน บันทึกสอนแทน/สอนชดเชยของตนเอง และดูใบเบิกของตนเอง' };
+function rank(r) { return { teacher: 1, dept: 2, curriculum: 3, admin: 4 }[r] || 0; }
+function academicRole(r) { return r === 'admin' || r === 'curriculum'; }
 function can(r) { return S.me && rank(S.me.role) >= rank(r); }
+/* เมนูมาจากเซิร์ฟเวอร์ S.me.role คือบทบาทของหน้าปัจจุบัน ส่วน S.me.base_role คือบทบาทจริงของบัญชี */
+function menuOk(id) { return !!S.me && (S.me.menus || []).indexOf(id) >= 0; }
 
 function buildIndex() {
   IDX = {};
@@ -77,7 +82,7 @@ function renderLogin() {
     '<label class="f">รหัสผ่าน</label><div class="pw-wrap"><input id="lp" type="password" autocomplete="current-password" required>' +
     '<button type="button" class="pw-eye" id="pwEye" aria-label="แสดงรหัสผ่าน" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button></div>' +
     '<button class="btn pri lg login-submit">เข้าสู่ระบบ</button></form>' +
-    '<a class="pub-link" href="' + esc(S.url) + '?page=public" target="_blank">📅 ดูตารางเรียน / ตารางสอน (ไม่ต้องเข้าระบบ) →</a>' +
+    '<a class="pub-link" href="?page=public" target="_blank">📅 ดูตารางเรียน / ตารางสอน (ไม่ต้องเข้าระบบ) →</a>' +
     (PWA.installed() ? '' : '<button type="button" class="btn pwa-login" onclick="PWA.add()">📲 เพิ่มไอคอนลงมือถือ</button>') + '</div><p class="app-ver">เวอร์ชัน ' + esc(APP_VERSION) + '<br>ผู้พัฒนา: ' + esc(APP_DEVELOPERS) + '<br><a href="?page=pdpa" target="_blank">นโยบายคุ้มครองข้อมูลส่วนบุคคล</a></p><button type="button" class="theme-btn login-theme" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button></div>';
   $('#pwEye').onclick = function () {
     var show = $('#lp').type === 'password';
@@ -102,6 +107,7 @@ function start() {
     S.sem = b.sem; S.plans = b.plans; S.sessions = b.sessions; buildIndex();
     if (S.me.role === 'dept' && !S.sel.dept) S.sel.dept = S.me.department_id;
     renderShell();
+    if (b.backup_warning) setTimeout(function () { toast(b.backup_warning, 1); }, 600);
     if (hoursTeacher) { S.sel.hoursTeacher = hoursTeacher; return go('hours'); }
     go(S.me.role === 'teacher' ? 'mine' : 'dashboard');
   }).catch(function () { if (!S.token) return; store('tt_token', null); S.token = null; renderLogin(); });
@@ -135,27 +141,27 @@ var NAV = [
   { id: 'plans', label: 'แผนการเรียน', role: 'dept' },
   { id: 'plancheck', label: 'ตรวจสอบแผนการเรียน', role: 'teacher' },
   { id: 't-PlcSlots', label: 'คาบ PLC', role: 'dept' },
-  { id: 'manual', label: 'คู่มือการจัดตาราง', role: 'teacher' },
+  { id: 'manual', label: 'คู่มือการใช้งาน', role: 'teacher' },
   { sec: 'รายงาน' },
   { id: 'reports', label: 'ตารางเรียน / ตารางสอน / ห้อง', role: 'teacher' },
   { id: 'deptview', label: 'ตารางสอนรวมของแผนก', role: 'teacher' },
   { id: 'hours', label: 'สรุปชั่วโมงสอน', role: 'teacher' },
   { id: 'log', label: 'ประวัติการแก้ไข', role: 'dept' },
-  { sec: 'ข้อมูลพื้นฐาน', role: 'admin' },
-  { id: 't-Semesters', label: 'ปีการศึกษา / ภาคเรียน', role: 'admin' },
-  { id: 't-Departments', label: 'แผนกวิชา', role: 'admin' },
-  { id: 't-Majors', label: 'สาขาวิชา', role: 'admin' },
-  { id: 't-Teachers', label: 'ครูผู้สอน', role: 'admin' },
-  { id: 't-Buildings', label: 'อาคาร', role: 'admin' },
-  { id: 't-Rooms', label: 'ห้องเรียน', role: 'admin' },
-  { id: 't-Courses', label: 'รายวิชา', role: 'admin' },
-  { id: 't-Groups', label: 'กลุ่มเรียน', role: 'admin' },
-  { id: 't-Windows', label: 'คิวจัดตารางของแผนก', role: 'admin' },
+  { sec: 'ข้อมูลพื้นฐาน', role: 'curriculum' },
+  { id: 't-Semesters', label: 'ปีการศึกษา / ภาคเรียน', role: 'curriculum' },
+  { id: 't-Departments', label: 'แผนกวิชา', role: 'curriculum' },
+  { id: 't-Majors', label: 'สาขาวิชา', role: 'curriculum' },
+  { id: 't-Teachers', label: 'ครูผู้สอน', role: 'curriculum' },
+  { id: 't-Buildings', label: 'อาคาร', role: 'curriculum' },
+  { id: 't-Rooms', label: 'ห้องเรียน', role: 'curriculum' },
+  { id: 't-Courses', label: 'รายวิชา', role: 'curriculum' },
+  { id: 't-Groups', label: 'กลุ่มเรียน', role: 'curriculum' },
+  { id: 't-Windows', label: 'คิวจัดตารางของแผนก', role: 'curriculum' },
   { sec: 'ระบบ', role: 'admin' },
   { id: 'users', label: 'ผู้ใช้งาน', role: 'admin' },
   { id: 'colors', label: 'สีตารางเรียน', role: 'admin' },
   { id: 'settings', label: 'ตั้งค่าวิทยาลัย', role: 'admin' },
-  { id: 'import', label: 'นำเข้าข้อมูล', role: 'admin' },
+  { id: 'import', label: 'นำเข้าข้อมูล', role: 'curriculum' },
   { id: 'backup', label: 'สำรองข้อมูล', role: 'admin' },
   { sec: 'ช่วยเหลือ' },
   { id: 'issues', label: 'แจ้งปัญหาการใช้งาน', role: 'teacher' }
@@ -166,20 +172,21 @@ var NAV_ICON = { dashboard: '🏠', mine: '🗓', schedule: '🧩', plans: '📚
   't-OtSchemes': '📋', 't-OtPerHead': '🙋', 't-OtRounds': '📆', 't-OtBlocked': '⛔', 't-Semesters': '📅', 't-Departments': '🏫', 't-Majors': '🎓',
   't-Teachers': '🧑‍🏫', 't-Buildings': '🏢', 't-Rooms': '🚪', 't-Courses': '📘', 't-Groups': '👩‍🎓', 't-Windows': '⏳', 't-PlcSlots': '🤝' };
 function renderShell() {
-  var nav = NAV.filter(function (n) { return !n.role || can(n.role); }).map(function (n) {
+  var navItems = NAV.filter(function (n) { return n.sec || menuOk(n.id); });
+  var nav = navItems.filter(function (n, i) { return !n.sec || (navItems[i + 1] && !navItems[i + 1].sec); }).map(function (n) {
     return n.sec ? '<div class="sec">' + n.sec + '</div>' : '<a class="nav" href="#' + n.id + '" data-v="' + n.id + '"><span class="ic">' + (NAV_ICON[n.id] || '•') + '</span>' + n.label + '</a>';
   }).join('');
   var semOpts = S.D.Semesters.map(function (s) { return '<option value="' + esc(s.id) + '"' + (String(s.id) === String(S.sem) ? ' selected' : '') + '>ภาคเรียน ' + esc(s.label || (s.term + '/' + s.year)) + '</option>'; }).join('');
-  var roleTh = { admin: 'ผู้ดูแลระบบ', dept: 'ตัวแทนแผนก', teacher: 'ครู' }[S.me.role];
+  var baseRole = S.me.base_role || S.me.role, roleTh = ROLE_LABELS[baseRole] || baseRole;
   var initials = String(S.me.name || '?').replace(/^(นาย|นางสาว|นาง|ว่าที่\S*)/, '').trim().slice(0, 2);
   document.getElementById('root').innerHTML =
     '<div class="shell"><div class="side-bg" id="sideBg"></div><aside class="side" id="side"><div class="brand"><div class="logo sm">ตร</div><div>ระบบจัดตารางเรียน<small>' + esc(S.settings.college_name || '') + '</small></div></div>' + nav +
-    '<div class="sec">อื่นๆ</div><a class="nav" href="' + esc(S.url) + '?page=public" target="_blank"><span class="ic">🌐</span>หน้าเผยแพร่สาธารณะ ↗</a><a class="nav" href="?page=pdpa" target="_blank"><span class="ic">🔒</span>นโยบายข้อมูลส่วนบุคคล (PDPA) ↗</a>' +
+    '<div class="sec">อื่นๆ</div><a class="nav" href="?page=public" target="_blank"><span class="ic">🌐</span>หน้าเผยแพร่สาธารณะ ↗</a><a class="nav" href="?page=pdpa" target="_blank"><span class="ic">🔒</span>นโยบายข้อมูลส่วนบุคคล (PDPA) ↗</a>' +
     (PWA.installed() ? '' : '<a class="nav" href="javascript:void 0" onclick="PWA.add()"><span class="ic">📲</span>เพิ่มไอคอนลงมือถือ</a>') +
     '<p class="app-ver side-ver">เวอร์ชัน ' + esc(APP_VERSION) + '<br>ผู้พัฒนา: ' + esc(APP_DEVELOPERS) + '</p></aside>' +
     '<div class="main"><div class="top no-print"><button class="btn sm menu-btn" id="mb">☰</button><h2 id="title"></h2>' +
     '<select id="semSel" class="sem">' + semOpts + '</select><button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>' +
-    '<button type="button" class="bell-btn" id="bellBtn" aria-label="การแจ้งเตือนแผนการเรียน">🔔<span class="bell-n" id="bellN"></span></button>' +
+    (menuOk('plancheck') ? '<button type="button" class="bell-btn" id="bellBtn" aria-label="การแจ้งเตือนแผนการเรียน">🔔<span class="bell-n" id="bellN"></span></button>' : '') +
     '<div class="user" id="userBtn"><span class="av">' + (S.me.avatar ? '<img src="' + esc(S.me.avatar) + '" alt="">' : esc(initials)) + '</span><span class="un"><b>' + esc(S.me.name) + '</b><small>' + roleTh + '</small></span>' +
     '<div class="umenu" id="umenu"><a href="javascript:void 0" id="profBtn">👤 แก้ไขโปรไฟล์</a><a href="javascript:void 0" id="pwBtn">🔑 เปลี่ยนรหัสผ่าน</a><a href="javascript:void 0" id="outBtn">⎋ ออกจากระบบ</a></div></div></div>' +
     '<div class="content" id="content"></div></div></div>';
@@ -187,15 +194,20 @@ function renderShell() {
   $('#outBtn').onclick = function () { api('logout', S.token); store('tt_token', null); S.token = null; S.sel = { mode: 'group' }; renderLogin(); };
   $('#pwBtn').onclick = changePw;
   $('#profBtn').onclick = editProfile;
-  $('#bellBtn').onclick = function () { go('plancheck'); };
+  if ($('#bellBtn')) $('#bellBtn').onclick = function () { go('plancheck'); };
   $('#userBtn').onclick = function (e) { if (e.target.closest('#umenu')) return; $('#umenu').classList.toggle('open'); };
   $('#mb').onclick = function () { $('#side').classList.toggle('open'); $('#sideBg').classList.toggle('open'); };
   $('#sideBg').onclick = function () { $('#side').classList.remove('open'); this.classList.remove('open'); };
 }
 
 function go(v) {
-  var n = NAV.filter(function (x) { return x.id === v && (!x.role || can(x.role)); })[0];
-  if (!n) { n = NAV.filter(function (x) { return x.id && can(x.role); })[0]; v = n.id; }
+  var n = NAV.filter(function (x) { return x.id === v && menuOk(x.id); })[0] || NAV.filter(function (x) { return x.id && menuOk(x.id); })[0];
+  if (!n) { $('#content').innerHTML = '<div class="card">บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้เมนูใด กรุณาติดต่อผู้ดูแลระบบ</div>'; return; }
+  v = n.id;
+  // ทำงานในหน้านี้ตามระดับของเมนูที่ได้รับ เช่น ครูที่ได้เมนูจัดตารางจะใช้หน้านั้นแบบวิชาการแผนก
+  var base = S.me.base_role || S.me.role;
+  S.me.role = rank(n.role) > rank(base) ? n.role : base;
+  if (S.me.role === 'dept' && !S.sel.dept) S.sel.dept = S.me.department_id;
   S.view = v;
   window.scrollTo(0, 0);
   $$('.side a.nav').forEach(function (a) { a.classList.toggle('on', a.dataset.v === v); });
@@ -264,7 +276,7 @@ function planState(need, placed) {
 function planCheck() {
   var C = ctx(), placed = {}, me = S.me;
   S.sessions.forEach(function (s) { placed[s.plan_id] = (placed[s.plan_id] || 0) + (Number(s.length) || 0); });
-  function inDept(gid) { return me.role === 'admin' || (IDX.Groups[gid] && String(IDX.Groups[gid].department_id) === String(me.department_id)); }
+  function inDept(gid) { return academicRole(me.role) || (IDX.Groups[gid] && String(IDX.Groups[gid].department_id) === String(me.department_id)); }
   var rows = S.plans.filter(function (p) {
     return me.role === 'teacher' ? Sched.ids(p.teacher_ids).indexOf(String(me.teacher_id)) >= 0 : inDept(p.group_id);
   }).map(function (p) {
@@ -307,7 +319,7 @@ VIEWS.plancheck = function (el) {
   var count = function (st) { return c.rows.filter(function (r) { return r.state[0] === st; }).length; };
   el.innerHTML = '<div class="card"><h3>ตรวจสอบแผนการเรียน · ภาคเรียน ' + esc(semLabel(S.sem)) + '</h3>' + planAlertHtml(c).replace(/href="#plancheck"/, '').replace(/^<a/, '<div').replace(/<\/a>$/, '</div>').replace(' — กดเพื่อตรวจสอบ', '') +
     '<div class="plan-sum"><span class="tag">ทั้งหมด ' + c.rows.length + ' วิชา</span><span class="tag ok">ครบแล้ว ' + count('done') + '</span><span class="tag warn">ยังไม่ครบ ' + count('part') + '</span><span class="tag">ยังไม่จัด ' + count('none') + '</span><span class="tag bad">เกินแผน/ไม่ได้กำหนดคาบ ' + count('over') + '</span>' + (c.empty.length ? '<span class="tag bad">กลุ่มไม่มีแผน ' + c.empty.length + '</span>' : '') + '</div>' +
-    '<div class="row">' + (S.me.role === 'admin' ? '<select id="pcD" style="width:auto">' + deptOptions(f.dept) + '</select>' : '') +
+    '<div class="row">' + (academicRole(S.me.role) ? '<select id="pcD" style="width:auto">' + deptOptions(f.dept) + '</select>' : '') +
     '<select id="pcS" style="width:auto"><option value="bad"' + (f.state === 'bad' ? ' selected' : '') + '>เฉพาะที่ยังไม่เรียบร้อย</option><option value="all"' + (f.state === 'all' ? ' selected' : '') + '>ทุกวิชา</option></select></div></div>' +
     '<div class="card" id="pcOut"></div>';
   function draw() {
@@ -353,8 +365,8 @@ VIEWS.dashboard = function (el) {
     ['intern', '🏭', 'นิเทศออนไลน์', 'วิชาในสถานประกอบการ · บันทึกนิเทศ', 'teacher'], ['ot-subs', '🔁', 'สอนแทน / สอนชดเชย', 'บันทึกการสอนแทนและชดเชย', 'teacher'],
     ['ot-summary', '🧾', 'สรุปเสนอเบิก', 'ใบสรุปรายแผนก', 'dept'], ['ot-cover', '📄', 'งบหน้าแผนกวิชา', 'งบหน้าเสนอเบิกของแผนก', 'dept'],
 ['users', '👤', 'ผู้ใช้งาน', 'บัญชี / รหัสผ่าน', 'admin'],
-    ['t-Teachers', '🧑‍🏫', 'ครูผู้สอน', 'สถานะการจ้าง · ช่วงไม่ว่าง', 'admin'], ['settings', '⚙', 'ตั้งค่าวิทยาลัย', 'คาบเรียน · ผู้ลงนาม', 'admin'],
-    ['manual', '📖', 'คู่มือการจัดตาราง', 'ขั้นตอน · สี · วิธีแก้เมื่อวางไม่ได้', 'teacher']
+    ['t-Teachers', '🧑‍🏫', 'ครูผู้สอน', 'สถานะการจ้าง · ช่วงไม่ว่าง', 'curriculum'], ['settings', '⚙', 'ตั้งค่าวิทยาลัย', 'คาบเรียน · ผู้ลงนาม', 'admin'],
+    ['manual', '📖', 'คู่มือการใช้งาน', 'สิทธิ์ · จัดตาราง · รายงาน · นิเทศ', 'teacher']
   ].filter(function (t) { return can(t[4]); });
   el.innerHTML = '<div class="hero card"><div class="grow"><div class="muted small">ภาคเรียน ' + esc(semLabel(S.sem)) + '</div><h2 style="margin:2px 0 6px">สวัสดี ' + esc(S.me.name) + '</h2>' +
     '<div class="row"><b style="font-size:28px">' + pct + '%</b><span class="muted">ลงตารางแล้ว ' + done + ' / ' + need + ' คาบ · ' + S.plans.length + ' รายการในแผนการเรียน</span></div>' +
@@ -365,7 +377,7 @@ VIEWS.dashboard = function (el) {
       return '<a class="tile" href="#' + t[0] + '"><span class="ti">' + t[1] + '</span><b>' + t[2] + '</b><span class="muted small">' + t[3] + '</span></a>';
     }).join('') + '</div>' +
     '<div class="card" style="margin-top:16px"><h3>หน้าเผยแพร่สำหรับครูและนักเรียน</h3><p class="small muted" style="margin:0 0 8px">ส่งลิงก์นี้ให้ครู/นักเรียนดูตารางได้โดยไม่ต้องเข้าระบบ</p>' +
-    '<div class="row"><input readonly value="' + esc(S.url) + '?page=public" onclick="this.select()" class="grow"><a class="btn pri" href="' + esc(S.url) + '?page=public" target="_blank">เปิด ↗</a></div></div>';
+    '<div class="row"><input readonly value="' + esc(S.url) + '?page=public" onclick="this.select()" class="grow"><a class="btn pri" href="?page=public" target="_blank">เปิด ↗</a></div></div>';
 };
 function stat(ic, n, l) { return '<div class="card stat-card"><span class="si">' + ic + '</span><div><div class="stat">' + n + '</div><div class="stat-l">' + l + '</div></div></div>'; }
 
@@ -389,7 +401,7 @@ function deptOptions(sel, allLabel) {
 
 function canEditGroup(gid) {
   if (!S.me) return false;
-  if (S.me.role === 'admin') return true;
+  if (academicRole(S.me.role)) return true;
   if (S.me.role !== 'dept') return false;
   var g = IDX.Groups[gid]; return g && String(g.department_id) === String(S.me.department_id);
 }
@@ -508,7 +520,7 @@ function renderSchedMain() {
     tools = '<div class="row no-print" style="margin-bottom:10px">' +
       (editableGroup ? '<button class="btn pri sm" id="aGroup">⚡ จัดอัตโนมัติ (กลุ่มนี้)</button>' : '') +
       '<button class="btn sm" id="aDept">⚡ จัดอัตโนมัติทั้งแผนก</button>' +
-      (can('admin') ? '<button class="btn sm" id="aAll">⚡ ทั้งวิทยาลัย</button>' : '') +
+      (can('curriculum') ? '<button class="btn sm" id="aAll">⚡ ทั้งวิทยาลัย</button>' : '') +
       '<label class="small row" style="gap:4px"><input type="checkbox" id="aClear"> ล้างคาบที่ไม่ล็อกก่อนจัด</label>' +
       '<span class="grow"></span>' +
       (editableGroup ? '<button class="btn sm bad" id="clrGroup">ล้างตารางกลุ่มนี้</button>' : '') +
@@ -525,7 +537,7 @@ function renderSchedMain() {
     label: sessionLabel(mode), color: sessionColor, conflictIds: cmap, extraLocked: mode === 'teacher' ? plcLocks(target) : [],
     editable: function (s, list) {
       return (list.length === 1 || sharesJointKey(list)) && list.every(function (x) {
-        return canEditGroup(x.group_id) && ((String(x.locked) !== 'true' && !Sched.isWorkplace(x, ctx())) || can('admin'));
+        return canEditGroup(x.group_id) && ((String(x.locked) !== 'true' && !Sched.isWorkplace(x, ctx())) || can('curriculum'));
       });
     }
   });
@@ -733,7 +745,7 @@ function dropAt(d, td, force) {
     if (!r.ok) {
       clearMarks();
       var m = modal('<h3>วางไม่ได้</h3><ul class="problems">' + r.problems.map(function (p) { return '<li class="' + (p.hard ? 'hard' : 'soft') + '">' + esc(p.msg) + '</li>'; }).join('') + '</ul>' +
-        '<div class="actions">' + (can('admin') && r.problems.every(function (p) { return p.type !== 'over' && p.type !== 'range'; }) ? '<button class="btn bad" id="forceBtn">บังคับวาง (ผู้ดูแล)</button>' : '') +
+        '<div class="actions">' + (can('curriculum') && r.problems.every(function (p) { return p.type !== 'over' && p.type !== 'range'; }) ? '<button class="btn bad" id="forceBtn">บังคับวาง (ผู้ดูแล)</button>' : '') +
         '<button class="btn pri" onclick="closeModal()">ตกลง</button></div>');
       if ($('#forceBtn', m)) $('#forceBtn', m).onclick = function () { closeModal(); dropAt(d, td, true); };
       return;
@@ -749,7 +761,7 @@ function sessionModal(sid) {
   var s = S.sessions.filter(function (x) { return String(x.id) === String(sid); })[0]; if (!s) return;
   var c = courseOf(s.course_id), plan = IDX.Plans[s.plan_id] || {};
   var C = ctx();
-  var editable = canEditGroup(s.group_id) && ((String(s.locked) !== 'true' && !Sched.isWorkplace(s, C)) || can('admin'));
+  var editable = canEditGroup(s.group_id) && ((String(s.locked) !== 'true' && !Sched.isWorkplace(s, C)) || can('curriculum'));
   var roomOpts = '<option value="">— ไม่ระบุห้อง —</option>' + sortBy(S.D.Rooms, function (r) { return nm('Buildings', r.building_id) + r.name; }).map(function (r) {
     var busy = Sched.check({ id: s.id, plan_id: s.plan_id, group_id: '__', course_id: s.course_id, teacher_ids: '', room_id: r.id, day: s.day, start: s.start, length: s.length },
       S.sessions.filter(function (x) { return x !== s; }), C).some(function (p) { return p.type === 'room'; });
@@ -801,7 +813,7 @@ VIEWS.plans = function (el) {
   var box = $('#planMain');
   if (!sel.group) {
     box.innerHTML = '<div class="card"><p class="muted">เลือกกลุ่มเรียนด้านซ้าย</p>' +
-      (can('admin') ? '<h3>คัดลอกแผนการเรียนทั้งหมดจากภาคเรียนอื่น</h3><div class="row"><select id="cpFrom" style="width:auto">' +
+      (can('curriculum') ? '<h3>คัดลอกแผนการเรียนทั้งหมดจากภาคเรียนอื่น</h3><div class="row"><select id="cpFrom" style="width:auto">' +
         S.D.Semesters.filter(function (s) { return String(s.id) !== String(S.sem); }).map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(semLabel(s.id)) + '</option>'; }).join('') +
         '</select><button class="btn" id="cpBtn">คัดลอกมาที่ภาคเรียน ' + esc(semLabel(S.sem)) + '</button></div>' : '') + '</div>';
     if ($('#cpBtn')) $('#cpBtn').onclick = function () {
@@ -967,7 +979,7 @@ VIEWS.hours = function (el) {
   if (S.sel.hoursTeacher) return hoursDetail(el, S.sel.hoursTeacher);
   el.innerHTML = '<div class="hours-sem">ภาคเรียน <span>' + esc(semLabel(S.sem)) + '</span></div><p class="small muted hours-hint">เลือกชื่อครูเพื่อเปิดสรุปชั่วโมงสอนรายบุคคลในแท็บใหม่</p>' +
     teacherCards(S.D.Teachers, function (t, inner, title) {
-      return '<a class="hours-card" target="_blank" rel="noopener" href="' + esc(S.url) + '?hours_teacher=' + encodeURIComponent(t.id) + '&amp;sem=' + encodeURIComponent(S.sem) + '"' + (title ? ' title="' + title + '"' : '') + '>' + inner + '<b>' + esc(teacherBareName(t.name)) + '</b></a>';
+      return '<a class="hours-card" target="_blank" rel="noopener" href="?hours_teacher=' +encodeURIComponent(t.id) + '&amp;sem=' + encodeURIComponent(S.sem) + '"' + (title ? ' title="' + title + '"' : '') + '>' + inner + '<b>' + esc(teacherBareName(t.name)) + '</b></a>';
     });
 };
 
@@ -1101,6 +1113,21 @@ VIEWS.issues = function (el) {
 };
 
 /* ===================== สำรองข้อมูล ===================== */
+/* สถานะสำรองอัตโนมัติครั้งล่าสุด ให้ผู้ดูแลเห็นทันทีเมื่อสำรองไม่สำเร็จ */
+function backupStatusHtml(d) {
+  var s = d.auto_status || {}, last = (d.files || []).filter(function (f) { return f.kind === 'auto'; })[0];
+  var lines = ['ไฟล์สำรองอัตโนมัติล่าสุด: ' + (last ? esc(last.time) : 'ยังไม่มี')];
+  if (s.state === 'ok') lines.push('ครั้งล่าสุดสำเร็จเมื่อ ' + esc(s.at));
+  else if (s.state === 'error') lines.push('<b>ครั้งล่าสุดไม่สำเร็จ</b> เมื่อ ' + esc(s.at) + ': ' + esc(s.error || ''));
+  else if (s.state === 'running') lines.push('<b>เริ่มสำรองเมื่อ ' + esc(s.at) + ' แต่ไม่จบ</b> — โฮสติ้งอาจหยุดสคริปต์ก่อนเสร็จ หรือหน่วยความจำ/เวลาไม่พอ ดูรายละเอียดใน PHP error log');
+  else lines.push('ยังไม่มีบันทึกผลการสำรองอัตโนมัติ');
+  var bad = (d.dirs || []).filter(function (x) { return !x.writable; });
+  var dirs = bad.length ? '<div class="alert alert-danger" style="margin-top:10px"><b>PHP เขียนโฟลเดอร์เหล่านี้ไม่ได้</b> ระบบจึงสำรองข้อมูลหรือเก็บรูปไม่ได้<ul style="margin:6px 0">' +
+    bad.map(function (x) { return '<li><code>' + esc(x.dir) + '</code> — ' + esc(x.use) + (x.exists ? ' · Permission ' + esc(x.perms) + ' · Owner ' + esc(x.owner) + ' · Group ' + esc(x.group) : ' (ยังไม่มีโฟลเดอร์)') + '</li>'; }).join('') +
+    '</ul>PHP ทำงานด้วยบัญชี <b>' + esc(bad[0].php_user || '-') + '</b> — แก้ใน File Manager หรือ FTP ของโฮสติ้ง: ถ้า Owner ตรงกับบัญชีของ PHP ตั้ง Permission เป็น 755 ถ้า Owner ไม่ตรงแต่ Group ตรง ให้ตั้ง 775 ถ้าไม่ตรงทั้งคู่ ให้เปลี่ยน Owner เป็นบัญชีของ PHP หรือแจ้งผู้ดูแลโฮสติ้ง ตั้งให้ทุกโฟลเดอร์ในรายการ แล้วเปิดหน้านี้ใหม่</div>' : '';
+  return dirs + '<div class="' + (d.warning ? 'alert alert-warning' : 'small muted') + '" style="margin-top:10px">' + (d.warning ? '<b>⚠ ' + esc(d.warning) + '</b><br>' : '') + lines.join('<br>') + '</div>';
+}
+
 VIEWS.backup = function (el) {
   el.innerHTML = '<div class="card muted">กำลังโหลด…</div>';
   function size(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
@@ -1124,7 +1151,7 @@ VIEWS.backup = function (el) {
       '<div class="row"><button class="btn pri" id="bkNew">💾 สำรองข้อมูลตอนนี้</button><label class="btn" for="bkFile">⤴ อัปโหลดไฟล์สำรอง</label><input type="file" id="bkFile" accept=".gz" hidden></div>' +
       '<div class="row bk-auto"><label class="row small" style="gap:6px"><input type="checkbox" id="bkAuto" style="width:auto"' + (d.auto ? ' checked' : '') + '> สำรองอัตโนมัติวันละครั้ง</label>' +
       '<label class="row small" style="gap:6px">เก็บไว้ <input type="number" id="bkKeep" min="1" max="365" value="' + d.keep + '" style="width:80px"> ไฟล์ล่าสุด</label><button class="btn sm" id="bkSave">บันทึก</button></div>' +
-      '<p class="small muted" style="margin:6px 0 0">ระบบสำรองอัตโนมัติเมื่อมีคนใช้งานในวันนั้น ถ้าไม่มีคนใช้งานจะยังไม่สำรอง ทุกไฟล์เก็บรูปทั้งหมดซ้ำกัน ถ้ารูปมากขึ้นและพื้นที่เครื่องน้อย ให้ลดจำนวนไฟล์ที่เก็บ</p></div>' +
+      '<p class="small muted" style="margin:6px 0 0">ระบบสำรองอัตโนมัติเมื่อมีคนเปิดหน้าเว็บในวันนั้น ถ้าไม่มีคนใช้งานจะยังไม่สำรอง ทุกไฟล์เก็บรูปทั้งหมดซ้ำกัน ถ้ารูปมากขึ้นและพื้นที่เครื่องน้อย ให้ลดจำนวนไฟล์ที่เก็บ</p>' + backupStatusHtml(d) + '</div>' +
       '<div class="card"><h3>ไฟล์สำรอง (' + d.files.length + ')</h3><div class="tablewrap"><table class="data"><thead><tr><th>วันเวลา</th><th>ประเภท</th><th style="text-align:right">รูป</th><th style="text-align:right">ขนาด</th><th></th></tr></thead><tbody>' +
       (d.files.map(function (f, i) {
         return '<tr><td style="white-space:nowrap">' + esc(f.time) + '</td><td>' + esc(f.kind_label) + '</td><td style="text-align:right;white-space:nowrap">' + (f.images === null ? '<span class="muted">ไม่รวมรูป</span>' : f.images) + '</td><td style="text-align:right;white-space:nowrap">' + size(f.size) + '</td><td style="white-space:nowrap;text-align:right">' +
@@ -1166,64 +1193,51 @@ VIEWS.backup = function (el) {
   });
 };
 
-/* ===================== คู่มือการจัดตาราง ===================== */
+/* ===================== คู่มือการใช้งาน ===================== */
 VIEWS.manual = function (el) {
-  var st = S.settings;
-  /* ลิงก์ไปเมนู: แสดงเป็นลิงก์เฉพาะเมนูที่บัญชีนี้เข้าได้ */
   function menu(id) {
     var n = NAV.filter(function (x) { return x.id === id; })[0];
     if (!n) return '';
-    return can(n.role) ? '<a href="#' + id + '">' + esc(n.label) + '</a>' : '<b>' + esc(n.label) + '</b>';
+    return menuOk(id) ? '<a href="#' + id + '">' + esc(n.label) + '</a>' : '<b>' + esc(n.label) + '</b>';
   }
   function list(items) { return '<ul>' + items.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>'; }
-  function step(no, title, who, body) {
-    return '<section class="card man-step"><div class="man-head"><span class="man-no">' + no + '</span><h3>' + title + '</h3><span class="tag">' + who + '</span></div>' + body + '</section>';
+  function section(no, id, title, who, body) {
+    return '<section id="man-' + id + '" class="card man-step"><div class="man-head"><span class="man-no">' + no + '</span><h3>' + title + '</h3><span class="tag">' + who + '</span></div>' + body + '</section>';
   }
-  function swatch(style, name, meaning) { return '<tr><td class="man-sw"><span style="' + style + '"></span></td><td><b>' + name + '</b></td><td>' + meaning + '</td></tr>'; }
-  var stripes = 'background:repeating-linear-gradient(45deg,#dbe5ef,#dbe5ef 5px,#f3f6fa 5px,#f3f6fa 10px)';
-
-  el.innerHTML = '<div class="card man-intro"><div class="row"><p class="grow" style="margin:0">ทำตามลำดับ 1–7 ระบบจะตรวจการชนให้ทุกครั้งที่วางหรือย้ายคาบ ผู้ดูแลระบบเตรียมข้อมูลก่อน แล้วตัวแทนแผนกจัดตารางของแผนกตัวเอง</p>' +
-    '<button class="btn no-print" onclick="window.print()">🖨 พิมพ์คู่มือ</button></div></div>' +
-
-    step(1, 'เตรียมข้อมูลพื้นฐาน', 'ผู้ดูแลระบบ', '<p>กรอกหรือนำเข้าข้อมูลตามลำดับนี้ ข้อมูลที่อยู่ก่อนจะถูกเลือกใช้ในเมนูถัดไป แต่ละเมนูวางจาก Excel นำเข้าไฟล์ CSV ดาวน์โหลดไฟล์ตัวอย่าง และส่งออก CSV ได้ แถวที่มีอยู่แล้วจะถูกข้าม ไม่ถูกเขียนทับ</p>' +
-      list([menu('t-Semesters') + ' → ' + menu('t-Departments') + ' → ' + menu('t-Majors'), menu('t-Teachers') + ' กำหนดช่วงไม่ว่างและจำนวนคาบสูงสุดต่อวันได้ ระบบจะใช้ตรวจตอนวางคาบ', menu('t-Buildings') + ' → ' + menu('t-Rooms') + ' ห้องที่ตั้งว่าใช้ร่วมกันได้จะไม่ถูกนับว่าชน', menu('t-Courses') + ' → ' + menu('t-Groups')])) +
-
-    step(2, 'ตั้งค่าคาบเรียนและชั่วโมงที่ล็อก', 'ผู้ดูแลระบบ', '<p>ที่เมนู ' + menu('settings') + '</p>' +
-      list(['เลขคาบไม่นับพักเที่ยง ตอนนี้มีคาบ 1–' + Grid.periodNo(st, Number(st.periods_per_day || 12)) + ' และคั่นด้วยพักเที่ยง ดูเวลาของแต่ละคาบได้ที่หัวตาราง','ติ๊กชั่วโมงที่ล็อก เช่น กิจกรรมโฮมรูม ระบบจะไม่วางวิชาลงช่องนั้น', 'กรอกผู้ลงนามให้ครบ เพื่อให้ชื่อขึ้นในตารางที่พิมพ์ ส่วนชื่อหัวหน้าแผนกดึงจากครูที่ติ๊ก "หัวหน้าแผนก"'])) +
-
-    step(3, 'เปิดคิวให้แผนก', 'ผู้ดูแลระบบ', '<p>ที่เมนู ' + menu('windows') + ' กำหนดวันเริ่มและวันสิ้นสุดของแต่ละแผนก แผนกที่ไม่มีคิวจะจัดตารางได้ตลอดเวลา จึงข้ามขั้นนี้ได้ถ้าไม่ต้องการแบ่งคิว</p>') +
-
-    step(4, 'ทำแผนการเรียน', 'ตัวแทนแผนก / ผู้ดูแลระบบ', '<p>ที่เมนู ' + menu('plans') + ' เลือกกลุ่มเรียน แล้วกด <b>+ เพิ่มวิชา</b> ทีละวิชา</p>' +
-      list(['<b>ครูและห้อง:</b> เลือกครูได้หลายคน ถ้าไม่เลือกห้อง ระบบใช้ห้องประจำกลุ่ม', '<b>คาบ/สัปดาห์:</b> เว้นว่างได้ ระบบใช้ ท + ป ของวิชา', '<b>การแบ่งคาบ:</b> เช่น 2+2 คือแยกเป็นสองช่วง หรือ 4 คือเรียนติดกัน', '<b>รหัสเรียนร่วม:</b> ใส่รหัสเดียวกันในทุกกลุ่มที่เรียนพร้อมกันกับครูคนเดียวกัน เมื่อวางหรือย้าย ระบบจะทำทุกกลุ่มพร้อมกันและแสดงรวมในช่องเดียว', '<b>คาบใน / คาบนอก:</b> เลือกเพื่อนับยอด รวมใน และ รวมนอก ในตารางสอนครู คาบเรียนร่วมนับเป็นคาบนอกเมื่อทุกกลุ่มตั้งเป็นคาบนอก', '<b>คาบ PLC:</b> กำหนดที่เมนู ' + menu('t-PlcSlots') + ' เว้นช่องครูไว้เพื่อใช้ทั้งแผนก หรือเลือกครูเพื่อใช้แทนคาบของแผนกเฉพาะคนนั้น ระบบจะไม่จัดวิชาของครูทับคาบ PLC','<b>เรียนที่สถานประกอบการ:</b> ติ๊กเมื่อเป็นฝึกงานหรือทวิภาคี คาบจะถูกล็อก มีเพียงผู้ดูแลระบบที่ย้ายได้ และห้ามสอนชดเชย'])) +
-
-    step(5, 'จัดตาราง', 'ตัวแทนแผนก / ผู้ดูแลระบบ', '<p>ที่เมนู ' + menu('schedule') + ' เลือกกลุ่มเรียนทางซ้าย แล้วเลือกวิธีใดวิธีหนึ่ง หรือใช้ร่วมกันก็ได้</p>' +
-      '<div class="man-two"><div><h4>จัดอัตโนมัติ</h4>' + list(['กด <b>⚡ จัดอัตโนมัติ</b> ระดับกลุ่มหรือแผนก ผู้ดูแลระบบจัดทั้งวิทยาลัยได้', 'ติ๊ก <b>ล้างคาบที่ไม่ล็อกก่อนจัด</b> เมื่อต้องการจัดใหม่ คาบที่ล็อกไว้จะอยู่ที่เดิม', 'ถ้ามีวิชาที่ลงไม่ได้ ระบบจะแสดงรายการให้แก้ต่อด้วยมือ']) + '</div>' +
-      '<div><h4>ลากวางเอง</h4>' + list(['ลากก้อนคาบจากตาราง <b>วิชาในแผนการเรียน</b> ไปวาง หรือแตะก้อนคาบแล้วแตะช่องในตาราง', 'กด <b>±</b> เมื่อต้องการลงจำนวนคาบอื่นในครั้งนั้น', 'ลากคาบที่ลงแล้วเพื่อย้าย']) + '</div></div>' +
-      '<p style="margin-top:8px">ตาราง <b>รายวิชาที่ต้องจัด</b> บอกสถานะของแต่ละวิชา เช่น ครบแล้ว (4/4) หรือ ยังไม่ครบ (2/4) คลิกแถวที่ยังไม่ครบเพื่อเริ่มวางคาบ ระบบไม่ให้ลงคาบเกินจำนวนในแผน แม้ผู้ดูแลระบบบังคับวางก็ตาม</p><p style="margin-top:8px">เมื่อยังจัดไม่ครบ กระดิ่งด้านบนจะแสดงจำนวนรายการ กดเพื่อเปิดหน้า <b>ตรวจสอบแผนการเรียน</b> แล้วกดจัดตารางของกลุ่มนั้นได้ทันที</p>') +
-
-    step(6, 'แก้ไขคาบและตรวจการชน', 'ตัวแทนแผนก / ผู้ดูแลระบบ', list(['คลิกคาบในตารางเพื่อเปลี่ยนห้อง จำนวนคาบ ล็อก หรือลบ และเปิดดูตารางครูหรือตารางห้องของคาบนั้น', 'กด <b>🔒 ล็อก</b> คาบที่ตกลงแล้ว เพื่อไม่ให้ถูกล้างหรือย้ายโดยไม่ตั้งใจ', 'เมื่อจัดเสร็จ กด <b>ตรวจการชนทั้งหมด</b> เพื่อดูปัญหาทั้งภาคเรียน และกดชื่อกลุ่มเพื่อไปแก้'])) +
-
-    step(7, 'ตรวจ พิมพ์ และเผยแพร่', 'ทุกคน', list(['ที่เมนู ' + menu('reports') + ' เลือกตารางเรียนรายกลุ่ม ตารางสอนรายครู หรือตารางใช้ห้อง แล้วกดพิมพ์หรือบันทึก PDF ตัวแทนแผนกและผู้ดูแลระบบส่งออก Excel ได้ด้วย', 'ครูดูตารางของตัวเองได้ที่ ' + menu('mine'), 'ส่งลิงก์หน้าเผยแพร่ให้ครูและนักเรียนดูตารางได้โดยไม่ต้องเข้าระบบ'])) +
-
-    '<section class="card"><h3>ความหมายของสีในตาราง</h3><div class="tablewrap"><table class="data"><tbody>' +
-      swatch('background:' + Grid.sessionColor({ settings: st }), 'ฟ้า', 'คาบเรียนทั่วไป ผู้ดูแลระบบเปลี่ยนสีเริ่มต้นได้ที่ตั้งค่าวิทยาลัย และเลือกสีเฉพาะวิชาได้ที่เมนูรายวิชา') +
-      swatch('background:' + Grid.sessionColor({ settings: st, workplace: true }), 'แดงอ่อน', 'คาบที่เรียนในสถานประกอบการ') +
-      swatch(stripes, 'ลายทาง 🔒', 'พักเที่ยงหรือชั่วโมงที่ล็อก วางวิชาไม่ได้') +
-      swatch('background:var(--ok-soft);outline:2px dashed var(--ok);outline-offset:-2px', 'ขอบเขียว ตอนลาก', 'วางได้') +
-      swatch('background:var(--warn-soft);outline:2px dashed var(--warn);outline-offset:-2px', 'ขอบเหลือง ตอนลาก', 'วางได้แต่มีคำเตือน เช่น ครูสอนเกินจำนวนคาบต่อวันที่กำหนด') +
-      swatch('background:var(--bad-soft)', 'แดง ตอนลาก', 'ชน วางไม่ได้ เอาเมาส์วางบนช่องเพื่อดูสาเหตุ') +
-    '</tbody></table></div></section>' +
-
-    '<section class="card"><h3>เมื่อวางคาบไม่ได้</h3><div class="tablewrap"><table class="data"><thead><tr><th>ข้อความ</th><th>วิธีแก้</th></tr></thead><tbody>' +
-      [['กลุ่มเรียนมีวิชาอื่นในช่วงนี้แล้ว', 'ย้ายวิชาเดิมออกก่อน หรือเลือกช่วงเวลาอื่น'],
-       ['ครู … สอน … อยู่แล้ว', 'เลือกเวลาอื่น หรือดูตารางครูเพื่อย้ายคาบที่ชน ถ้าเรียนพร้อมกันจริงให้ใส่รหัสเรียนร่วมเดียวกันในแผนการเรียน'],
-       ['ห้อง … ถูกใช้โดย …', 'เปลี่ยนห้องในคาบนั้น หรือเลือกเวลาอื่น'],
-       ['ครู … ไม่ว่างวัน/คาบนี้', 'เลือกเวลาอื่น หรือให้ผู้ดูแลระบบแก้ช่วงไม่ว่างของครู'],
-       ['ทับเวลาพักเที่ยง / ทับชั่วโมงที่ล็อก', 'เลือกเวลาอื่น หรือแบ่งคาบเป็นช่วงสั้นลง เช่น 2+2'],
-       ['ลงคาบเกินจำนวนชั่วโมงในแผน', 'ตรวจจำนวนคาบในแผนการเรียน แล้วแก้ที่แผนหรือลบคาบที่เกิน'],
-       ['คาบนี้ถูกล็อก / วิชาฝึกงาน ล็อกห้ามขยับ', 'ให้ผู้ดูแลระบบเป็นผู้ย้าย หรือปลดล็อกก่อน']
-      ].map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
-    '</tbody></table></div><p class="small muted" style="margin:8px 0 0">ผู้ดูแลระบบบังคับวางได้เมื่อจำเป็น ยกเว้นกรณีเกินจำนวนคาบในแผนหรือเกินช่วงเวลาของวัน ควรตรวจซ้ำด้วย "ตรวจการชนทั้งหมด"</p></section>';
+  var topics = [['rights', 'สิทธิ์ผู้ใช้'], ['schedule', 'จัดตาราง'], ['documents', 'แก้ไขเอกสาร'], ['makeup', 'สอนแทน / ชดเชย'], ['online', 'รายงานการสอน'], ['visits', 'นิเทศและภาพ'], ['claims', 'ค่าสอน'], ['help', 'แก้ปัญหา']];
+  el.innerHTML = '<div class="card man-intro"><div class="row"><div class="grow"><h3>คู่มือการใช้งานระบบจัดตารางเรียน–ตารางสอน</h3><p class="small muted" style="margin:0">ปรับปรุง 7 พฤศจิกายน 2569 · สิทธิ์ของคุณ: ' + esc(ROLE_LABELS[S.me.role] || S.me.role) + '</p></div><button class="btn no-print" onclick="window.print()">🖨 พิมพ์คู่มือ</button></div><p class="mt-2">เลือกหัวข้อด้านล่างเพื่อดูวิธีใช้ เมนูที่เปิดได้จะแสดงเป็นลิงก์ ส่วนเมนูของสิทธิ์อื่นจะแสดงเป็นข้อความเพื่ออธิบายขั้นตอน</p><div class="actions no-print">' + topics.map(function (t) { return '<button class="btn sm" data-manual-jump="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div></div>' +
+    section(1, 'rights', 'สิทธิ์ผู้ใช้และการกำหนดบัญชี', 'ทุกคน / ผู้ดูแลระบบ',
+      list(['<b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ:</b> จัดการข้อมูลวิชาการ แผนการเรียน ตารางเรียน รายงาน นิเทศ และงานค่าสอนทุกแผนก', '<b>วิชาการแผนก:</b> จัดแผนและตาราง ตรวจรายงาน นิเทศ และทำรายการเบิกเฉพาะแผนกตนเอง ตามคิวจัดตารางที่กำหนด', '<b>ครูผู้สอน:</b> ดูตารางและข้อมูลที่เผยแพร่ จัดทำรายงานการสอนของตนเอง ดูใบเบิก และบันทึกนิเทศในวิชาที่ตนเองสอน', '<b>ผู้ดูแลระบบ:</b> ทำงานได้ทั้งหมด รวมถึงจัดการบัญชีผู้ใช้ ตั้งค่าระบบ สำรองและกู้คืนข้อมูล']) +
+      '<p>ผู้ดูแลกำหนดสิทธิ์ที่ ' + menu('users') + ' → <b>เพิ่มผู้ใช้</b> หรือ <b>แก้ไข</b> → เลือกสิทธิ์ โดยวิชาการแผนกต้องระบุแผนก ส่วนครูผู้สอนต้องผูกกับรายชื่อครู การเปลี่ยนสิทธิ์ แผนก หรือปิดบัญชีมีผลในการทำรายการครั้งถัดไป หากเมนูยังเป็นของเดิมให้รีเฟรชหน้า</p>') +
+    section(2, 'start', 'เริ่มใช้งานและเลือกภาคเรียน', 'ทุกคน',
+      list(['เข้าระบบด้วยบัญชีของตนเอง แล้วตรวจ <b>ภาคเรียน</b> ด้านบนก่อนบันทึกข้อมูล', 'คลิกชื่อผู้ใช้เพื่อแก้ไขข้อมูลส่วนตัวหรือเปลี่ยนรหัสผ่าน หากชื่อครูหรือแผนกผิดให้ผู้ดูแลแก้ที่บัญชีผู้ใช้', 'หลังอัปโหลดโค้ดใหม่ ให้กด <b>Ctrl+F5</b> แล้วเปิดหน้าที่ต้องการใหม่ เพื่อโหลดหน้าจอรุ่นล่าสุด'])) +
+    section(3, 'data', 'เตรียมข้อมูลและคิวจัดตาราง', 'เจ้าหน้าที่หลักสูตรฯ / ผู้ดูแลระบบ',
+      list(['เตรียม ' + menu('t-Semesters') + ' → ' + menu('t-Departments') + ' → ' + menu('t-Majors') + ' → ' + menu('t-Teachers'), 'เตรียม ' + menu('t-Buildings') + ' → ' + menu('t-Rooms') + ' และ ' + menu('t-Courses') + ' → ' + menu('t-Groups') + ' โดยชื่อกลุ่มในเอกสารจะอ้างอิงข้อมูลกลุ่มเรียนนี้', 'กำหนดช่วงไม่ว่างและจำนวนคาบสูงสุดต่อวันในข้อมูลครู ห้องที่ใช้ร่วมกันได้ต้องตั้งค่าให้ถูกต้อง', 'กำหนดช่วงเริ่ม–สิ้นสุดของแผนกที่ ' + menu('windows') + ' หากแผนกไม่มีคิว ระบบอนุญาตให้จัดตารางได้ตลอด', 'ผู้ดูแลระบบตั้งเวลาคาบ วันเรียน เวลาพัก ชั่วโมงที่ล็อก และผู้ลงนามที่ ' + menu('settings') + ' ชื่อหัวหน้าแผนกดึงจากครูที่กำหนดเป็นหัวหน้าแผนก'])) +
+    section(4, 'plans', 'ทำแผนการเรียนและกำหนดคาบใน / คาบนอก', 'วิชาการแผนก / เจ้าหน้าที่หลักสูตรฯ',
+      '<p>ที่ ' + menu('plans') + ' เลือกกลุ่ม แล้วกด <b>+ เพิ่มวิชา</b></p>' + list(['เลือกครูและห้องให้ครบ เลือกครูร่วมสอนได้หลายคน ถ้าไม่เลือกห้องจะใช้ห้องประจำกลุ่ม', '<b>คาบ/สัปดาห์:</b> เว้นว่างเพื่อใช้ ท + ป ของวิชา หรือระบุจำนวนตามแผน และกำหนดการแบ่งคาบ เช่น 2+2 หรือ 4', '<b>รหัสเรียนร่วม:</b> ใช้รหัสเดียวกันสำหรับกลุ่มที่เรียนพร้อมกัน ระบบจะวางหรือย้ายคาบของกลุ่มที่เกี่ยวข้องพร้อมกัน', '<b>คาบใน / คาบนอก:</b> ตั้งค่าเริ่มต้นในแผนได้ และเปลี่ยนเฉพาะช่วงคาบในหน้าจัดตารางได้ ยอดรวมใน/รวมนอกแสดงในตารางสอนครู', '<b>PLC:</b> กำหนดที่ ' + menu('t-PlcSlots') + ' โดยเว้นชื่อครูเพื่อใช้ทั้งแผนก หรือระบุครูเฉพาะคน', '<b>สถานประกอบการ / ฝึกงาน / ทวิภาคี:</b> กำหนดให้ถูกต้อง ระบบล็อกการย้ายสำหรับวิชาการแผนก และไม่อนุญาตสอนแทนหรือชดเชยตามเงื่อนไขของระบบ'])) +
+    section(5, 'schedule', 'ลงตารางและย้ายคาบ', 'วิชาการแผนก / เจ้าหน้าที่หลักสูตรฯ',
+      '<p>เปิด ' + menu('schedule') + ' แล้วคลิกชื่อกลุ่มด้านซ้ายเพื่อเลือกกลุ่มเรียน</p>' + list(['<b>ลงวิชาใหม่:</b> ที่ส่วนรายวิชาที่ต้องจัด เลือกประเภทคาบที่จะลงใหม่ แล้วลากก้อนวิชาลงช่องว่าง หรือคลิกก้อนวิชาแล้วคลิกช่องปลายทาง ชื่อกลุ่มในแถบซ้ายใช้เลือกกลุ่ม', 'กด <b>±</b> เพื่อกำหนดจำนวนคาบที่จะลงในครั้งนั้น ระบบไม่อนุญาตให้เกินจำนวนในแผน', '<b>ย้ายคาบเดิม:</b> ลากก้อนคาบ หรือกดปุ่ม <b>↔</b> บนก้อนคาบแล้วคลิกช่องปลายทาง ใช้วิธีนี้ได้เมื่อการลากไม่ทำงาน', '<b>จัดอัตโนมัติ:</b> เลือกจัดระดับกลุ่มหรือแผนก เจ้าหน้าที่หลักสูตรฯ และผู้ดูแลจัดทั้งวิทยาลัยได้ ตรวจตัวเลือกล้างคาบที่ไม่ล็อกก่อนจัดทุกครั้ง', 'คลิกก้อนคาบเพื่อเปลี่ยนห้อง จำนวนคาบ และประเภทคาบ เลือก <b>ตามแผนการเรียน</b> เพื่อใช้ค่าเริ่มต้น หรือกำหนดคาบใน/คาบนอกเฉพาะช่วงนั้น', 'กดล็อกคาบที่ตกลงแล้ว เมื่อต้องแก้คาบที่ล็อกหรือคาบสถานประกอบการให้ติดต่อเจ้าหน้าที่หลักสูตรฯ หรือผู้ดูแลระบบ'])) +
+    section(6, 'conflicts', 'อ่านสีและตรวจการชน', 'ผู้จัดตาราง',
+      list(['<b>เขียวขณะวาง:</b> วางได้ · <b>เหลือง:</b> วางได้แต่มีคำเตือน · <b>แดง:</b> มีปัญหาที่ทำให้วางไม่ได้', '<b>ลายทาง:</b> พักเที่ยง กิจกรรม หรือช่วงที่ล็อก เช่น PLC ต้องเลือกช่วงอื่นหรือปรับการแบ่งคาบ', 'เมื่อแจ้งว่ากลุ่มเรียนมีวิชาอื่นในช่วงนี้แล้ว ให้ตรวจตารางของ <b>ทุกกลุ่มในชุดเรียนร่วม</b> แม้ตารางครูที่เปิดอยู่ดูว่าง', 'เมื่อครูหรือห้องชน ให้เปิดตารางครู/ห้องจากหน้าคาบ แล้วเลือกเวลาอื่นหรือเปลี่ยนห้อง', 'กรณีคาบเกินจำนวนในแผน ให้แก้แผนหรือลบคาบที่เกิน ผู้มีสิทธิ์บังคับวางก็ข้ามเงื่อนไขนี้ไม่ได้', 'จัดเสร็จแล้วกด <b>ตรวจการชนทั้งหมด</b> และตรวจ ' + menu('plancheck') + ' เพื่อเช็กวิชาที่ยังลงไม่ครบ'])) +
+    section(7, 'print', 'แสดงตารางและพิมพ์ / แชร์ PDF', 'ทุกคน',
+      '<p>เปิด ' + menu('reports') + ' หรือหน้าตารางที่เผยแพร่ แล้วเลือก <b>ตารางเรียน / ตารางสอน / ตารางใช้ห้อง</b> พร้อมกลุ่ม ครู หรือห้องที่ต้องการ</p>' + list(['เลือกแสดง <b>ขาวดำ</b> หรือ <b>สี</b> ได้ทั้ง 3 แบบ แล้วกดพิมพ์หรือแชร์ PDF', 'ตรวจภาคเรียน ชื่อกลุ่ม ครู ห้อง และผู้ลงนามก่อนส่งเอกสาร', 'หาก Chrome พิมพ์วันที่ ชื่อระบบ ที่อยู่เว็บ หรือเลขหน้าที่ไม่ต้องการ ให้เปิด <b>การตั้งค่าเพิ่มเติม</b> แล้วเอาเครื่องหมาย <b>ส่วนหัวและส่วนท้ายกระดาษ</b> ออก'])) +
+    section(8, 'makeup', 'สอนแทน / สอนชดเชยและใบขออนุญาต', 'ครูผู้สอน / วิชาการแผนก / เจ้าหน้าที่หลักสูตรฯ',
+      '<p>ที่ ' + menu('ot-subs') + ' เลือกรอบการเบิกและประเภทงานให้ถูกต้อง</p>' + list(['<b>ครูผู้สอน:</b> บันทึกได้เฉพาะคาบสอนของตนเอง และแก้หรือยกเลิกไม่ได้เมื่อใบเบิกที่เกี่ยวข้องล็อกแล้ว ถ้าสอนแทนครูคนอื่น ให้ครูเจ้าของคาบหรือวิชาการแผนกเป็นผู้บันทึก', '<b>สอนแทน:</b> ครูคนอื่นสอนแทนในวันเดิม · <b>สอนชดเชย:</b> ครูเดิมสอนในวันและคาบใหม่ ระบุครู วิชา กลุ่ม วันเดิม วันสอนจริง และเหตุผลให้ครบ', 'กด <b>ขออนุญาต</b> ในรายการชดเชย กรอกเลขที่ วันที่ และเหตุผล แล้วสร้างบันทึกข้อความกับหนังสือถึงผู้ปกครอง', '<b>กรณีไปราชการ:</b> แนบสำเนาคำสั่งไปราชการภายนอกเมื่อยื่นเอกสาร ไม่ต้องอัปโหลดคำสั่ง และระบบไม่ได้จัดเก็บเอกสารคำสั่งนี้', 'กด <b>รายงานการสอน</b> เพื่อเลือกรูปแบบสอนแทนหรือสอนชดเชย รายวิชาในรายงานดึงจากชุดเดียวกับใบขออนุญาต โดยอิงครู รอบการเบิก เหตุผล และรายละเอียดเดียวกัน', 'ตรวจรายการก่อนสร้าง กรอกกิจกรรมและจำนวนผู้เรียน แล้วแนบภาพ 1–4 ภาพ หน้าถัดจากบันทึกข้อความเป็นภาพและรายละเอียดกิจกรรม ภาพและข้อความในหน้าเตรียมเอกสารนี้ใช้สำหรับเอกสารครั้งนั้น', 'การเลือกรูปแบบรายงานเปลี่ยนเฉพาะเอกสาร หากต้องเปลี่ยนรายการสอนจริง ให้แก้ข้อมูลต้นทางให้ถูกต้อง', 'รายการที่ยกเลิกหรือลบแล้วจะไม่แสดงในรายการใช้งาน'])) +
+    section(9, 'documents', 'แก้ไขเอกสารสอนแทน / สอนชดเชยก่อนพิมพ์', 'ผู้สร้างเอกสาร',
+      list(['กด <b>แก้ไขเอกสาร</b> แล้วคลิกข้อความที่ต้องการแก้ รวมถึงเลขที่ วันที่ เหตุผล ตาราง และส่วนลงชื่อ', 'คลิกช่องในตารางก่อนใช้ <b>เพิ่มแถว / ลบแถว / เพิ่มตาราง / ลบตาราง</b> ตารางที่รวมช่องข้ามแถวอาจต้องสร้างใหม่เพื่อแก้จำนวนแถว', 'ในช่องรายวิชา พิมพ์รหัสหรือชื่อวิชา แล้วเลือกรายการแนะนำ หรือใช้ลูกศรขึ้น–ลงและ Enter ระบบจะเติมรหัสกับชื่อให้', 'ช่องกลุ่มเรียนค้นหาและเลือกจากข้อมูลกลุ่มในระบบ ชื่อที่เลือกจะตรงกับข้อมูลต้นทาง', 'กด <b>เสร็จสิ้นการแก้ไข</b> ก่อนพิมพ์หรือแชร์ PDF และใช้ <b>คืนค่าต้นฉบับ</b> เมื่อต้องการเริ่มใหม่', '<b>ข้อความและตารางที่แก้ในหน้าเอกสารไม่เปลี่ยนข้อมูลต้นทาง และไม่เก็บไว้เมื่อออกจากหน้า</b> หากกลับมาสร้างใหม่ให้ตรวจและแก้อีกครั้ง', 'บันทึกข้อความใช้ TH SarabunIT๙ เนื้อหา 16 พอยท์ ขอบซ้าย 3 ซม. ขอบขวา 2 ซม. และย่อหน้าบรรทัดแรก 2.5 ซม. หนังสือถึงผู้ปกครองใช้ฟอนต์เดียวกันและขอบซ้าย–ขวาเท่ากัน'])) +
+    section(10, 'online', 'รายงานการสอนและเลือกวัน / คาบ', 'ครูผู้สอน / ผู้รับผิดชอบ',
+      '<p>ที่ ' + menu('teach-report') + ' เลือกครูและสัปดาห์ที่ต้องการ บัญชีครูใช้รายชื่อที่ผูกกับบัญชี</p>' + list(['เลือกช่องติ๊กทั้งวัน เฉพาะคาบ หรือเลือกทั้งหมด แล้วกด <b>รายงานที่เลือก</b> ระบบเปิดให้กรอกทีละรายการ', 'กรอกเนื้อหาที่สอน กิจกรรม สื่อ การประเมินผล งานที่มอบหมาย และจำนวนผู้เรียนรายกลุ่ม แนบภาพ JPG/PNG ได้ไม่เกิน 4 ภาพต่อรายงาน', 'เลือก <b>บันทึกร่าง</b> หรือ <b>ส่งรายงาน</b> แล้วระบบจึงเปิดรายการถัดไป รายการที่ยังไม่บันทึกจะไม่ถูกส่ง', 'คาบในอนาคตและคาบที่ถูกแทนหรือย้ายไปชดเชยแล้วจะไม่อยู่ในชุดที่เลือก รายงานอนุมัติแล้วล็อกการแก้ไขสำหรับครูและวิชาการแผนก', 'เปิดเอกสารของรายงานจากปุ่ม <b>เอกสาร</b> ผู้ตรวจเปิด ' + menu('teach-review') + ' เพื่ออนุมัติหรือส่งกลับพร้อมเหตุผล'])) +
+    section(11, 'visits', 'บันทึกนิเทศและแนบภาพหลักฐาน', 'ครูเจ้าของวิชา / วิชาการแผนก / เจ้าหน้าที่หลักสูตรฯ',
+      '<p>เปิด ' + menu('intern') + ' เลือกวิชาสถานประกอบการ แล้วกด <b>นิเทศ</b></p>' + list(['ระบุวันที่ สถานประกอบการ รูปแบบออนไลน์หรือไปสถานประกอบการ หัวข้อ ผล และข้อเสนอแนะ หากเป็นออนไลน์กรอกลิงก์ประชุมได้', 'หากเป็นวันในอนาคตให้เลือก <b>นัดหมาย</b> เมื่อทำจริงแล้วจึงบันทึกเป็น <b>นิเทศแล้ว</b> พร้อมผลการนิเทศ', 'แนบภาพ JPG/PNG ได้สูงสุด 4 ภาพ ระบบย่อด้านยาวไม่เกิน 1280 พิกเซล และไม่เกิน 200 KB ต่อภาพก่อนจัดเก็บ', 'กด <b>บันทึกการนิเทศ</b> แล้วรอให้บันทึกภาพครบ กด <b>ดูภาพหลักฐาน</b> ในรายการเพื่อเปิดดู หรือกดแก้ไขเพื่อเพิ่ม–ลบภาพ', 'หน้าบันทึกนิเทศไม่มีช่องคะแนน ครูเข้าถึงเฉพาะวิชาที่ตนเองสอน วิชาการแผนกเข้าถึงวิชาในขอบเขตแผนก ส่วนเจ้าหน้าที่หลักสูตรฯ และผู้ดูแลเข้าถึงทุกแผนก', 'ภาพนิเทศเก็บในพื้นที่ที่ต้องตรวจสิทธิ์ก่อนดู และรวมอยู่ในไฟล์สำรองข้อมูล'])) +
+    section(12, 'claims', 'ค่าสอนเกินภาระงานและสรุปเสนอเบิก', 'วิชาการแผนก / เจ้าหน้าที่หลักสูตรฯ',
+      list(['เปิด ' + menu('ot-claims') + ' เลือกรอบ ครู และแบบการเบิก วิชาการแผนกทำรายการเฉพาะครูในแผนก ครูผู้สอนดูใบเบิกตนเองได้', 'เลือกชั่วโมงอัตโนมัติหรือปรับรายคาบ ตรวจภาระ คาบที่เบิก วันลา คาบห้ามเบิก และคำเตือนก่อนบันทึก', 'กด <b>บันทึก</b> เพื่อเก็บร่าง และ <b>ยืนยันและล็อกการเบิก</b> เมื่อครบถ้วน หากต้องแก้หลังล็อกให้ติดต่อเจ้าหน้าที่หลักสูตรฯ หรือผู้ดูแล', 'ที่ ' + menu('ot-summary') + ' เลือกรอบและแผนก เจ้าหน้าที่หลักสูตรฯ และผู้ดูแลเลือก <b>ทุกแผนกวิชา</b> เพื่อดูยอดรวมได้ การบันทึกเสนอเบิกต้องเลือกแผนกใดแผนกหนึ่ง', 'ตรวจเอกสารพิมพ์และยอดเงินก่อนเสนอเบิก ใบเบิกที่ยังเป็นร่างยังไม่รวมในยอดเสนอเบิก'])) +
+    section(13, 'backup', 'สำรองและกู้คืนข้อมูล', 'ผู้ดูแลระบบ',
+      '<p>เปิด ' + menu('backup') + '</p>' + list(['กด <b>สำรองข้อมูลตอนนี้</b> แล้วดาวน์โหลดเก็บไว้นอกเซิร์ฟเวอร์ ไฟล์สำรองรวมทุกตาราง บัญชีผู้ใช้ รหัสผ่านที่เข้ารหัส และภาพรายงาน/นิเทศที่บันทึกในระบบ', 'ตั้งจำนวนไฟล์ที่เก็บและการสำรองอัตโนมัติได้ ระบบสำรองอัตโนมัติเมื่อมีการใช้งานในวันนั้น', 'การอัปโหลดไฟล์สำรองยังไม่เปลี่ยนข้อมูล ต้องกด <b>กู้คืน</b> ที่ไฟล์นั้น ข้อมูลทั้งชุดจะถูกแทนที่ ตรวจวันที่และไฟล์ให้ถูกต้องก่อนยืนยัน', 'หากขึ้นว่า PHP เขียนโฟลเดอร์ไม่ได้ ให้ผู้ดูแลโฮสติ้งตรวจพื้นที่ สิทธิ์เขียน และเจ้าของโฟลเดอร์ data/backup'])) +
+    section(14, 'help', 'แก้ปัญหาที่พบบ่อย', 'ทุกคน',
+      list(['<b>ไม่มีข้อมูล:</b> ตรวจภาคเรียน ครู กลุ่ม และตัวกรองแผนกก่อน หากบัญชีผูกกับครูหรือแผนกผิดให้ผู้ดูแลแก้บัญชี', '<b>ลากคาบไม่ได้:</b> ใช้ปุ่ม ↔ แล้วคลิกช่องปลายทาง ตรวจว่าคาบล็อก อยู่นอกคิว หรือชนกับกลุ่มเรียนร่วมอยู่หรือไม่', '<b>หน้าจอยังเป็นแบบเดิม:</b> กด Ctrl+F5 แล้วเปิดเอกสารใหม่ การแก้เอกสารเก่าจะไม่ถูกนำมาใช้กับเอกสารที่สร้างใหม่', '<b>ไม่มีสิทธิ์ / เซสชันหมดอายุ:</b> เข้าระบบใหม่และให้ผู้ดูแลตรวจสิทธิ์ สถานะบัญชี แผนก และรายชื่อครูที่ผูก', '<b>ภาพไม่สำเร็จ:</b> ใช้ JPG/PNG เลือกไม่เกิน 4 ภาพ และรอการย่อภาพให้เสร็จก่อนบันทึก หากอัปโหลดบางภาพไม่สำเร็จให้ตรวจภาพที่บันทึกแล้วก่อนลองใหม่', '<b>พิมพ์มีวันที่หรือที่อยู่เว็บ:</b> เอาเครื่องหมายส่วนหัวและส่วนท้ายกระดาษออกในหน้าสั่งพิมพ์', 'หากยังติดปัญหา เปิด ' + menu('issues') + ' พร้อมระบุเมนู ภาคเรียน และข้อความแจ้งเตือนที่พบ']));
+  $$('[data-manual-jump]', el).forEach(function (button) {
+    button.onclick = function () { var target = $('#man-' + button.dataset.manualJump, el); if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+  });
 };
 
 VIEWS.log = function (el) {
@@ -1261,7 +1275,7 @@ var TABLES = {
     ['vc_enabled', 'ใช้ ปวช.', 'bool'], ['vc_load', 'ปวช. ภาระ', 'number'], ['vc_min', 'ปวช. เบิกอย่างน้อย', 'number'], ['vc_max', 'ปวช. เบิกสูงสุด', 'number'], ['vc_rate', 'ปวช. บาท/ชม.', 'number'],
     ['vs_enabled', 'ใช้ ปวส.', 'bool'], ['vs_load', 'ปวส. ภาระ', 'number'], ['vs_min', 'ปวส. เบิกอย่างน้อย', 'number'], ['vs_max', 'ปวส. เบิกสูงสุด', 'number'], ['vs_rate', 'ปวส. บาท/ชม.', 'number'],
     ['bd_enabled', 'ใช้ ปตรี.', 'bool'], ['bd_load', 'ปตรี. ภาระ', 'number'], ['bd_max', 'ปตรี. เบิกสูงสุด', 'number'], ['bd_rate', 'ปตรี. บาท/ชม.', 'number'], ['sort', 'ลำดับ', 'number'], ['note', 'หมายเหตุ', 'text']] },
-  OtPerHead: { title: 'เกณฑ์เบิกรายหัว', fields: [['track', 'ระดับ', 'enum:vc=ปวช.,vs=ปวส.,bd=ปตรี.'], ['course_kind', 'ประเภทวิชา', 'enum:theory=ทฤษฎี,practice=ปฏิบัติ'], ['subject_group', 'กลุ่มวิชา (ว่าง = ทุกกลุ่ม)', 'text'], ['below_students', 'นักเรียนต่ำกว่า (คน)', 'number'], ['rate_per_head', 'บาท/หัว/ชม.', 'number']] },
+  OtPerHead: { title: 'เกณฑ์เบิกรายหัว', fields: [['track', 'ระดับ', 'enum:vc=ปวช.,vs=ปวส.,bd=ปตรี.'], ['course_kind', 'ประเภทวิชา', 'enum:theory=ทฤษฎี,practice=ปฏิบัติ'], ['subject_group', 'กลุ่มวิชา (ว่าง = ทุกกลุ่ม)', 'text'], ['below_students', 'นักเรียนต่ำกว่า (คน)', 'number'], ['rate_per_head', 'บาท/ชม. (ยอดทั้งกลุ่ม)', 'number']] },
   OtRounds: { title: 'รอบการเบิก', fields: [['semester_id', 'ภาคเรียน', 'ref:Semesters'], ['name', 'ชื่อรอบ', 'text'], ['start_date', 'เริ่ม', 'date'], ['end_date', 'สิ้นสุด', 'date']] },
   OtBlocked: { title: 'ชั่วโมงที่ห้ามเบิก', fields: [['name', 'ชื่อ (เช่น โฮมรูม)', 'text'], ['round_id', 'รอบ (ว่าง = ทุกรอบ)', 'ref:OtRounds'], ['day', 'วัน (ว่าง = ทุกวัน)', 'enum:=ทุกวัน,0=จันทร์,1=อังคาร,2=พุธ,3=พฤหัสบดี,4=ศุกร์,5=เสาร์,6=อาทิตย์'],
     ['start_date', 'ตั้งแต่วันที่ (ไม่บังคับ)', 'date'], ['end_date', 'ถึงวันที่ (ไม่บังคับ)', 'date'], ['period_from', 'ตั้งแต่คาบ', 'period'], ['period_to', 'ถึงคาบ', 'period']] },
@@ -1278,7 +1292,7 @@ function refLabel(table, id) {
 }
 
 /* ตัวแทนแผนกเห็นและเลือกได้เฉพาะแผนกกับครูของแผนกตัวเองในหน้าคาบ PLC */
-function plcDeptOnly(name) { return name === 'PlcSlots' && !can('admin'); }
+function plcDeptOnly(name) { return name === 'PlcSlots' && !can('curriculum'); }
 function rowChoices(name, table) {
   var list = S.D[table] || [];
   if (!plcDeptOnly(name)) return list;
@@ -1296,7 +1310,7 @@ function viewTable(el, name) {
   rows = sortBy(rows, function (r) { return (def.fields[0][2].indexOf('ref:') === 0 ? refLabel(def.fields[0][2].slice(4), r[def.fields[0][0]]) + ' ' : '') + r[sortField]; });
   var show = rows.slice(0, 500);
   el.innerHTML = '<div class="card"><div class="row" style="margin-bottom:12px"><input id="tq" placeholder="ค้นหา…" value="' + esc(q) + '" style="max-width:280px"><span class="muted small grow">' + rows.length + ' รายการ</span>' +
-    (can('admin') ? '<button class="btn sm" id="tPaste">วางจาก Excel</button><label class="btn sm" for="tCsv">นำเข้าไฟล์ CSV</label><input type="file" id="tCsv" accept=".csv,text/csv" hidden><button class="btn sm" id="tSample">ไฟล์ตัวอย่าง</button>' : '') + '<button class="btn sm" id="tExport">ส่งออก CSV</button><button class="btn pri sm" id="tAdd">+ เพิ่ม' + def.title + '</button></div>' +
+    (can('curriculum') ? '<button class="btn sm" id="tPaste">วางจาก Excel</button><label class="btn sm" for="tCsv">นำเข้าไฟล์ CSV</label><input type="file" id="tCsv" accept=".csv,text/csv" hidden><button class="btn sm" id="tSample">ไฟล์ตัวอย่าง</button>' : '') + '<button class="btn sm" id="tExport">ส่งออก CSV</button><button class="btn pri sm" id="tAdd">+ เพิ่ม' + def.title + '</button></div>' +
     '<div class="tablewrap"><table class="data"><thead><tr>' + def.fields.map(function (f) { return '<th>' + esc(f[1]) + '</th>'; }).join('') + '<th></th></tr></thead><tbody>' +
     show.map(function (r) {
       return '<tr>' + def.fields.map(function (f) {
@@ -1550,12 +1564,12 @@ function sampleCsv(name) {
 /* ===================== ผู้ใช้งาน ===================== */
 VIEWS.users = function (el) {
   api('listUsers', S.token).then(function (users) {
-    var roleTh = { admin: 'ผู้ดูแลระบบ', dept: 'ตัวแทนแผนก (จัดตารางแผนกตัวเอง)', teacher: 'ครู (ดูตาราง)' };
-    el.innerHTML = '<div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
+    var roleTh = ROLE_LABELS;
+    el.innerHTML = '<div class="card"><h3>ขอบเขตสิทธิ์การใช้งาน</h3>' + ['curriculum', 'dept', 'teacher'].map(function (role) { return '<p class="small"><b>' + esc(ROLE_LABELS[role]) + '</b> — ' + esc(ROLE_SCOPES[role]) + '</p>'; }).join('') + '<p class="small muted">เลือกแก้ไขบัญชีเพื่อกำหนดสิทธิ์ วิชาการแผนกต้องระบุแผนก และครูผู้สอนต้องผูกกับรายชื่อครู ผู้ดูแลระบบเท่านั้นที่เพิ่มหรือถอนเมนูรายบุคคลได้ การเปลี่ยนสิทธิ์มีผลในการทำรายการครั้งถัดไป และเมนูจะอัปเดตเมื่อผู้ใช้โหลดหน้าใหม่</p></div><div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
       '<button class="btn sm" id="uBulk">สร้างบัญชีครูทุกคน</button><button class="btn pri sm" id="uAdd">+ เพิ่มผู้ใช้</button></div>' +
-      '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>บทบาท</th><th>แผนก</th><th>ผูกกับครู</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>บทบาท</th><th>สิทธิ์เมนู</th><th>แผนก</th><th>ผูกกับครู</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
       sortBy(users, function (u) { return u.role + u.name; }).map(function (u) {
-        return '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.name) + '</td><td>' + esc(roleTh[u.role] || u.role) + '</td><td>' + esc(deptName(u.department_id)) + '</td><td>' + esc(nm('Teachers', u.teacher_id)) +
+        return '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.name) + '</td><td>' + esc(roleTh[u.role] || u.role) + '</td><td>' + userPermTag(u) + '</td><td>' + esc(deptName(u.department_id)) + '</td><td>' + esc(nm('Teachers', u.teacher_id)) +
           '</td><td>' + (String(u.active) === 'false' ? '<span class="tag bad">ปิด</span>' : !u.has_password ? '<span class="tag warn">ยังไม่ตั้งรหัสผ่าน</span>' : '<span class="tag ok">ใช้งาน</span>') + '</td><td style="white-space:nowrap"><button class="btn sm" data-u="' + esc(u.id) + '">แก้ไข</button> <button class="btn sm bad" data-du="' + esc(u.id) + '">ลบ</button></td></tr>';
       }).join('') + '</tbody></table></div></div>';
     $('#uAdd').onclick = function () { userModal({ role: 'dept', active: true }); };
@@ -1569,26 +1583,72 @@ VIEWS.users = function (el) {
   });
 };
 
+function userPermTag(u) {
+  if (u.role === 'admin') return '<span class="small muted">ทุกเมนู</span>';
+  var p = u.menu_perms || { grant: [], deny: [] };
+  if (!p.grant.length && !p.deny.length) return '<span class="small muted">ตามบทบาท</span>';
+  return (p.grant.length ? '<span class="tag ok">เพิ่ม ' + p.grant.length + '</span> ' : '') + (p.deny.length ? '<span class="tag warn">ถอน ' + p.deny.length + '</span>' : '');
+}
+
+/* เมนูระบบยังเป็นของผู้ดูแลระบบเท่านั้น จึงไม่แสดงให้เลือก */
+function permMenuHtml() {
+  var html = '', open = false;
+  NAV.forEach(function (n) {
+    if (n.sec) { html +=(open ? '</div>' : '') + '<div class="perm-sec">' + esc(n.sec) + '</div><div class="perm-grid">'; open = true; return; }
+    if (n.role === 'admin') return;
+    html += '<label class="perm-item"><input type="checkbox" data-menu="' + esc(n.id) + '" data-level="' + esc(n.role) + '"><span>' + esc(n.label) + '</span><small></small></label>';
+  });
+  return html + (open ? '</div>' : '');
+}
+
 function userModal(u) {
+  var perms = u.menu_perms || { grant: [], deny: [] };
   var tOpts = '<option value="">—</option>' + sortBy(S.D.Teachers, function (t) { return t.name; }).map(function (t) { return '<option value="' + esc(t.id) + '"' + (String(t.id) === String(u.teacher_id) ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('');
   var m = modal('<h3>' + (u.id ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้') + '</h3>' +
     '<label class="f">ชื่อผู้ใช้ (ใช้เข้าระบบ)</label><input id="uU" value="' + esc(u.username) + '">' +
     '<label class="f">ชื่อ-สกุล</label><input id="uN" value="' + esc(u.name) + '">' +
-    '<label class="f">บทบาท</label><select id="uR"><option value="admin">ผู้ดูแลระบบ (งานหลักสูตร)</option><option value="dept">ตัวแทนแผนก — จัดตารางของแผนกตัวเอง</option><option value="teacher">ครู — ดูตารางสอนของตัวเอง</option></select>' +
+    '<label class="f">บทบาท</label><select id="uR">' + ['curriculum', 'dept', 'teacher', 'admin'].map(function (role) { return '<option value="' + role + '">' + esc(ROLE_LABELS[role]) + '</option>'; }).join('') + '</select><p id="uScope" class="small muted"></p>' +
     '<label class="f">แผนกวิชา</label><select id="uD">' + deptOptions(u.department_id, '—') + '</select>' +
     '<label class="f">ผูกกับรายชื่อครู</label><select id="uT">' + tOpts + '</select>' +
     '<label class="f">' + (u.id ? 'ตั้งรหัสผ่านใหม่ (เว้นว่าง = ไม่เปลี่ยน)' : 'รหัสผ่าน (อย่างน้อย 6 ตัว)') + '</label><input id="uP" type="password" autocomplete="new-password">' +
     '<label class="row small" style="margin-top:10px"><input type="checkbox" id="uA" style="width:auto"' + (String(u.active) !== 'false' ? ' checked' : '') + '> เปิดใช้งาน</label>' +
-    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="uS">บันทึก</button></div>');
+    '<div class="perm-box"><div class="row"><b class="grow">สิทธิ์เมนูรายบุคคล</b><button type="button" class="btn sm" id="uPermReset">คืนค่าตามบทบาท</button></div>' +
+    '<p class="small muted" id="uPermHint"></p><div id="uPerms">' + permMenuHtml() + '</div></div>' +
+    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="uS">บันทึก</button></div>', true);
   $('#uR', m).value = u.role || 'dept';
+  function isDefault(box, role) { return rank(role) >= rank(box.dataset.level); }
+  function markPerm(box) {
+    var def = isDefault(box, $('#uR', m).value), label = box.parentNode.querySelector('small');
+    label.textContent = $('#uR', m).value === 'admin' || box.checked === def ? '' : box.checked ? 'เพิ่มให้' : 'ถอนออก';
+    box.parentNode.classList.toggle('changed', label.textContent !== '');
+  }
+  function fillPerms(useSaved) {
+    var role = $('#uR', m).value, isAdmin = role === 'admin';
+    $$('[data-menu]', m).forEach(function (box) {
+      var id = box.dataset.menu;
+      box.checked = isAdmin || (useSaved && perms.grant.indexOf(id) >= 0) || (isDefault(box, role) && !(useSaved && perms.deny.indexOf(id) >= 0));
+      box.disabled = isAdmin;
+      markPerm(box);
+    });
+    $('#uPermReset', m).disabled = isAdmin;
+    $('#uPermHint', m).textContent = isAdmin ? 'ผู้ดูแลระบบเข้าได้ทุกเมนูเสมอ' : 'ติ๊กเพื่อให้สิทธิ์ เอาออกเพื่อถอนสิทธิ์ เมนูระดับแผนกจะทำงานได้เฉพาะแผนกของผู้ใช้ ส่วนเมนูผู้ใช้งาน สีตาราง ตั้งค่าวิทยาลัย และสำรองข้อมูลเป็นของผู้ดูแลระบบเท่านั้น';
+  }
+  $$('[data-menu]', m).forEach(function (box) { box.onchange = function () { markPerm(box); }; });
+  $('#uPermReset', m).onclick = function () { fillPerms(false); };
+  function showUserScope() {
+    var role = $('#uR', m).value;
+    $('#uScope', m).textContent = ROLE_SCOPES[role];
+    $('#uD', m).required = role === 'dept'; $('#uT', m).required = role === 'teacher';
+  }
+  $('#uR', m).onchange = function () { showUserScope(); fillPerms(true); }; showUserScope(); fillPerms(true);
   $('#uT', m).onchange = function () {
     var t = IDX.Teachers[this.value]; if (!t) return;
     if (!$('#uN').value) $('#uN').value = t.name;
     if (!$('#uD').value) $('#uD').value = t.department_id;
   };
   $('#uS', m).onclick = function () {
-    api('saveUser', S.token, { id: u.id, username: $('#uU').value, name: $('#uN').value, role: $('#uR').value, department_id: $('#uD').value, teacher_id: $('#uT').value, password: $('#uP').value, active: $('#uA').checked })
-      .then(function () { closeModal(); VIEWS.users($('#content')); toast('บันทึกแล้ว'); });
+    api('saveUser', S.token, { id: u.id, username: $('#uU').value, name: $('#uN').value, role: $('#uR').value, department_id: $('#uD').value, teacher_id: $('#uT').value, password: $('#uP').value, active: $('#uA').checked, menus: $$('[data-menu]', m).filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.menu; }) })
+      .then(function () { closeModal(); toast('บันทึกสิทธิ์แล้ว'); if (String(u.id) === String(S.me.id)) start(); else VIEWS.users($('#content')); });
   };
 }
 
@@ -1616,7 +1676,6 @@ VIEWS.settings = function (el) {
     '<p class="small muted">หัวหน้าแผนกวิชา: ระบบดึงจากครูที่ติ๊ก "หัวหน้าแผนก" ในเมนูครูผู้สอน</p>' +
     f('college_address', 'ที่อยู่วิทยาลัย (ใช้ในหนังสือถึงผู้ปกครอง)') +
     '<label class="f">ผู้ติดต่อเรื่องข้อมูลส่วนบุคคล (แสดงในหน้า PDPA)</label><textarea data-s="pdpa_contact" rows="2" placeholder="ชื่อผู้รับผิดชอบ โทรศัพท์ อีเมล">' + esc(s.pdpa_contact || '') + '</textarea>' +
-    '<h3 style="margin-top:20px">รายงานการสอนออนไลน์</h3><label class="f">ย่อหน้าแรกของบันทึกข้อความ ใช้ {วันที่} และ {วิทยาลัย} แทนค่าอัตโนมัติ เว้นว่างเพื่อใช้ข้อความมาตรฐาน</label><textarea data-s="report_memo_text" rows="4">' + esc(s.report_memo_text || '') + '</textarea>' +
     '<div class="actions"><button class="btn pri" id="setSaveInfo">บันทึกการตั้งค่า</button></div></div>' +
     '<div class="card"><h3>คาบเรียน</h3><div class="row"><div class="grow">' + f('periods_per_day', 'จำนวนช่องเวลาต่อวัน (รวมพักเที่ยง)', 'number') + '</div><div class="grow">' + f('period_start', 'เวลาเริ่มคาบแรก', 'time') +
     '</div><div class="grow">' + f('period_minutes', 'นาทีต่อคาบ', 'number') + '</div><div class="grow">' + f('lunch_period', 'ช่องเวลาที่เป็นพักเที่ยง นับจากช่องแรก ไม่นับเป็นเลขคาบ (คั่นด้วย , ได้)') + '</div></div>' +

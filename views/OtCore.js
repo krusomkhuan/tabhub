@@ -157,24 +157,37 @@ var Ot = (function () {
       var a = absentAt(D.absences, tid, date, p);
       if (a) it.absent = a.type || 'ลา';
       // ครูผู้สอนเดิมที่มีผู้สอนแทน/ชดเชยในวันนั้น = ไม่ได้สอนจริง
+      // ยกเว้นสอนชดเชยที่รายงานผลแล้ว: นับชั่วโมงที่คาบเดิมตามตารางสอน แทนวันที่สอนชดเชย (ต้องตรงกับ ot.php)
+      var madeUp = null, other = false;
       (D.subs || []).forEach(function (r) {
-        if (String(r.original_teacher_id) === tid && String(r.session_id) === String(s.id) && String(r.original_date || r.date).slice(0, 10) === date && String(r.status) !== 'cancelled') {
+        if (String(r.original_teacher_id) === tid && String(r.session_id) === String(s.id) && String(r.original_date || r.date).slice(0, 10) === date && String(r.status) !== 'cancelled' && String(r.status) !== 'deleted') {
+          if (makeupReported(r, tid)) { madeUp = r; return; }
+          other = true;
           it.absent = it.absent || (r.type === 'makeup' ? 'สอนชดเชยวันอื่น' : 'มีผู้สอนแทน');
         }
       });
+      if (madeUp && !other) { it.absent = ''; it.made_up = String(madeUp.date).slice(0, 10); }
+    } else if (makeupReported(sub, tid)) {
+      // นับไว้ที่คาบเดิมแล้ว วันสอนชดเชยจึงไม่นับซ้ำ
+      it.absent = 'นับที่คาบเดิม ' + String(sub.original_date || sub.date).slice(0, 10);
     } else if (sub.type === 'makeup' && String(sub.report_done) !== 'true') {
       it.pending = 'รอแนบรายงานผลการสอนชดเชย';
     }
     return it;
   }
 
+  function makeupReported(r, tid) {
+    return r.type === 'makeup' && String(r.report_done) === 'true' && String(r.original_teacher_id) === tid && String(r.teacher_id) === tid;
+  }
+
   /** หากฎเบิกรายหัวที่ใช้กับชั่วโมงนี้ */
   function perHeadRule(it, rules, course) {
     if (!it.students) return null;
     var sg = (course && course.subject_group) || '';
+    // เกณฑ์มีหลายช่วงจำนวนคน ต้องใช้ช่วงที่แคบที่สุดที่เข้าเงื่อนไข และเกณฑ์ของกลุ่มวิชานั้นก่อนเกณฑ์ทุกกลุ่ม
     return (rules || []).filter(function (r) {
       return r.track === it.level && r.course_kind === it.kind && (!r.subject_group || !sg || r.subject_group === sg) && it.students < n(r.below_students);
-    })[0] || null;
+    }).sort(function (a, b) { return n(a.below_students) - n(b.below_students) || (b.subject_group ? 1 : 0) - (a.subject_group ? 1 : 0); })[0] || null;
   }
 
   /**
@@ -199,7 +212,7 @@ var Ot = (function () {
         if (it.pending) res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.pending + ' (ระเบียบข้อ 8)');
         if (it.sub === 'sub') subUsed[it.sub_id] = (subUsed[it.sub_id] || 0) + 1;
         var rule = ph && ph[it.course_id + '|' + it.group_id] ? perHeadRule(it, ctx && ctx.perHead, ctx && ctx.courses && ctx.courses[it.course_id]) : null;
-        if (rule) { B.perhead++; res.perHeadAmount += it.students * n(rule.rate_per_head); }
+        if (rule) { B.perhead++; res.perHeadAmount += n(rule.rate_per_head); } // อัตราในเกณฑ์เป็นยอดต่อชั่วโมงของทั้งกลุ่มแล้ว ไม่คูณจำนวนคนซ้ำ
         else B.claim++;
       }
     });

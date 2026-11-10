@@ -17,7 +17,7 @@ function clean_text($v, int $max = 5000): string { return mb_substr(trim(str($v 
 function assert_teacher_scope(array $me, $teacherId): array {
   $t = idx_table('Teachers')[str($teacherId)] ?? null;
   if (!$t) throw new Exception('ไม่พบครู');
-  if ($me['role'] === 'admin') return $t;
+  if (is_academic_manager($me)) return $t;
   if ($me['role'] === 'dept' && (string)$t['department_id'] === (string)$me['department_id']) return $t;
   if ($me['role'] === 'teacher' && (string)$me['teacher_id'] === (string)$t['id']) return $t;
   throw new Exception('ทำรายการได้เฉพาะครูของตัวเองหรือในแผนกตัวเอง');
@@ -136,7 +136,7 @@ function api_teachReportSave($token = '', $rec = [], $submit = false) {
     foreach ($rows as $k => $r) {
       if ((string)$r['semester_id'] === str($sem) && (string)$r['teacher_id'] === $tid && $r['date'] === $date && (string)$r['session_id'] === (string)$slot['session_id'] && (string)$r['start'] === (string)$slot['start']) { $i = $k; break; }
     }
-    if ($i !== null && $rows[$i]['status'] === 'approved' && $me['role'] !== 'admin') throw new Exception('รายงานนี้อนุมัติแล้ว แก้ไขไม่ได้');
+    if ($i !== null && $rows[$i]['status'] === 'approved' && !is_academic_manager($me)) throw new Exception('รายงานนี้อนุมัติแล้ว แก้ไขไม่ได้');
     if ($i === null) { $rows[] = ['id' => new_id(), 'created_at' => now_dt(), 'reviewed_by' => '', 'reviewed_at' => '', 'review_note' => '', 'submitted_at' => '', 'status' => 'draft']; $i = count($rows) - 1; }
     $rows[$i] = array_merge($rows[$i], [
       'semester_id' => $sem, 'teacher_id' => $tid, 'session_id' => $slot['session_id'], 'group_id' => $slot['group_id'], 'course_id' => $slot['course_id'],
@@ -210,7 +210,7 @@ function api_teachReportDelete($token = '', $id = '') {
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายงาน');
     assert_teacher_scope($me, $rows[$i]['teacher_id']);
-    if ($rows[$i]['status'] === 'approved' && $me['role'] !== 'admin') throw new Exception('รายงานนี้อนุมัติแล้ว ลบไม่ได้');
+    if ($rows[$i]['status'] === 'approved' && !is_academic_manager($me)) throw new Exception('รายงานนี้อนุมัติแล้ว ลบไม่ได้');
     foreach (report_image_names($rows[$i]) as $n) @unlink(report_image_dir() . '/' . $n);
     array_splice($rows, $i, 1);
     writeTable('TeachReports', $rows);
@@ -278,7 +278,7 @@ function report_row(array $me, $id, array &$rows, bool $forEdit): int {
   $i = find_row($rows, str($id));
   if ($i === null) throw new Exception('ไม่พบรายงาน');
   assert_teacher_scope($me, $rows[$i]['teacher_id']);
-  if ($forEdit && $rows[$i]['status'] === 'approved' && $me['role'] !== 'admin') throw new Exception('รายงานนี้อนุมัติแล้ว แก้ไขไม่ได้');
+  if ($forEdit && $rows[$i]['status'] === 'approved' && !is_academic_manager($me)) throw new Exception('รายงานนี้อนุมัติแล้ว แก้ไขไม่ได้');
   return $i;
 }
 
@@ -393,7 +393,7 @@ function supervise_units($semesterId): array {
 }
 
 function supervise_can_see(array $me, array $u): bool {
-  if ($me['role'] === 'admin') return true;
+  if (is_academic_manager($me)) return true;
   if ($me['role'] === 'teacher') return in_array((string)$me['teacher_id'], array_map('strval', $u['teacher_ids']), true);
   $dept = (string)$me['department_id'];
   $groups = idx_table('Groups'); $teachers = idx_table('Teachers');
@@ -429,6 +429,64 @@ function api_superviseList($token = '', $semesterId = '') {
   return $out;
 }
 
+function visit_image_row(array $me, $id, array &$rows, bool $forEdit): int {
+  $rows = readTable('SupervisionVisits');
+  $i = find_row($rows, str($id));
+  if ($i === null) throw new Exception('ไม่พบรายการนิเทศ');
+  supervise_unit($me, $rows[$i]['semester_id'], $rows[$i]['unit_key']);
+  return $i;
+}
+
+function api_visitImageAdd($token = '', $id = '', $base64 = '') {
+  $me = auth_user($token);
+  $bytes = base64_decode(str($base64), true);
+  if ($bytes === false || $bytes === '') throw new Exception('อ่านไฟล์รูปไม่สำเร็จ');
+  if (strlen($bytes) > REPORT_MAX_IMAGE_BYTES) throw new Exception('รูปมีขนาดใหญ่เกิน 4 MB');
+  $ext = report_image_ext($bytes);
+  if ($ext === '') throw new Exception('รองรับเฉพาะรูป JPG และ PNG');
+  return with_lock(function () use ($me, $id, $bytes, $ext) {
+    $rows = [];
+    $i = visit_image_row($me, $id, $rows, true);
+    $names = report_image_names($rows[$i]);
+    if (count($names) >= REPORT_MAX_IMAGES) throw new Exception('แนบรูปได้ไม่เกิน ' . REPORT_MAX_IMAGES . ' รูปต่อรายงาน');
+    $prepared = report_prepare_image($bytes);
+    $bytes = $prepared['bytes']; $ext = $prepared['ext'];
+    $name = strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string)$rows[$i]['id'])) . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
+    if (file_put_contents(report_image_dir() . '/' . $name, $bytes) !== strlen($bytes)) throw new Exception('บันทึกรูปไม่สำเร็จ');
+    $names[] = $name;
+    $rows[$i]['images'] = json_encode($names);
+    writeTable('SupervisionVisits', $rows);
+    log_action($me, 'แนบหลักฐานการนิเทศ', (string)$rows[$i]['id']);
+    return $name;
+  });
+}
+
+function api_visitImages($token = '', $id = '') {
+  $me = auth_user($token);
+  $rows = [];
+  $i = visit_image_row($me, $id, $rows, false);
+  $out = [];
+  foreach (report_image_names($rows[$i]) as $n) {
+    $p = report_image_dir() . '/' . $n;
+    if (is_file($p)) $out[] = ['name' => $n, 'url' => 'data:image/' . (str_ends_with($n, '.png') ? 'png' : 'jpeg') . ';base64,' . base64_encode((string)file_get_contents($p))];
+  }
+  return $out;
+}
+
+function api_visitImageDelete($token = '', $id = '', $name = '') {
+  $me = auth_user($token);
+  return with_lock(function () use ($me, $id, $name) {
+    $rows = [];
+    $i = visit_image_row($me, $id, $rows, true);
+    $names = report_image_names($rows[$i]);
+    if (!in_array(str($name), $names, true)) throw new Exception('ไม่พบรูป');
+    @unlink(report_image_dir() . '/' . str($name));
+    $rows[$i]['images'] = json_encode(array_values(array_diff($names, [str($name)])));
+    writeTable('SupervisionVisits', $rows);
+    return true;
+  });
+}
+
 function api_visitList($token = '', $semesterId = '', $key = '') {
   $me = auth_user($token);
   supervise_unit($me, $semesterId, $key);
@@ -446,11 +504,9 @@ function api_visitSave($token = '', $rec = []) {
   $type = ($rec['visit_type'] ?? '') === 'onsite' ? 'onsite' : 'online';
   $status = ($rec['status'] ?? '') === 'planned' ? 'planned' : 'done';
   if ($status === 'done' && $rec['visit_date'] > date('Y-m-d')) throw new Exception('บันทึกผลนิเทศล่วงหน้าไม่ได้ ถ้ายังไม่ถึงวันให้เลือก "นัดหมาย"');
-  $score = num($rec['score'] ?? 0);
-  if ($score < 0 || $score > 5) throw new Exception('คะแนนต้องอยู่ระหว่าง 0–5');
-  $meet = clean_link($rec['meeting_link'] ?? ''); $evid = clean_link($rec['evidence_link'] ?? '');
+  $meet = clean_link($rec['meeting_link'] ?? ''); $evid = array_key_exists('evidence_link', $rec) ? clean_link($rec['evidence_link']) : null;
   if ($status === 'done' && clean_text($rec['findings'] ?? '') === '') throw new Exception('กรุณาบันทึกผลการนิเทศ');
-  return with_lock(function () use ($me, $rec, $type, $status, $score, $meet, $evid) {
+  return with_lock(function () use ($me, $rec, $type, $status, $meet, $evid) {
     $rows = readTable('SupervisionVisits');
     $id = $rec['id'] ?? '';
     $i = js_true($id) ? find_row($rows, $id) : null;
@@ -458,7 +514,7 @@ function api_visitSave($token = '', $rec = []) {
     if ($i === null) { $rows[] = ['id' => new_id(), 'created_by' => $me['name'], 'created_at' => now_dt()]; $i = count($rows) - 1; }
     $rows[$i] = array_merge($rows[$i], [
       'semester_id' => $rec['semester_id'], 'unit_key' => $rec['unit_key'], 'company_name' => clean_text($rec['company_name'] ?? '', 300), 'visit_date' => $rec['visit_date'], 'visit_type' => $type, 'meeting_link' => $meet, 'topic' => clean_text($rec['topic'] ?? '', 500),
-      'findings' => clean_text($rec['findings'] ?? ''), 'suggestions' => clean_text($rec['suggestions'] ?? ''), 'score' => $score, 'evidence_link' => $evid,
+      'findings' => clean_text($rec['findings'] ?? ''), 'suggestions' => clean_text($rec['suggestions'] ?? ''), 'evidence_link' => $evid === null ? ($rows[$i]['evidence_link'] ?? '') : $evid,
       'next_visit_date' => $rec['next_visit_date'] ?? '', 'status' => $status,
     ]);
     $newId = $rows[$i]['id'];
@@ -475,6 +531,7 @@ function api_visitDelete($token = '', $id = '') {
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายการนิเทศ');
     supervise_unit($me, $rows[$i]['semester_id'], $rows[$i]['unit_key']);
+    foreach (report_image_names($rows[$i]) as $name) @unlink(report_image_dir() . '/' . $name);
     array_splice($rows, $i, 1);
     writeTable('SupervisionVisits', $rows);
     log_action($me, 'ลบรายการนิเทศ', $id);
@@ -493,13 +550,13 @@ function windows_of($semesterId): array {
 }
 
 function api_windowList($token = '', $semesterId = '') {
-  auth_user($token, 'admin');
+  auth_user($token, 'curriculum');
   return windows_of($semesterId);
 }
 
 /** เพิ่มคิวให้แผนกที่ยังไม่มีในภาคเรียนนี้ โดยยังไม่กำหนดวันที่ */
 function api_windowCreateMissing($token = '', $semesterId = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   if (find_row(readTable('Semesters'), str($semesterId)) === null) throw new Exception('ไม่พบภาคเรียน');
   return with_lock(function () use ($me, $semesterId) {
     $cur = windows_of($semesterId);
@@ -519,7 +576,7 @@ function api_windowCreateMissing($token = '', $semesterId = '') {
 
 /** เลื่อนลำดับคิวขึ้น (-1) หรือลง (+1) */
 function api_windowMove($token = '', $id = '', $dir = 0) {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   $dir = num($dir) < 0 ? -1 : 1;
   return with_lock(function () use ($me, $id, $dir) {
     $all = readTable('Windows');
@@ -540,7 +597,7 @@ function api_windowMove($token = '', $id = '', $dir = 0) {
 }
 
 function api_windowSave($token = '', $id = '', $start = '', $end = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   foreach ([$start, $end] as $d) if ($d !== '' && !valid_date($d)) throw new Exception('วันที่ไม่ถูกต้อง');
   if ($start !== '' && $end !== '' && $start > $end) throw new Exception('วันเริ่มต้องไม่หลังวันสิ้นสุด');
   return with_lock(function () use ($me, $id, $start, $end) {
@@ -556,7 +613,7 @@ function api_windowSave($token = '', $id = '', $start = '', $end = '') {
 
 /** เปิดคิวตั้งแต่วันนี้ ถ้าวันสิ้นสุดผ่านไปแล้วหรือยังไม่กำหนด จะเปิดถึงสิ้นวันนี้ */
 function api_windowOpenNow($token = '', $id = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   return with_lock(function () use ($me, $id) {
     $all = readTable('Windows');
     $i = find_row($all, str($id));
@@ -571,7 +628,7 @@ function api_windowOpenNow($token = '', $id = '') {
 }
 
 function api_windowDelete($token = '', $id = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   return with_lock(function () use ($me, $id) {
     $all = readTable('Windows');
     $i = find_row($all, str($id));

@@ -65,7 +65,7 @@ function backup_create(string $kind, string $by): string {
   backup_require_writable();
   $tables = [];
   foreach (array_keys(SCHEMA) as $t) $tables[$t] = readTable($t);
-  $images = array_values(array_filter(backup_image_names($tables['TeachReports'] ?? []), fn($n) => is_file(report_image_dir() . '/' . $n)));
+  $images = array_values(array_filter(backup_image_names(array_merge($tables['TeachReports'] ?? [], $tables['SupervisionVisits'] ?? [], $tables['SubDocs'] ?? [])), fn($n) => is_file(report_image_dir() . '/' . $n)));
 
   $name = backup_new_name($kind);
   $tmp = backup_dir() . '/' . $name . '.tmp';
@@ -137,7 +137,7 @@ function backup_read(string $path, ?string $extractTo = null): array {
       if (array_key_exists('tables', $o)) { $legacy = true; $tables = $o['tables']; break; }
     } elseif ($i === 1) {
       $tables = $o['tables'] ?? null;
-      if (is_array($tables)) $wanted = array_flip(backup_image_names(is_array($tables['TeachReports'] ?? null) ? $tables['TeachReports'] : []));
+      if (is_array($tables)) $wanted = array_flip(backup_image_names(array_merge(is_array($tables['TeachReports'] ?? null) ? $tables['TeachReports'] : [], is_array($tables['SupervisionVisits'] ?? null) ? $tables['SupervisionVisits'] : [], is_array($tables['SubDocs'] ?? null) ? $tables['SubDocs'] : [])));
     } elseif (!empty($o['end'])) {
       if ((int)($o['images'] ?? -1) !== $count) throw new Exception(BACKUP_BAD_FILE);
       $ended = true;
@@ -219,27 +219,76 @@ function backup_clean_temp(): void {
   }
 }
 
+// ======================= สำรองอัตโนมัติ =======================
+const BACKUP_STATUS_KEY = 'backup:auto_status';
+
+/** ถึงรอบสำรองเมื่อไฟล์อัตโนมัติล่าสุดเก่ากว่า 1 วัน (นับจากเวลาในชื่อไฟล์ ไม่ใช้เวลาแก้ไขไฟล์ที่เปลี่ยนได้เมื่อคัดลอก) */
+function backup_auto_due(): bool {
+  clearstatcache();
+  foreach (backup_files() as $f) {
+    if ($f['kind'] !== 'auto') continue;
+    $t = strtotime($f['time']);
+    return $t === false || $t <= time() - 86400;
+  }
+  return true;
+}
+
+/** ผลการสำรองอัตโนมัติครั้งล่าสุด: state = running | ok | error เพื่อให้ผู้ดูแลเห็นเมื่อสำรองไม่สำเร็จ */
+function backup_status(): array {
+  try { $r = kvGet(BACKUP_STATUS_KEY); } catch (Throwable $_) { return []; }
+  $o = $r ? json_decode($r, true) : null;
+  return is_array($o) ? $o : [];
+}
+function backup_status_put(array $s): void {
+  try { kvPut(BACKUP_STATUS_KEY, json_encode($s + ['at' => date('Y-m-d H:i:s')], JSON_UNESCAPED_UNICODE)); } catch (Throwable $_) {}
+}
+
 /**
  * สำรองอัตโนมัติวันละครั้ง ทำงานเมื่อมีผู้ใช้เข้าระบบ ถ้าล้มเหลวต้องไม่กระทบคำขอของผู้ใช้
- * เมื่อมีรูปมากจะใช้เวลานาน จึงส่งคำตอบให้ผู้ใช้ก่อนแล้วค่อยสำรอง และกันไม่ให้หลายคำขอสำรองซ้ำกัน
+ * mode = page_load: สำรองระหว่างโหลดหน้าเว็บ ใช้ได้กับทุกโฮสติ้ง
+ * mode = after_response: ส่งคำตอบก่อนแล้วค่อยสำรอง โฮสติ้งบางแห่งหยุดสคริปต์หลังส่งคำตอบ จึงเป็นทางสำรองเท่านั้น
+ * ใช้ล็อกของฐานข้อมูลกันหลายคำขอสำรองพร้อมกัน เพราะ flock ใช้ไม่ได้บนดิสก์ของโฮสติ้งบางแบบ
  */
-function backup_auto_tick(): void {
+function backup_auto_run(string $mode): bool {
+  $locked = false;
   try {
-    $s = readSettings();
-    if (($s['backup_auto'] ?? 'true') === 'false') return;
-    $due = function () {
-      clearstatcache();
-      foreach (backup_files() as $f) if ($f['kind'] === 'auto') return $f['mtime'] <= time() - 86400;
-      return true;
-    };
-    if (!$due()) return;
-    $lock = @fopen(backup_dir() . '/.auto.lock', 'c');
-    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB) || !$due()) return;
-    finish_response();
-    backup_create('auto', 'ระบบ');
-    backup_prune((int)($s['backup_keep'] ?? BACKUP_KEEP_DEFAULT) ?: BACKUP_KEEP_DEFAULT);
+    if ((readSettings()['backup_auto'] ?? 'true') === 'false' || !backup_auto_due()) return false;
+    $st = db()->prepare('SELECT GET_LOCK(?, 0) g');
+    $st->execute(['tabhub_backup_' . db_name()]);
+    $locked = (int)$st->fetch()['g'] === 1;
+    $st->closeCursor();
+    if (!$locked || !backup_auto_due()) return false;
+    backup_status_put(['state' => 'running', 'mode' => $mode]);
+    if ($mode === 'after_response') finish_response();
+    $name = backup_create('auto', 'ระบบ');
+    backup_prune((int)(readSettings()['backup_keep'] ?? BACKUP_KEEP_DEFAULT) ?: BACKUP_KEEP_DEFAULT);
     backup_clean_temp();
-  } catch (Throwable $e) { error_log('[backup auto] ' . $e); }
+    backup_status_put(['state' => 'ok', 'mode' => $mode, 'file' => $name]);
+    return true;
+  } catch (Throwable $e) {
+    error_log('[backup auto] ' . $e);
+    $msg = $e->getMessage();
+    backup_status_put(['state' => 'error', 'mode' => $mode, 'error' => preg_match('/[\x{0E00}-\x{0E7F}]/u', $msg) ? $msg : 'เกิดข้อผิดพลาดของเซิร์ฟเวอร์ ดูรายละเอียดใน PHP error log (ขึ้นต้นด้วย [backup auto])']);
+    return false;
+  } finally {
+    if ($locked) { try { $st = db()->prepare('SELECT RELEASE_LOCK(?)'); $st->execute(['tabhub_backup_' . db_name()]); $st->closeCursor(); } catch (Throwable $_) {} }
+  }
+}
+
+/** เรียกหลังส่งคำตอบของทุกคำขอ */
+function backup_auto_tick(): void { backup_auto_run('after_response'); }
+
+/** ข้อความเตือนผู้ดูแลเมื่อไม่มีไฟล์สำรองอัตโนมัติใน 2 วัน หรือครั้งล่าสุดล้มเหลว */
+function backup_warning(): string {
+  try {
+    if ((readSettings()['backup_auto'] ?? 'true') === 'false') return '';
+    $last = '';
+    foreach (backup_files() as $f) if ($f['kind'] === 'auto') { $last = $f['time']; break; }
+    $s = backup_status();
+    if (($s['state'] ?? '') === 'error') return 'สำรองข้อมูลอัตโนมัติไม่สำเร็จ: ' . ($s['error'] ?? '') . ' — ดูที่เมนูสำรองข้อมูล';
+    if ($last === '' || strtotime($last) < time() - 2 * 86400) return 'ไม่มีไฟล์สำรองอัตโนมัติใน 2 วันที่ผ่านมา' . ($last ? ' (ล่าสุด ' . $last . ')' : '') . ' — กรุณาสำรองข้อมูลที่เมนูสำรองข้อมูล';
+  } catch (Throwable $e) { return 'ตรวจสถานะสำรองข้อมูลไม่สำเร็จ: ' . $e->getMessage(); }
+  return '';
 }
 
 // ======================= API (เฉพาะผู้ดูแลระบบ) =======================
@@ -248,11 +297,38 @@ function api_backupList($token = '') {
   $s = readSettings();
   $files = array_map(fn($f) => $f + ['images' => backup_file_images(backup_dir() . '/' . $f['name'])], backup_files());
   $count = 0; $bytes = 0;
-  foreach (backup_image_names(readTable('TeachReports')) as $n) {
+  foreach (backup_image_names(array_merge(readTable('TeachReports'), readTable('SupervisionVisits'), readTable('SubDocs'))) as $n) {
     $p = report_image_dir() . '/' . $n;
     if (is_file($p)) { $count++; $bytes += filesize($p); }
   }
-  return ['files' => $files, 'auto' => ($s['backup_auto'] ?? 'true') !== 'false', 'keep' => (int)($s['backup_keep'] ?? BACKUP_KEEP_DEFAULT) ?: BACKUP_KEEP_DEFAULT, 'image_count' => $count, 'image_bytes' => $bytes];
+  return ['files' => $files, 'auto' => ($s['backup_auto'] ?? 'true') !== 'false', 'keep' => (int)($s['backup_keep'] ?? BACKUP_KEEP_DEFAULT) ?: BACKUP_KEEP_DEFAULT, 'image_count' => $count, 'image_bytes' => $bytes,
+    'auto_status' => backup_status(), 'warning' => backup_warning(), 'now' => date('Y-m-d H:i:s'), 'dirs' => data_dirs_writable()];
+}
+
+/** โฟลเดอร์ที่ระบบต้องเขียนได้ ใช้ตรวจ Permission บนโฮสติ้งจากหน้าสำรองข้อมูล */
+function data_dirs_writable(): array {
+  $out = [];
+  foreach (['data' => 'ข้อมูลระบบ (schema.hash)', 'data/backup' => 'ไฟล์สำรองข้อมูล', 'data/teach_images' => 'รูปรายงานการสอน นิเทศ และเอกสาร', 'data/exports' => 'ไฟล์ Excel ที่ส่งออก'] as $rel => $use) {
+    $p = APP_ROOT . '/' . $rel;
+    if (!is_dir($p)) @mkdir($p, 0755, true);
+    clearstatcache(true, $p);
+    $exists = is_dir($p);
+    $out[] = ['dir' => $rel, 'use' => $use, 'exists' => $exists, 'writable' => $exists && is_writable($p),
+      'perms' => $exists ? substr(sprintf('%o', @fileperms($p)), -3) : '', 'owner' => $exists ? sys_user_name(@fileowner($p)) : '', 'group' => $exists ? sys_group_name(@filegroup($p)) : '', 'php_user' => sys_user_name(function_exists('posix_geteuid') ? posix_geteuid() : @getmyuid())];
+  }
+  return $out;
+}
+
+/** ชื่อบัญชีจาก uid/gid เพื่อเทียบ Owner ของโฟลเดอร์กับบัญชีที่ PHP ใช้ (ถ้าเครื่องไม่มี posix จะแสดงเป็นตัวเลข) */
+function sys_user_name($uid): string {
+  if ($uid === false || $uid === null) return '';
+  $u = function_exists('posix_getpwuid') ? @posix_getpwuid((int)$uid) : false;
+  return $u && isset($u['name']) ? $u['name'] . ' (' . $uid . ')' : (string)$uid;
+}
+function sys_group_name($gid): string {
+  if ($gid === false || $gid === null) return '';
+  $g = function_exists('posix_getgrgid') ? @posix_getgrgid((int)$gid) : false;
+  return $g && isset($g['name']) ? $g['name'] . ' (' . $gid . ')' : (string)$gid;
 }
 
 function api_backupCreate($token = '') {

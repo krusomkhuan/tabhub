@@ -9,6 +9,7 @@
 <body>
   <div class="content pub-wrap">
     <header class="pub-hero no-print">
+      <a id="pBack" class="btn sm pub-back" href="./" hidden>← กลับ</a>
       <img src="assets/icon-192.png" alt="" width="64" height="64">
       <div class="pub-hero-text"><h1 id="pTitle">ตารางเรียน / ตารางสอน</h1><p id="pCollege"></p></div>
       <label class="pub-sem"><span>ภาคเรียน</span><select id="pSem"></select></label><button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>
@@ -147,6 +148,13 @@
   Grid.bindShareButton(document.getElementById('pShare'), function () { return P.id ? document.querySelectorAll('#pOut .page') : []; }, function () { return P.title; }, function (msg) { alert(msg); });
   document.getElementById('pVer').textContent = APP_VERSION + ' · ผู้พัฒนา: ' + APP_DEVELOPERS;
   if (PWA.installed()) document.querySelector('.pwa-add').style.display = 'none';
+  /* แอปที่ติดตั้งบางเครื่องไม่มีปุ่มย้อนกลับ จึงแสดงปุ่มเมื่อเปิดมาจากหน้าอื่นของระบบ */
+  function showBack() {
+    var from = document.referrer;
+    document.getElementById('pBack').hidden = !(PWA.installed() && from.indexOf(location.origin + '/') === 0 && from.indexOf('page=public') < 0);
+  }
+  document.getElementById('pBack').onclick = function (e) { if (history.length > 1) { e.preventDefault(); history.back(); } };
+  showBack();
   google.script.run.withSuccessHandler(function (u) { BASE = u; }).getWebAppUrl();
   load();
   </script>

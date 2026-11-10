@@ -7,12 +7,12 @@
     { id: 'ot-claims', label: 'เลือกชั่วโมงเบิก', role: 'teacher' },
     { id: 'ot-subs', label: 'สอนแทน / สอนชดเชย', role: 'teacher' },
     { id: 'ot-summary', label: 'สรุปเสนอเบิก', role: 'dept' },
-    { id: 'ot-teachers', label: 'กำหนดแบบการเบิกให้ครู', role: 'admin' },
-    { id: 't-OtSchemes', label: 'ตั้งค่าแบบการเบิก', role: 'admin' },
-    { id: 't-OtPerHead', label: 'เกณฑ์เบิกรายหัว', role: 'admin' },
-    { id: 't-OtRounds', label: 'รอบการเบิก', role: 'admin' },
-    { id: 't-OtBlocked', label: 'ชั่วโมงที่ห้ามเบิก', role: 'admin' },
-    { id: 'ot-holidays', label: 'วันหยุดของวิทยาลัย', role: 'admin' }
+    { id: 'ot-teachers', label: 'กำหนดแบบการเบิกให้ครู', role: 'curriculum' },
+    { id: 't-OtSchemes', label: 'ตั้งค่าแบบการเบิก', role: 'curriculum' },
+    { id: 't-OtPerHead', label: 'เกณฑ์เบิกรายหัว', role: 'curriculum' },
+    { id: 't-OtRounds', label: 'รอบการเบิก', role: 'curriculum' },
+    { id: 't-OtBlocked', label: 'ชั่วโมงที่ห้ามเบิก', role: 'curriculum' },
+    { id: 'ot-holidays', label: 'วันหยุดของวิทยาลัย', role: 'curriculum' }
   );
 })();
 
@@ -45,7 +45,7 @@ VIEWS['ot-claims'] = function (el) {
   api('otAlerts', S.token).then(function (a) {
     if (!a.length) return;
     $('#oAlerts').innerHTML = '<span class="tag warn">สอนชดเชยรอแนบรายงานผลการสอน ' + a.length + ' รายการ</span> ' +
-      a.slice(0, 6).map(function (x) { return '<span class="' + (x.overdue ? 'tag bad' : 'muted') + '">' + esc(x.teacher) + ' (ชดเชย ' + thDate(x.date) + ', ครบกำหนด ' + thDate(x.due) + (x.overdue ? ' — เลยกำหนด' : '') + ')</span>'; }).join(' · ') +
+      a.slice(0, 6).map(function (x) { return '<span class="' + (x.overdue ? 'tag bad' : 'muted') + '">' + esc(x.teacher) + (x.course ? ' ' + esc(x.course) : '') + ' (ชดเชย ' + thDate(x.date) + ', ครบกำหนด ' + thDate(x.due) + (x.overdue ? ' — เลยกำหนด' : '') + ')</span>'; }).join(' · ') + (a.length > 6 ? ' · และอีก ' + (a.length - 6) + ' รายการ' : '') +
       ' <a href="#ot-subs">จัดการ</a>';
   });
   loadClaim();
@@ -107,7 +107,7 @@ function claimPrintHtml(d, sch, evaluated) {
     w.items.forEach(function (it) {
       if (!sums[it.level] || it.blocked || it.absent || (OT.sel[w.index] || {})[it.key] !== 'C' || !(OT.ph[w.index] || {})[it.course_id + '|' + it.group_id]) return;
       var rule = Ot.perHeadRule(it, d.perHead, IDX.Courses[it.course_id]);
-      if (rule) sums[it.level].perHeadAmount += Number(it.students || 0) * Number(rule.rate_per_head || 0);
+      if (rule) sums[it.level].perHeadAmount += Number(rule.rate_per_head || 0); // ยอดต่อชั่วโมงของทั้งกลุ่ม ตรงกับ Ot.evalWeek
     });
   });
   var changed = String(d.claim && d.claim.scheme_id || '') !== String(OT.scheme);
@@ -166,7 +166,7 @@ function renderClaim() {
   }).join('');
   box.innerHTML = '<div class="ot-claim-editor no-print"><div class="card"><div class="row"><div class="grow"><h3 style="margin:0">' + esc(t.name) + '</h3><div class="small muted">' + esc(t.position || '') + ' · ' + esc(Ot.EMPLOY_TH[t.employment] || 'ไม่ระบุสถานะการจ้าง') +
     (String(t.is_unit_head) === 'true' ? ' · หัวหน้างาน' : '') + ' · เพดานรายบุคคล ' + d.cap + ' ชม./สัปดาห์' + (d.capNote ? ' (' + esc(d.capNote) + ')' : '') + '</div></div>' +
-    (locked ? '<span class="tag ok">ล็อกแล้ว · ' + esc(d.claim.locked_by || '') + '</span>' + (can('admin') ? ' <button class="btn sm" id="oUnlock">ปลดล็อก</button>' : '') : '<span class="tag">ฉบับร่าง</span>') + '</div>' +
+    (locked ? '<span class="tag ok">ล็อกแล้ว · ' + esc(d.claim.locked_by || '') + '</span>' + (can('curriculum') ? ' <button class="btn sm" id="oUnlock">ปลดล็อก</button>' : '') : '<span class="tag">ฉบับร่าง</span>') + '</div>' +
     (String(t.ot_enabled) !== 'true' ? '<p class="tag bad">ครูคนนี้ยังไม่เปิดสิทธิ์เบิก — ผู้ดูแลตั้งที่เมนู กำหนดแบบการเบิกให้ครู</p>' : '') +
     (!d.schemes.length ? '<p class="tag bad">ยังไม่ได้กำหนดแบบการเบิกให้ครูคนนี้</p>' :
       '<div class="row" style="margin-top:10px"><label class="small">แบบการเบิก</label><select id="oS" style="width:auto"' + (canEdit ? '' : ' disabled') + '>' + d.schemes.map(function (s) {
@@ -179,7 +179,7 @@ function renderClaim() {
     (total.err ? '<span class="tag bad">ยังผิดกติกา ' + total.err + ' ข้อ</span>' : '<span class="tag ok">ผ่านกติกา</span>') +
     (canEdit ? '<button class="btn sm" id="oAuto">เลือกอัตโนมัติทุกสัปดาห์</button><button class="btn sm" id="oSave">บันทึก</button><button class="btn pri sm" id="oLock">ยืนยันและล็อกการเบิก</button>' : '') +
     '<button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div>' +
-    '<div class="small muted" style="margin-top:6px">คลิกชั่วโมงเพื่อสลับ: ไม่ใช้ → <span class="tag ok">ภาระ</span> → <span class="tag">เบิก</span> · สีเทา = ห้ามเบิก · ขีดฆ่า = ลา/ไปราชการ/หยุด (ภาระไม่ลดลง) · ⚠ = สอนชดเชยรอรายงาน</div></div>' +
+    '<div class="small muted" style="margin-top:6px">คลิกชั่วโมงเพื่อสลับ: ไม่ใช้ → <span class="tag ok">ภาระ</span> → <span class="tag">เบิก</span> · สีเทา = ห้ามเบิก · ขีดฆ่า = ลา/ไปราชการ/หยุด (ภาระไม่ลดลง) · ⚠ = สอนชดเชยรอรายงาน · ชดเชย ✓ = รายงานผลแล้ว นับชั่วโมงที่คาบเดิม</div></div>' +
     absenceCard(d, canEdit) + weeksHtml + '</div>' + claimPrintHtml(d, sch, evaluated);
   if ($('#oS')) $('#oS').onchange = function () { OT.scheme = this.value; renderClaim(); };
   if ($('#oAuto')) $('#oAuto').onclick = function () { d.weeks.forEach(function (w) { OT.sel[w.index] = Ot.autoSelect(w.items, schemeObj(), d.cap); }); renderClaim(); };
@@ -212,9 +212,9 @@ function weekHtml(w, r, canEdit) {
         var bg = it.blocked ? '#eceef3' : it.absent ? '#fde8e8' : v === 'L' ? '#dff5e3' : v === 'C' ? '#2457d6' : '#fff';
         var fg = v === 'C' && !it.blocked && !it.absent ? '#fff' : '#1d2433';
         var c = courseOf(it.course_id);
-        var tip = c.code + ' ' + c.name + ' · ' + groupCode(it.group_id) + ' · ' + LV[it.level] + (it.blocked ? ' · ' + it.blocked : '') + (it.absent ? ' · ' + it.absent : '') + (it.sub ? ' · ' + (it.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย') : '') + (it.pending ? ' · ' + it.pending : '');
+        var tip = c.code + ' ' + c.name + ' · ' + groupCode(it.group_id) + ' · ' + LV[it.level] + (it.blocked ? ' · ' + it.blocked : '') + (it.absent ? ' · ' + it.absent : '') + (it.sub ? ' · ' + (it.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย') : '') + (it.pending ? ' · ' + it.pending : '') + (it.made_up ? ' · สอนชดเชยแล้ว ' + thDate(it.made_up) + ' (รายงานผลแล้ว) นับชั่วโมงที่คาบนี้' : '');
         return '<div class="ss" data-w="' + w.index + '" data-key="' + esc(it.key) + '" title="' + esc(tip) + '" style="min-height:40px;cursor:' + (canEdit && !it.blocked && !it.absent ? 'pointer' : 'default') + ';background:' + bg + ';color:' + fg + ';border:1px solid #cfd5e2;' + (it.absent ? 'text-decoration:line-through;' : '') + '">' +
-          '<b>' + esc(c.code) + '</b><span>' + esc(groupCode(it.group_id)) + (it.sub ? ' · ' + (it.sub === 'sub' ? 'แทน' : 'ชดเชย') : '') + (it.pending ? ' ⚠' : '') + '</span></div>';
+          '<b>' + esc(c.code) + '</b><span>' + esc(groupCode(it.group_id)) + (it.sub ? ' · ' + (it.sub === 'sub' ? 'แทน' : 'ชดเชย') : '') + (it.made_up ? ' · ชดเชย ✓' : '') + (it.pending ? ' ⚠' : '') + '</span></div>';
       }).join('') + '</td>';
     }
     h += '</tr>';
@@ -227,7 +227,7 @@ function weekHtml(w, r, canEdit) {
   if (phKeys.length) h += '<div class="small" style="margin-top:6px"><b>เบิกรายหัว</b> (นักเรียนน้อยกว่าเกณฑ์): ' + phKeys.map(function (k) {
     var it = phCands[k], rule = Ot.perHeadRule(it, OT.data.perHead, IDX.Courses[it.course_id]);
     return '<label class="row" style="display:inline-flex;gap:4px;margin-right:12px"><input type="checkbox" style="width:auto" data-ph="' + w.index + '" data-phk="' + esc(k) + '"' + ((OT.ph[w.index] || {})[k] ? ' checked' : '') + (canEdit ? '' : ' disabled') + '>' +
-      esc(courseOf(it.course_id).code + ' ' + groupCode(it.group_id)) + ' (' + it.students + ' คน × ' + rule.rate_per_head + ' บ./ชม.)</label>';
+      esc(courseOf(it.course_id).code + ' ' + groupCode(it.group_id)) + ' (' + it.students + ' คน · ' + rule.rate_per_head + ' บ./ชม. ทั้งกลุ่ม)</label>';
   }).join('') + '</div>';
   // สรุป
   var sch = schemeObj();
@@ -301,7 +301,7 @@ function bindAbsence() {
 VIEWS['ot-subs'] = function (el) {
   if (!(S.D.OtRounds || []).length) { el.innerHTML = '<div class="card">ยังไม่มีรอบการเบิก</div>'; return; }
   el.innerHTML = '<div class="card"><div class="row"><select id="sbR" style="width:auto">' + roundOptions() + '</select><span class="grow"></span>' +
-    (can('dept') ? '<div class="sb-add"><button class="btn pri sm" id="sbAdd" aria-haspopup="true" aria-expanded="false">+ บันทึกสอนแทน / สอนชดเชย ▾</button><div class="umenu" id="sbMenu">' +
+    (can('dept') || S.me.teacher_id ? '<div class="sb-add"><button class="btn pri sm" id="sbAdd" aria-haspopup="true" aria-expanded="false">+ บันทึกสอนแทน / สอนชดเชย ▾</button><div class="umenu" id="sbMenu">' +
       '<a href="javascript:void 0" data-sb-type="sub">🔁 สอนแทน<small>ครูคนอื่นสอนแทนในวันเดิม</small></a><a href="javascript:void 0" data-sb-type="makeup">📅 สอนชดเชย<small>ครูคนเดิมสอนในวันอื่น</small></a></div></div>' : '') + '</div>' +
     '<div class="small muted" style="margin-top:8px;line-height:1.7">ระเบียบข้อ 8: ครูผู้สอนแทนเบิกชั่วโมงนั้นได้ โดยรวมกับชั่วโมงเบิกปกติแล้วไม่เกิน 12 ชม./สัปดาห์ และไม่เกินสิทธิ์ของครูผู้สอนเดิม · สอนชดเชยกรณีไปราชการ ต้องแนบรายงานผลการสอนภายใน 7 วัน มิฉะนั้นเบิกชั่วโมงนั้นไม่ได้ · ข้อ 6: วิชาฝึกงาน/ทวิภาคี ห้ามสอนชดเชยหรือสอนแทน</div></div><div id="sbList"></div>';
   $('#sbR').onchange = function () { OT.round = this.value; listSubs(); };
@@ -315,29 +315,44 @@ VIEWS['ot-subs'] = function (el) {
   listSubs();
 };
 
+// ใบขออนุญาตและรายงานต้องอ้างอิงรายการชุดเดียวกัน
+function subDocumentRows(rows, selected) {
+  if (!selected) return [];
+  return rows.filter(function (r) {
+    return r.status !== 'cancelled' && r.status !== 'deleted' &&
+      r.type === selected.type && String(r.round_id || '') === String(selected.round_id || '') &&
+      String(r.original_teacher_id) === String(selected.original_teacher_id) &&
+      String(r.teacher_id) === String(selected.teacher_id) &&
+      String(r.reason || '') === String(selected.reason || '') && String(r.note || '') === String(selected.note || '');
+  }).sort(function (a, b) {
+    return String(a.original_date || '').localeCompare(String(b.original_date || '')) ||
+      String(a.date || '').localeCompare(String(b.date || '')) || Number(a.start) - Number(b.start) || String(a.id).localeCompare(String(b.id));
+  });
+}
+
 function listSubs() {
   api('otListSubs', S.token, OT.round).then(function (rows) {
     var today = new Date().toISOString().slice(0, 10);
-    rows = rows.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    rows = rows.filter(function (r) { return r.status !== 'cancelled' && r.status !== 'deleted'; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     $('#sbList').innerHTML = '<div class="card"><div class="tablewrap"><table class="data"><thead><tr><th>ประเภท</th><th>ครูผู้สอนเดิม</th><th>ผู้สอน</th><th>วิชา / กลุ่ม</th><th>คาบเดิม</th><th>สอนจริง</th><th>รายงานผล</th><th></th></tr></thead><tbody>' +
       (rows.map(function (r) {
         var c = courseOf(r.course_id), cancelled = r.status === 'cancelled';
-        var rep = r.type !== 'makeup' ? '—' : String(r.report_done) === 'true' ? '<span class="tag ok">แนบแล้ว</span>' + (r.report_link ? ' <a href="' + esc(r.report_link) + '" target="_blank">ดู</a>' : '')
+        var rep = r.type !== 'makeup' ? '—' : String(r.report_done) === 'true' ? (r.report_doc ? '<span class="tag ok">รายงานในระบบแล้ว</span>' : '<span class="tag ok">แนบแล้ว</span>') + (r.report_link ? ' <a href="' + esc(r.report_link) + '" target="_blank" rel="noopener">ดู</a>' : '')
           : '<span class="tag ' + (today > r.report_due ? 'bad' : 'warn') + '">ครบกำหนด ' + thDate(r.report_due) + (today > r.report_due ? ' (เลยกำหนด)' : '') + '</span>';
         return '<tr' + (cancelled ? ' style="opacity:.45;text-decoration:line-through"' : '') + '><td>' + (r.type === 'sub' ? 'สอนแทน' : 'สอนชดเชย') + '<br><span class="small muted">' + esc(r.reason) + '</span></td><td>' + esc(nm('Teachers', r.original_teacher_id)) + '</td><td>' + esc(nm('Teachers', r.teacher_id)) +
           '</td><td>' + esc(c.code) + ' ' + esc(groupCode(r.group_id)) + '</td><td>' + thDate(r.original_date) + '</td><td>' + thDate(r.date) + ' คาบ ' + Grid.periodRange(S.settings, r.start, r.length) + '</td><td>' + rep + '</td><td style="white-space:nowrap">' +
-          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled && can('dept') ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' + (r.type === 'makeup' && String(r.report_done) !== 'true' ? '<button class="btn sm" data-send-report="' + esc(r.id) + '">บันทึกส่งรายงาน</button> ' : '') + '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
+          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' : '') + (!cancelled && (can('dept') || String(r.original_teacher_id) === String(S.me.teacher_id)) ? '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
       }).join('') || '<tr><td colspan="8" class="muted">ไม่มีรายการ</td></tr>') + '</tbody></table></div></div>';
     // ใบขออนุญาตรวมทุกรายการสอนชดเชยของครูคนเดียวกันที่มีเหตุผลเดียวกัน
     $$('[data-req]').forEach(function (b) { b.onclick = function () {
       var r = rows.filter(function (x) { return String(x.id) === b.dataset.req; })[0];
-      makeupRequestForm(rows.filter(function (x) { return x.type === 'makeup' && x.status !== 'cancelled' && String(x.original_teacher_id) === String(r.original_teacher_id) && x.reason === r.reason && x.note === r.note; }));
+      if (r) makeupRequestForm(subDocumentRows(rows, r));
     }; });
     $$('[data-rep]').forEach(function (b) { b.onclick = function () {
       var r = rows.filter(function (x) { return String(x.id) === b.dataset.rep; })[0];
-      if (r) subTeachingReportForm([r]);
+      // รายงานรวมทุกวิชาของชุดเดียวกัน: บันทึกข้อความใบเดียว ภาพและเนื้อหาแยกหน้าตามรายวิชา
+      if (r) subTeachingReportForm(subDocumentRows(rows, r));
     }; });
-    $$('[data-send-report]').forEach(function (b) { b.onclick = function () { var l = prompt('ลิงก์ไฟล์รายงานผลการสอนชดเชย (Google Drive) — หรือเว้นว่างถ้ายื่นเป็นเอกสาร'); if (l === null) return; api('otSubReport', S.token, b.dataset.sendReport, l, true).then(listSubs); }; });
     $$('[data-cx]').forEach(function (b) { b.onclick = function () { if (confirm('ยกเลิกรายการนี้?')) api('otCancelSub', S.token, b.dataset.cx).then(listSubs); }; });
   });
 }
@@ -372,6 +387,11 @@ function subModal(kind) {
     var o = $('#sbS').selectedOptions[0]; if (o && o.dataset.len) $('#sbL').value = o.dataset.len;
   }
   $('#sbO').onchange = fillSessions; $('#sbOD').onchange = fillSessions;
+  // ครูทำรายการได้เฉพาะคาบของตนเอง
+  if (!can('dept')) {
+    $('#sbO').value = S.me.teacher_id; $('#sbO').disabled = true;
+    var selfOption = $('#sbBy option[value="' + String(S.me.teacher_id).replace(/["\\]/g, '\\$&') + '"]'); if (selfOption) selfOption.remove();
+  }
   $('#sbS').onchange = function () { var o = this.selectedOptions[0]; if (o && o.dataset.len) $('#sbL').value = o.dataset.len; };
   $('#sbGo').onclick = function () {
     var rec = { round_id: OT.round, type: type(), reason: $('#sbWhy').value, original_teacher_id: $('#sbO').value, original_date: $('#sbOD').value, session_id: $('#sbS').value,
@@ -389,10 +409,10 @@ function subModal(kind) {
 /* ---------- สรุปเสนอเบิก ---------- */
 VIEWS['ot-summary'] = function (el) {
   if (!(S.D.OtRounds || []).length) { el.innerHTML = '<div class="card">ยังไม่มีรอบการเบิก</div>'; return; }
-  var dept = OT.summaryDept || S.me.department_id || (can('admin') ? '__all' : (S.D.Departments[0] || {}).id);
-  if (!can('admin')) dept = S.me.department_id;
+  var dept = OT.summaryDept || S.me.department_id || (can('curriculum') ? '__all' : (S.D.Departments[0] || {}).id);
+  if (!can('curriculum')) dept = S.me.department_id;
   var all = dept === '__all';
-  el.innerHTML = '<div class="card no-print"><div class="row"><select id="smR" style="width:auto">' + roundOptions() + '</select><select id="smD" style="width:auto">' + (can('admin') ? '<option value="__all"' + (all ? ' selected' : '') + '>ทุกแผนกวิชา</option>' : '') + deptOptions(dept, '— เลือกแผนก —') + '</select>' +
+  el.innerHTML = '<div class="card no-print"><div class="row"><select id="smR" style="width:auto">' + roundOptions() + '</select><select id="smD" style="width:auto">' + (can('curriculum') ? '<option value="__all"' + (all ? ' selected' : '') + '>ทุกแผนกวิชา</option>' : '') + deptOptions(dept, '— เลือกแผนก —') + '</select>' +
     '<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / PDF</button><span id="smAct"></span></div></div><div id="smOut" class="muted">กำลังโหลด…</div>';
   $('#smR').onchange = function () { OT.round = this.value; VIEWS['ot-summary'](el); };
   $('#smD').onchange = function () { OT.summaryDept = this.value; VIEWS['ot-summary'](el); };
@@ -415,8 +435,8 @@ VIEWS['ot-summary'] = function (el) {
       '<div class="signs">' + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + (all ? '' : sign(head && head.name, 'หัวหน้าแผนกวิชา' + esc(deptName(dept)))) + '</div>' +
       '<div class="signs">' + sign(s.signer_deputy, 'ผู้รับรอง<br>รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_finance, 'ผู้รับรอง<br>หัวหน้างานการเงิน') + sign(s.signer_admin_deputy, 'ผู้รับรอง<br>รองผู้อำนวยการฝ่ายบริหารทรัพยากร') + '</div>' +
       '<div class="signs">' + sign(s.signer_director, 'ผู้อนุมัติ<br>ผู้อำนวยการวิทยาลัย') + '</div></div>';
-    if (can('admin') && all) $('#smAct').innerHTML = '<span class="small muted">เลือกแผนกวิชาเพื่อบันทึกเสนอเบิก</span>';
-    if (can('admin') && !all) {
+    if (can('curriculum') && all) $('#smAct').innerHTML = '<span class="small muted">เลือกแผนกวิชาเพื่อบันทึกเสนอเบิก</span>';
+    if (can('curriculum') && !all) {
       $('#smAct').innerHTML = r.submission ? '<button class="btn bad" id="smCancel">ยกเลิกการเสนอเบิก</button>' : '<button class="btn" id="smSubmit">บันทึกเสนอเบิก</button>';
       if ($('#smSubmit')) $('#smSubmit').onclick = function () { var note = prompt('หมายเหตุ (เช่น เลขที่หนังสือ)', ''); if (note === null) return; api('otSubmit', S.token, OT.round, dept, note, false).then(function () { VIEWS['ot-summary'](el); }); };
       if ($('#smCancel')) $('#smCancel').onclick = function () { if (confirm('ยกเลิกการเสนอเบิก เพื่อส่งกลับให้แก้ไข?')) api('otSubmit', S.token, OT.round, dept, '', true).then(function () { VIEWS['ot-summary'](el); }); };

@@ -2,11 +2,23 @@
 /** API ค่าสอนเกินภาระงาน */
 
 function assert_ot_teacher(array $me, $teacherId): void {
-  if ($me['role'] === 'admin') return;
+  if (is_academic_manager($me)) return;
   $t = idx_table('Teachers')[str($teacherId)] ?? null;
   if ($me['role'] === 'dept' && $t && (string)$t['department_id'] === (string)$me['department_id']) return;
   if ($me['role'] === 'teacher' && (string)$me['teacher_id'] === str($teacherId)) throw new Exception('ครูดูใบเบิกของตัวเองได้ แต่แก้ไขต้องให้ตัวแทนแผนก');
   throw new Exception('จัดการได้เฉพาะครูในแผนกของตัวเอง');
+}
+
+/** สอนแทน/สอนชดเชย: ครูทำรายการได้เฉพาะคาบของตนเอง จึงเพิ่มชั่วโมงเบิกให้ตัวเองจากคาบของครูอื่นไม่ได้ */
+function assert_ot_sub_owner(array $me, $originalTeacherId): void {
+  if ($me['role'] !== 'teacher') { assert_ot_teacher($me, $originalTeacherId); return; }
+  if (!js_true($me['teacher_id'] ?? '') || (string)$me['teacher_id'] !== str($originalTeacherId)) throw new Exception('ครูทำรายการได้เฉพาะคาบสอนของตนเอง');
+}
+
+/** ใบเบิกที่ล็อกแล้วอ้างอิงรายการนี้อยู่ ครูจึงแก้ไม่ได้ ต้องให้วิชาการแผนกหรือผู้ดูแลจัดการ */
+function assert_ot_sub_claims_open(array $me, $roundId, array $teacherIds): void {
+  if ($me['role'] !== 'teacher') return;
+  foreach ($teacherIds as $tid) assert_claim_open($roundId, $tid);
 }
 
 function ot_claim_row($roundId, $teacherId): ?array {
@@ -26,7 +38,7 @@ function ot_ctx(array $round): array {
     'groups' => idx_table('Groups'), 'courses' => idx_table('Courses'),
     'absences' => array_values(array_filter(readTable('OtAbsences'), fn($a) => (string)$a['round_id'] === (string)$round['id'])),
     'blocked' => array_values(array_filter(readTable('OtBlocked'), fn($b) => $b['round_id'] === '' || (string)$b['round_id'] === (string)$round['id'])),
-    'subs' => array_values(array_filter(readTable('OtSubs'), fn($r) => (string)$r['round_id'] === (string)$round['id'])),
+    'subs' => ot_subs_with_reports(array_values(array_filter(readTable('OtSubs'), fn($r) => (string)$r['round_id'] === (string)$round['id']))),
     'perHead' => readTable('OtPerHead'),
     'schemes' => array_map('ot_scheme', readTable('OtSchemes')),
   ];
@@ -159,7 +171,7 @@ function api_otSaveClaim($token = '', $roundId = '', $teacherId = '', $payload =
 }
 
 function api_otUnlockClaim($token = '', $roundId = '', $teacherId = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   return with_lock(function () use ($me, $roundId, $teacherId) {
     $t = idx_table('Teachers')[str($teacherId)] ?? null;
     foreach (readTable('OtSubmissions') as $s) {
@@ -183,16 +195,19 @@ function api_otUnlockClaim($token = '', $roundId = '', $teacherId = '') {
  * - สอนชดเชยกรณีไปราชการ: ต้องแนบรายงานผลการสอนภายใน 7 วัน
  */
 function api_otSaveSub($token = '', $rec = []) {
-  $me = auth_user($token, 'dept');
+  $me = auth_user($token);
   $rec = (array)$rec;
   $recId = $rec['id'] ?? '';
   if (js_true($recId)) {
     $all = readTable('OtSubs');
     $i0 = find_row($all, $recId);
-    if ($i0 !== null) assert_ot_teacher($me, $all[$i0]['original_teacher_id']); // ตรวจจากแถวเดิมก่อนเขียนทับ
+    if ($i0 !== null) {
+      assert_ot_sub_owner($me, $all[$i0]['original_teacher_id']); // ตรวจจากแถวเดิมก่อนเขียนทับ
+      assert_ot_sub_claims_open($me, $all[$i0]['round_id'], [$all[$i0]['original_teacher_id'], $all[$i0]['teacher_id']]);
+    }
   }
   $origId = $rec['original_teacher_id'] ?? '';
-  assert_ot_teacher($me, $origId);
+  assert_ot_sub_owner($me, $origId);
   return with_lock(function () use ($me, $rec, $recId, $origId) {
     $round = idx_table('OtRounds')[str($rec['round_id'] ?? '')] ?? null;
     if (!$round) throw new Exception('ไม่พบรอบการเบิก');
@@ -209,6 +224,7 @@ function api_otSaveSub($token = '', $rec = []) {
     $teacherId = $type === 'makeup' ? $origId : ($rec['teacher_id'] ?? '');
     if (!js_true($teacherId)) throw new Exception('เลือกครูผู้สอนแทน');
     if ($type === 'sub' && str($teacherId) === str($origId)) throw new Exception('ครูผู้สอนแทนต้องไม่ใช่คนเดิม');
+    assert_ot_sub_claims_open($me, $round['id'], [$origId, $teacherId]);
     $date = substr(str($type === 'makeup' ? ($rec['date'] ?? '') : $od), 0, 10);
     $start = $type === 'makeup' ? num($rec['start'] ?? 0) : num(js_true($rec['start'] ?? '') ? $rec['start'] : $s['start']);
     $length = num(js_true($rec['length'] ?? '') ? $rec['length'] : $s['length']);
@@ -236,7 +252,8 @@ function api_otSaveSub($token = '', $rec = []) {
       }
       $origLeft = $origCap - $usedIn($orig['id']); $subLeft = $subCap - $usedIn($subT['id']) - $otherSubs;
       if ($length > $origLeft) $warnings[] = 'สิทธิ์คงเหลือของครูผู้สอนเดิมในสัปดาห์นี้ ' . max(0, $origLeft) . ' ชม. — เบิกสอนแทนได้ไม่เกินนี้';
-      if ($length > $subLeft) $warnings[] = 'ครูผู้สอนแทนมีสิทธิ์คงเหลือ ' . max(0, $subLeft) . ' ชม. (รวมแล้วต้องไม่เกิน ' . $subCap . ' ชม./สัปดาห์)';
+      // ครูไม่ควรเห็นตัวเลขสิทธิ์เบิกของครูคนอื่น
+      if ($length > $subLeft) $warnings[] = $me['role'] === 'teacher' ? 'ชั่วโมงนี้เกินสิทธิ์คงเหลือของครูผู้สอนแทน กรุณาตรวจสอบกับวิชาการแผนก' : 'ครูผู้สอนแทนมีสิทธิ์คงเหลือ ' . max(0, $subLeft) . ' ชม. (รวมแล้วต้องไม่เกิน ' . $subCap . ' ชม./สัปดาห์)';
     }
     $days = num(readSettings()['ot_makeup_report_days'] ?? 7) ?: 7;
     $due = '';
@@ -260,12 +277,12 @@ function api_otSaveSub($token = '', $rec = []) {
 }
 
 function api_otSubReport($token = '', $id = '', $link = '', $done = true) {
-  $me = auth_user($token, 'dept');
+  $me = auth_user($token);
   return with_lock(function () use ($me, $id, $link, $done) {
     $rows = readTable('OtSubs');
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายการ');
-    assert_ot_teacher($me, $rows[$i]['original_teacher_id']);
+    assert_ot_sub_owner($me, $rows[$i]['original_teacher_id']);
     $rows[$i]['report_link'] = js_true($link) ? $link : $rows[$i]['report_link'];
     $rows[$i]['report_done'] = $done !== false;
     writeTable('OtSubs', $rows);
@@ -274,12 +291,13 @@ function api_otSubReport($token = '', $id = '', $link = '', $done = true) {
 }
 
 function api_otCancelSub($token = '', $id = '') {
-  $me = auth_user($token, 'dept');
+  $me = auth_user($token);
   return with_lock(function () use ($me, $id) {
     $rows = readTable('OtSubs');
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายการ');
-    assert_ot_teacher($me, $rows[$i]['original_teacher_id']);
+    assert_ot_sub_owner($me, $rows[$i]['original_teacher_id']);
+    assert_ot_sub_claims_open($me, $rows[$i]['round_id'], [$rows[$i]['original_teacher_id'], $rows[$i]['teacher_id']]);
     $rows[$i]['status'] = 'cancelled';
     writeTable('OtSubs', $rows);
     return true;
@@ -289,12 +307,12 @@ function api_otCancelSub($token = '', $id = '') {
 function api_otListSubs($token = '', $roundId = '') {
   $me = auth_user($token);
   $t = idx_table('Teachers');
-  return array_values(array_filter(readTable('OtSubs'), function ($r) use ($me, $t, $roundId) {
+  return ot_subs_with_reports(array_values(array_filter(readTable('OtSubs'), function ($r) use ($me, $t, $roundId) {
     if ((string)$r['round_id'] !== str($roundId)) return false;
-    if ($me['role'] === 'admin') return true;
+    if (is_academic_manager($me)) return true;
     if ($me['role'] === 'dept') return isset($t[$r['original_teacher_id']]) && (string)$t[$r['original_teacher_id']]['department_id'] === (string)$me['department_id'];
     return (string)$r['teacher_id'] === (string)$me['teacher_id'] || (string)$r['original_teacher_id'] === (string)$me['teacher_id'];
-  }));
+  })));
 }
 
 /** การแจ้งเตือน: สอนชดเชยที่ยังไม่แนบรายงาน / เลยกำหนด */
@@ -302,12 +320,13 @@ function api_otAlerts($token = '') {
   $me = auth_user($token);
   $today = date('Y-m-d');
   $t = idx_table('Teachers');
+  $courses = idx_table('Courses'); $groups = idx_table('Groups');
   $out = [];
-  foreach (readTable('OtSubs') as $r) {
-    if ($r['type'] !== 'makeup' || (string)$r['report_done'] === 'true' || $r['status'] === 'cancelled') continue;
+  foreach (ot_subs_with_reports(readTable('OtSubs')) as $r) {
+    if ($r['type'] !== 'makeup' || (string)$r['report_done'] === 'true' || in_array($r['status'], ['cancelled', 'deleted'], true)) continue;
     if ($me['role'] === 'dept' && !(isset($t[$r['original_teacher_id']]) && (string)$t[$r['original_teacher_id']]['department_id'] === (string)$me['department_id'])) continue;
     if ($me['role'] === 'teacher' && (string)$r['original_teacher_id'] !== (string)$me['teacher_id']) continue;
-    $out[] = ['id' => $r['id'], 'teacher' => $t[$r['original_teacher_id']]['name'] ?? null, 'date' => $r['date'], 'due' => $r['report_due'], 'overdue' => $r['report_due'] !== '' ? $today > $r['report_due'] : ''];
+    $out[] = ['id' => $r['id'], 'teacher' => $t[$r['original_teacher_id']]['name'] ?? null, 'course' => trim(($courses[$r['course_id']]['code'] ?? '') . ' ' . ($groups[$r['group_id']]['code'] ?? '')), 'round_id' => $r['round_id'], 'date' => $r['date'], 'due' => $r['report_due'], 'overdue' => $r['report_due'] !== '' ? $today > $r['report_due'] : ''];
   }
   return $out;
 }
@@ -364,7 +383,7 @@ function api_otDeptSummary($token = '', $roundId = '', $deptId = '') {
 }
 
 function api_otSubmit($token = '', $roundId = '', $deptId = '', $note = '', $cancel = false) {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   if (str($deptId) === '__all' || !isset(idx_table('Departments')[str($deptId)])) throw new Exception('กรุณาเลือกแผนกวิชาเพื่อบันทึกเสนอเบิก');
   return with_lock(function () use ($me, $roundId, $deptId, $note, $cancel) {
     $rows = readTable('OtSubmissions');
@@ -387,7 +406,7 @@ function api_otSubmit($token = '', $roundId = '', $deptId = '', $note = '', $can
 
 /** แนะนำแบบการเบิกตามตำแหน่ง/หน้าที่/ระดับที่สอน (ผู้ดูแลตรวจก่อนบันทึก) */
 function api_otSuggestSchemes($token = '', $semesterId = '', $apply = false) {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   $schemes = readTable('OtSchemes');
   $sessions = sem_sessions($semesterId);
   $groups = idx_table('Groups');

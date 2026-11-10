@@ -26,7 +26,7 @@ const SCHEMA = [
   'Windows'      => ['id', 'semester_id', 'department_id', 'start_date', 'end_date', 'sort'],
   // คาบ PLC: ไม่ระบุ teacher_id = ทั้งแผนก, ระบุ teacher_id = เฉพาะครูคนนั้น และใช้แทนคาบของแผนก
   'PlcSlots'     => ['id', 'department_id', 'teacher_id', 'day', 'start', 'length'],
-  'users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active', 'avatar'],
+  'users'        => ['id', 'username', 'name', 'role', 'department_id', 'teacher_id', 'email', 'salt', 'pass_hash', 'active', 'avatar', 'menu_perms'],
   'ColorGroups'  => ['id', 'category', 'name', 'color', 'items', 'sort'],
   'IssueReports' => ['id', 'title', 'category', 'detail', 'status', 'reply', 'replied_by', 'reporter_id', 'reporter_name', 'created_at', 'updated_at'],
   'Log'          => ['time', 'user', 'action', 'detail'],
@@ -47,15 +47,17 @@ const SCHEMA = [
                      'group_ids', 'media', 'evaluation', 'assignment', 'attendance', 'images', 'memo_no', 'memo_date', 'memo_reason'],
   // ---- นิเทศออนไลน์: วิชาที่สอนในสถานประกอบการ (unit_key = J:รหัสเรียนร่วม หรือ P:รหัสแผน) ----
   'SupervisionVisits' => ['id', 'semester_id', 'unit_key', 'company_name', 'visit_date', 'visit_type', 'meeting_link', 'topic', 'findings', 'suggestions', 'score', 'evidence_link',
-                     'next_visit_date', 'status', 'created_by', 'created_at'],
+                     'next_visit_date', 'status', 'created_by', 'created_at', 'images'],
+  // ---- เอกสารสอนแทน/สอนชดเชยที่บันทึกเก็บไว้ (kind = makeup_request | sub_report) ----
+  'SubDocs'      => ['id', 'kind', 'sub_ids', 'round_id', 'original_teacher_id', 'teacher_id', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
 ];
 
 // ตารางที่แก้ไขผ่านหน้าจัดการข้อมูลได้ และสิทธิ์ที่ต้องมี
 const EDITABLE = [
-  'Semesters' => 'admin', 'Departments' => 'admin', 'Majors' => 'admin', 'Teachers' => 'admin',
-  'Buildings' => 'admin', 'Rooms' => 'admin', 'Courses' => 'admin', 'Groups' => 'admin',
-  'Plans' => 'dept', 'LockedSlots' => 'admin', 'Windows' => 'admin', 'PlcSlots' => 'dept', 'ColorGroups' => 'admin',
-  'OtSchemes' => 'admin', 'OtPerHead' => 'admin', 'OtRounds' => 'admin', 'OtBlocked' => 'admin', 'OtAbsences' => 'dept',
+  'Semesters' => 'curriculum', 'Departments' => 'curriculum', 'Majors' => 'curriculum', 'Teachers' => 'curriculum',
+  'Buildings' => 'curriculum', 'Rooms' => 'curriculum', 'Courses' => 'curriculum', 'Groups' => 'curriculum',
+  'Plans' => 'dept', 'LockedSlots' => 'curriculum', 'Windows' => 'curriculum', 'PlcSlots' => 'dept', 'ColorGroups' => 'curriculum',
+  'OtSchemes' => 'curriculum', 'OtPerHead' => 'curriculum', 'OtRounds' => 'curriculum', 'OtBlocked' => 'curriculum', 'OtAbsences' => 'dept',
 ];
 
 const DEFAULT_SETTINGS = [
@@ -120,7 +122,7 @@ function db(): PDO {
 }
 function q(string $n): string { return '`' . str_replace('`', '', $n) . '`'; }
 
-function col_type(string $c): string { return preg_match('/^(id|key|[a-z_]*_id)$/', $c) ? 'VARCHAR(64) NULL' : 'TEXT NULL'; }
+function col_type(string $c): string { if ($c === 'html') return 'MEDIUMTEXT NULL'; return preg_match('/^(id|key|[a-z_]*_id)$/', $c) ? 'VARCHAR(64) NULL' : 'TEXT NULL'; }
 function pk_of(array $cols): ?string { return in_array('id', $cols, true) ? 'id' : (in_array('key', $cols, true) ? 'key' : null); }
 
 function create_table_sql(string $name, array $cols): string {

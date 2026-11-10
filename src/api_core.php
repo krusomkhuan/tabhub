@@ -24,15 +24,39 @@ function verify_password(string $pw, $salt, $stored): array {
 
 function pw_text($pw): string { return ($pw === null || is_array($pw)) ? '' : (is_bool($pw) ? ($pw ? 'true' : 'false') : (string)$pw); }
 
+require_once __DIR__ . '/permissions.php';
+
 // ======================= ผู้ใช้และสิทธิ์ =======================
+const USER_ROLES = ['teacher' => 1, 'dept' => 2, 'curriculum' => 3, 'admin' => 4];
+
+function is_academic_manager(array $me): bool { return in_array($me['role'] ?? '', ['admin', 'curriculum'], true); }
+
+function session_user(array $u): array {
+  return array_intersect_key($u, array_flip(['id', 'username', 'name', 'role', 'department_id', 'teacher_id']));
+}
+
+function assert_active_admin(array $users): void {
+  foreach ($users as $u) if (($u['role'] ?? '') === 'admin' && (string)($u['active'] ?? '') !== 'false' && ($u['active'] ?? true) !== false) return;
+  throw new Exception('ต้องมีบัญชีผู้ดูแลระบบที่เปิดใช้งานอย่างน้อย 1 บัญชี');
+}
+
 function auth_user($token, ?string $need = null): array {
   $raw = (is_string($token) && $token !== '') ? kvGet('cache:tok_' . $token) : null;
   if (!$raw) throw new Exception('SESSION_EXPIRED');
   $u = json_decode($raw, true);
-  kvPut('cache:tok_' . $token, $raw, 21600); // ต่ออายุ
-  $rank = ['teacher' => 1, 'dept' => 2, 'admin' => 3];
-  if ($need && ($rank[$u['role'] ?? ''] ?? 0) < ($rank[$need] ?? 99)) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
-  return normalize_row_names('users', $u);
+  $users = readTable('users');
+  $i = find_row($users, str($u['id'] ?? ''));
+  if ($i === null || (string)($users[$i]['active'] ?? '') === 'false' || ($users[$i]['active'] ?? true) === false) {
+    kvDel('cache:tok_' . $token); throw new Exception('SESSION_EXPIRED');
+  }
+  $u = session_user($users[$i]); // สิทธิ์และแผนกปัจจุบัน ไม่ใช้สิทธิ์เก่าจาก token
+  if (!isset(USER_ROLES[$u['role'] ?? ''])) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
+  kvPut('cache:tok_' . $token, json_encode($u, JSON_UNESCAPED_UNICODE), 21600);
+  $menus = perm_effective($users[$i]);
+  $base = $u['role'];
+  $u = perm_apply_request($u, $menus);
+  if ($need && USER_ROLES[$u['role']] < (USER_ROLES[$need] ?? 99)) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
+  return normalize_row_names('users', $u) + ['base_role' => $base, 'menus' => $menus];
 }
 
 function api_login($username = '', $password = '') {
@@ -51,7 +75,8 @@ function api_login($username = '', $password = '') {
     writeTable('users', $users);
   }
   $token = uuid();
-  $info = ['id' => $u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'], 'department_id' => $u['department_id'], 'teacher_id' => $u['teacher_id']];
+  if (!isset(USER_ROLES[$u['role'] ?? ''])) throw new Exception('บัญชีนี้ยังไม่ได้กำหนดสิทธิ์ที่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ');
+  $info = session_user($u);
   kvPut('cache:tok_' . $token, json_encode($info, JSON_UNESCAPED_UNICODE), 21600);
   log_action($info, 'login', '');
   return ['token' => $token, 'user' => $info];
@@ -133,7 +158,7 @@ function api_listUsers($token = '') {
   auth_user($token, 'admin');
   return array_map(fn($u) => [
     'id' => $u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'], 'department_id' => $u['department_id'],
-    'teacher_id' => $u['teacher_id'], 'email' => $u['email'], 'active' => $u['active'], 'has_password' => $u['pass_hash'] !== '',
+    'teacher_id' => $u['teacher_id'], 'email' => $u['email'], 'active' => $u['active'], 'has_password' => $u['pass_hash'] !== '', 'menu_perms' => perm_parse($u['menu_perms'] ?? ''),
   ], readTable('users'));
 }
 
@@ -156,6 +181,15 @@ function api_saveUser($token = '', $data = []) {
     $u['username'] = $uname; $u['name'] = $data['name'] ?? '';
     $u['role'] = js_true($data['role'] ?? '') ? $data['role'] : 'teacher';
     $u['department_id'] = $data['department_id'] ?? ''; $u['teacher_id'] = $data['teacher_id'] ?? '';
+    if (!is_string($u['role']) || !isset(USER_ROLES[$u['role']])) throw new Exception('กรุณาเลือกสิทธิ์ที่ถูกต้อง');
+    if ($u['role'] === 'dept' && !isset(idx_table('Departments')[str($u['department_id'])])) throw new Exception('สิทธิ์วิชาการแผนกต้องระบุแผนกวิชา');
+    if ($u['role'] === 'teacher' && !isset(idx_table('Teachers')[str($u['teacher_id'])])) throw new Exception('สิทธิ์ครูผู้สอนต้องผูกกับรายชื่อครู');
+    if (js_true($u['teacher_id'])) {
+      $teacher = idx_table('Teachers')[str($u['teacher_id'])] ?? null;
+      if (!$teacher) throw new Exception('ไม่พบรายชื่อครูที่เลือก');
+      if ($u['role'] === 'dept' && (string)$teacher['department_id'] !== str($u['department_id'])) throw new Exception('ครูที่ผูกกับวิชาการแผนกต้องอยู่ในแผนกเดียวกัน');
+      if ($u['role'] === 'teacher') $u['department_id'] = $teacher['department_id'];
+    }
     $u['email'] = js_true($data['email'] ?? '') ? $data['email'] : ($u['email'] ?? '');
     $active = $data['active'] ?? true;
     $u['active'] = !($active === false || $active === 'false');
@@ -163,9 +197,19 @@ function api_saveUser($token = '', $data = []) {
       if (mb_strlen(pw_text($data['password'])) < 6) throw new Exception('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
       $u['salt'] = uuid(); $u['pass_hash'] = hash_password(pw_text($data['password']));
     }
+    $permChange = null;
+    if (array_key_exists('menus', $data)) {
+      $before = (string)($u['menu_perms'] ?? '');
+      $u['menu_perms'] = perm_encode($u['role'], $data['menus']);
+      $p = perm_parse($u['menu_perms']);
+      foreach ($p['grant'] as $m) if (MENU_ACCESS[$m][0] === 'dept' && !js_true($u['department_id'])) throw new Exception('เมนูระดับแผนกต้องระบุแผนกวิชาของผู้ใช้ก่อน');
+      if ($before !== $u['menu_perms']) $permChange = $uname . ' เพิ่ม: ' . (implode(', ', $p['grant']) ?: '-') . ' ถอน: ' . (implode(', ', $p['deny']) ?: '-');
+    }
     $users[$i] = $u;
+    assert_active_admin($users);
     writeTable('users', $users);
     log_action($me, 'saveUser', $uname);
+    if ($permChange !== null) log_action($me, 'กำหนดสิทธิ์เมนู', $permChange);
     return true;
   });
 }
@@ -174,7 +218,9 @@ function api_deleteUser($token = '', $id = '') {
   $me = auth_user($token, 'admin');
   if ($id === $me['id']) throw new Exception('ลบบัญชีตัวเองไม่ได้');
   return with_lock(function () use ($me, $id) {
-    writeTable('users', array_values(array_filter(readTable('users'), fn($x) => $x['id'] !== $id)));
+    $users = array_values(array_filter(readTable('users'), fn($x) => $x['id'] !== $id));
+    assert_active_admin($users);
+    writeTable('users', $users);
     log_action($me, 'deleteUser', $id);
     return true;
   });
@@ -208,7 +254,7 @@ const TEACHER_OT_FIELDS = ['employment', 'service_start', 'award_bonus', 'ot_sch
 
 /** ตัดข้อมูลส่วนตัวของครูตามสิทธิ์ผู้ดู: แถวของตัวเองเห็นครบ, แผนกเห็นข้อมูลการเบิกเฉพาะครูในแผนก */
 function teachers_for(array $me, array $rows): array {
-  if ($me['role'] === 'admin') return $rows;
+  if (is_academic_manager($me)) return $rows;
   return array_map(function ($t) use ($me) {
     if ((string)$t['id'] === (string)($me['teacher_id'] ?? '')) return $t;
     foreach (TEACHER_PRIVATE as $f) $t[$f] = '';
@@ -222,8 +268,27 @@ function teachers_for(array $me, array $rows): array {
 
 /** แถวที่ผู้ใช้มีสิทธิ์เห็น สำหรับตารางข้อมูลการเบิกและประวัติการแก้ไข */
 function scope_rows(array $me, string $name, array $rows): array {
-  if ($me['role'] === 'admin') return $rows;
-  if ($name === 'Log') { if ($me['role'] !== 'dept') throw new Exception('ไม่อนุญาต'); return $rows; }
+  if (is_academic_manager($me)) return $rows;
+  if ($name === 'Log') {
+    if ($me['role'] !== 'dept') throw new Exception('ไม่อนุญาต');
+    return array_values(array_filter($rows, fn($r) => (string)($r['user'] ?? '') === (string)$me['name']));
+  }
+  if ($name === 'SupervisionVisits') {
+    $units = [];
+    return array_values(array_filter($rows, function ($r) use ($me, &$units) {
+      $sem = (string)$r['semester_id'];
+      if (!isset($units[$sem])) $units[$sem] = supervise_units($sem);
+      $unit = $units[$sem][(string)$r['unit_key']] ?? null;
+      return $unit && supervise_can_see($me, $unit);
+    }));
+  }
+  if ($name === 'TeachReports') {
+    $teachers = idx_table('Teachers');
+    return array_values(array_filter($rows, function ($r) use ($me, $teachers) {
+      if ($me['role'] === 'dept') return isset($teachers[$r['teacher_id']]) && (string)$teachers[$r['teacher_id']]['department_id'] === (string)$me['department_id'];
+      return (string)$r['teacher_id'] === (string)($me['teacher_id'] ?? '');
+    }));
+  }
   if ($name === 'OtSubmissions') {
     if ($me['role'] !== 'dept') throw new Exception('ไม่อนุญาต');
     return array_values(array_filter($rows, fn($r) => (string)$r['department_id'] === (string)$me['department_id']));
@@ -240,6 +305,8 @@ function scope_rows(array $me, string $name, array $rows): array {
 // ======================= ข้อมูลพื้นฐาน =======================
 function api_bootstrap($token = '', $semesterId = '') {
   $me = auth_user($token);
+  // สำรองอัตโนมัติตอนเปิดหน้าเว็บ (วันละครั้ง) ไม่พึ่งการทำงานหลังส่งคำตอบ ซึ่งโฮสติ้งบางแห่งหยุดสคริปต์
+  backup_auto_run('page_load');
   $s = readSettings();
   $sems = readTable('Semesters');
   $known = false;
@@ -247,12 +314,13 @@ function api_bootstrap($token = '', $semesterId = '') {
   $sem = $known ? $semesterId : (js_true($s['default_semester_id'] ?? '') ? $s['default_semester_id'] : ($sems ? $sems[count($sems) - 1]['id'] : ''));
   $data = [];
   foreach (['Semesters', 'Departments', 'Majors', 'Teachers', 'Buildings', 'Rooms', 'Courses', 'Groups', 'LockedSlots', 'PlcSlots', 'ColorGroups', 'Windows', 'OtSchemes', 'OtPerHead', 'OtRounds', 'OtBlocked'] as $t) $data[$t] = readTable($t);
-  $data['Teachers'] = teachers_for($me, $data['Teachers']);
+  $data['Teachers'] = teachers_for(perm_data_view($me), $data['Teachers']);
   return [
     'sem' => $sem,
     'plans' => array_values(array_filter(readTable('Plans'), fn($p) => (string)$p['semester_id'] === (string)$sem)),
     'sessions' => sem_sessions($sem),
     'me' => $me + ['avatar' => user_avatar($me['id'])], 'settings' => $s, 'days' => DAY_NAMES, 'url' => $GLOBALS['REQ_URL'] ?? '',
+    'backup_warning' => $me['role'] === 'admin' ? backup_warning() : '',
     'data' => $data,
   ];
 }
@@ -267,7 +335,7 @@ function api_listTable($token = '', $name = '', $filter = null) {
       return true;
     }));
   }
-  return $name === 'Teachers' ? teachers_for($me, $rows) : $rows;
+  return $name === 'Teachers' ? teachers_for(perm_data_view($me), $rows) : $rows;
 }
 
 function api_saveRow($token = '', $name = '', $row = []) {
@@ -333,7 +401,7 @@ function api_deleteRow($token = '', $name = '', $id = '') {
 
 /** นำเข้าหลายแถวจากการวาง (CSV/จาก Excel) */
 function api_bulkImport($token = '', $name = '', $rows = [], $mode = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   if (!is_string($name) || !isset(EDITABLE[$name])) throw new Exception('นำเข้าตารางนี้ไม่ได้');
   return with_lock(function () use ($me, $name, $rows, $mode) {
     $existing = $mode === 'replace' ? [] : readTable($name);
@@ -367,7 +435,7 @@ function api_saveSettings($token = '', $obj = []) {
 
 /** คัดลอกแผนการเรียนจากภาคเรียนหนึ่งไปอีกภาคเรียน */
 function api_copyPlans($token = '', $from = '', $to = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   return with_lock(function () use ($me, $from, $to) {
     $add = [];
     foreach (readTable('Plans') as $p) {
@@ -383,7 +451,7 @@ function api_copyPlans($token = '', $from = '', $to = '') {
 // ======================= คิวจัดตารางของแผนก =======================
 /** คาบ PLC: ผู้ดูแลระบบแก้ได้ทุกแผนก ตัวแทนแผนกแก้ได้เฉพาะแผนกและครูในแผนกตัวเอง */
 function assert_plc_can_edit(array $me, array $row): void {
-  if ($me['role'] === 'admin') return;
+  if (is_academic_manager($me)) return;
   $dept = (string)$me['department_id'];
   if ($me['role'] !== 'dept' || $dept === '' || (string)($row['department_id'] ?? '') !== $dept) throw new Exception('กำหนดคาบ PLC ได้เฉพาะแผนกตัวเอง');
   $tid = (string)($row['teacher_id'] ?? '');
@@ -393,7 +461,7 @@ function assert_plc_can_edit(array $me, array $row): void {
 }
 
 function assert_dept_can_edit(array $me, $groupId, $semesterId): void {
-  if ($me['role'] === 'admin') return;
+  if (is_academic_manager($me)) return;
   if ($me['role'] !== 'dept') throw new Exception('ไม่มีสิทธิ์จัดตาราง');
   $g = null;
   foreach (readTable('Groups') as $x) if ((string)$x['id'] === str($groupId)) { $g = $x; break; }

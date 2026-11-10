@@ -32,6 +32,11 @@
       window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
     }
     function installed() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+    // แอปที่ติดตั้งไม่มีแถบเบราว์เซอร์ ลิงก์ที่เปิดหน้าต่างใหม่อาจเด้งออกจากแอป จึงเปิดหน้าในระบบเดียวกันในหน้าต่างเดิม
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('a[target="_blank"]');
+      if (a && a.origin === location.origin && installed()) a.removeAttribute('target');
+    }, true);
     function steps() {
       var ua = navigator.userAgent || '';
       var ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);

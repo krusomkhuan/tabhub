@@ -51,8 +51,8 @@ function api_placeSession($token = '', $payload = []) {
     $plans = js_true($plan['joint_key']) ? array_values(array_filter($allPlans, fn($p) => (string)$p['semester_id'] === (string)$plan['semester_id'] && (string)$p['joint_key'] === (string)$plan['joint_key'])) : [$plan];
     $ei = js_true($payload['id'] ?? '') ? find_row($all, $payload['id']) : null;
     $existing = $ei !== null ? $all[$ei] : null;
-    if ($existing && (string)$existing['locked'] === 'true' && $me['role'] !== 'admin') throw new Exception('คาบนี้ถูกล็อก');
-    if ($existing && $me['role'] !== 'admin' && sched_is_workplace($existing, $ctx)) throw new Exception('วิชาฝึกงาน/ทวิภาคี ล็อกห้ามขยับ (ระเบียบข้อ 6) — ติดต่อผู้ดูแลระบบ');
+    if ($existing && (string)$existing['locked'] === 'true' && !is_academic_manager($me)) throw new Exception('คาบนี้ถูกล็อก');
+    if ($existing && !is_academic_manager($me) && sched_is_workplace($existing, $ctx)) throw new Exception('วิชาฝึกงาน/ทวิภาคี ล็อกห้ามขยับ (ระเบียบข้อ 6) — ติดต่อผู้ดูแลระบบ');
     // คาบเดิมของกลุ่มร่วมที่จะย้ายตาม
     $planIds = array_map(fn($p) => (string)$p['id'], $plans);
     $moving = [];
@@ -80,7 +80,7 @@ function api_placeSession($token = '', $payload = []) {
     }
     foreach ($cands as $c) $problems = array_merge($problems, sched_check($c, $others, $ctx));
     $hard = array_filter($problems, fn($x) => $x['hard']);
-    if ($hard && !(js_true($payload['force'] ?? false) && $me['role'] === 'admin')) return ['ok' => false, 'problems' => $problems];
+    if ($hard && !(js_true($payload['force'] ?? false) && is_academic_manager($me))) return ['ok' => false, 'problems' => $problems];
     // จำนวนคาบไม่เกินแผน ผู้ดูแลระบบก็บังคับวางเกินไม่ได้
     $over = sched_over_problem($plans, $sem, $moving, $len, $existing, $ctx);
     if ($over) return ['ok' => false, 'problems' => [$over]];
@@ -98,9 +98,9 @@ function api_removeSession($token = '', $id = '') {
     if ($i === null) throw new Exception('ไม่พบคาบ');
     $s = $all[$i];
     assert_dept_can_edit($me, $s['group_id'], $s['semester_id']);
-    if ((string)$s['locked'] === 'true' && $me['role'] !== 'admin') throw new Exception('คาบนี้ถูกล็อก');
+    if ((string)$s['locked'] === 'true' && !is_academic_manager($me)) throw new Exception('คาบนี้ถูกล็อก');
     $ctx = sched_ctx_now();
-    if ($me['role'] !== 'admin' && sched_is_workplace($s, $ctx)) throw new Exception('วิชาฝึกงาน/ทวิภาคี ล็อกห้ามขยับ (ระเบียบข้อ 6)');
+    if (!is_academic_manager($me) && sched_is_workplace($s, $ctx)) throw new Exception('วิชาฝึกงาน/ทวิภาคี ล็อกห้ามขยับ (ระเบียบข้อ 6)');
     $plan = $ctx['plans'][$s['plan_id']] ?? null;
     $jk = $plan['joint_key'] ?? '';
     $jointIds = [(string)$s['plan_id']];
@@ -202,7 +202,7 @@ function api_clearSchedule($token = '', $semesterId = '', $groupIds = []) {
     $set = [];
     foreach ($groupIds as $g) $set[str($g)] = 1;
     if ($me['role'] === 'dept') foreach ($groupIds as $g) assert_dept_can_edit($me, $g, $semesterId);
-    if ($me['role'] !== 'admin' && !$groupIds) throw new Exception('เลือกกลุ่มเรียนก่อน');
+    if (!is_academic_manager($me) && !$groupIds) throw new Exception('เลือกกลุ่มเรียนก่อน');
     $keep = array_values(array_filter(readTable('Sessions'), function ($s) use ($semesterId, $groupIds, $set) {
       $inScope = (string)$s['semester_id'] === str($semesterId) && (!$groupIds || isset($set[$s['group_id']]));
       return !($inScope && (string)$s['locked'] !== 'true');
@@ -214,9 +214,9 @@ function api_clearSchedule($token = '', $semesterId = '', $groupIds = []) {
 }
 
 function api_getActivityLog($token = '', $limit = 300) {
-  auth_user($token, 'dept');
+  $me = auth_user($token, 'dept');
   $n = num($limit) ?: 300;
-  return array_reverse(array_slice(readTable('Log'), -$n));
+  return array_reverse(array_slice(scope_rows($me, 'Log', readTable('Log')), -$n));
 }
 
 // ======================= รายงาน =======================

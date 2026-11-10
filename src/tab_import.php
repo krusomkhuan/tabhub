@@ -103,7 +103,7 @@ function tab_import_all(): int {
 }
 
 function api_importFromTAB($token = '', $tabSemesterId = '') {
-  $me = auth_user($token, 'admin');
+  $me = auth_user($token, 'curriculum');
   set_time_limit(0);
   $res = js_true($tabSemesterId) ? tab_import_semester($tabSemesterId) : ['sessions' => tab_import_all()];
   log_action($me, 'นำเข้าจาก TAB', $res);
@@ -111,7 +111,7 @@ function api_importFromTAB($token = '', $tabSemesterId = '') {
 }
 
 function api_listTabSemesters($token = '') {
-  auth_user($token, 'admin');
+  auth_user($token, 'curriculum');
   return array_map(function ($s) {
     $lbl = tab_pick($s, ['label', 'name', 'title']);
     if (!$lbl || is_array($lbl)) $lbl = tab_pick($s, ['semester_no', 'term', 'semester']) . '/' . tab_pick($s, ['academic_year.year', 'year', 'academic_year']);

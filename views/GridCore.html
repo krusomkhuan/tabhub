@@ -259,7 +259,7 @@ var Grid = (function () {
   function pageToJpeg(pageEl) {
     var host = document.createElement('div');
     host.className = 'pdf-host';
-    var memo = pageEl.classList.contains('rp-memo');
+    var memo = pageEl.classList.contains('rp-memo') || pageEl.classList.contains('rp-parent-letter');
     // บันทึกข้อความใช้พื้นที่เนื้อหา A4 160 มม. แล้วเติมขอบซ้าย/ขวาใน PDF
     var width = memo ? 160 * 96 / 25.4 : Number(pageEl.getAttribute('data-pdf-width')) || PDF_WIDTH;
     host.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + width + 'px;background:#fff;';
@@ -281,7 +281,7 @@ var Grid = (function () {
       var avoid = [];
       if (memo) {
         var protect = function (r) { if (r.height > 0) avoid.push({ top: (r.top - box.top) * PDF_SCALE, bottom: (r.bottom - box.top) * PDF_SCALE }); };
-        clone.querySelectorAll('p,tr,.rp-memo-line,.rp-sign-one,.rp-memo-head').forEach(function (el) { protect(el.getBoundingClientRect()); });
+        clone.querySelectorAll('p,tr,.rp-memo-line,.rp-sign-one,.rp-memo-head,.rp-letter-head').forEach(function (el) { protect(el.getBoundingClientRect()); });
         // ถ้าย่อหน้ายาวเกินหน้า ยังหลบตำแหน่งตัวอักษรแต่ละบรรทัดได้
         var walker = document.createTreeWalker(clone, 4), textNode;
         while ((textNode = walker.nextNode())) {

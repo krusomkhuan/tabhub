@@ -127,16 +127,31 @@ function ot_item(array $D, array $s, string $date, int $day, int $p, string $tid
     $a = ot_absent_at($D['absences'], $tid, $date, $p);
     if ($a) $it['absent'] = js_true($a['type'] ?? '') ? $a['type'] : 'ลา';
     // ครูผู้สอนเดิมที่มีผู้สอนแทน/ชดเชยในวันนั้น = ไม่ได้สอนจริง
+    // ยกเว้นสอนชดเชยที่รายงานผลแล้ว: นับชั่วโมงที่คาบเดิมตามตารางสอน แทนวันที่สอนชดเชย
+    $madeUp = null; $other = false;
     foreach ($D['subs'] as $r) {
       $od = js_true($r['original_date'] ?? '') ? $r['original_date'] : $r['date'];
-      if ((string)$r['original_teacher_id'] === $tid && (string)$r['session_id'] === (string)$s['id'] && substr((string)$od, 0, 10) === $date && (string)$r['status'] !== 'cancelled') {
+      if ((string)$r['original_teacher_id'] === $tid && (string)$r['session_id'] === (string)$s['id'] && substr((string)$od, 0, 10) === $date && !in_array((string)$r['status'], ['cancelled', 'deleted'], true)) {
+        if (ot_makeup_reported($r, $tid)) { $madeUp = $r; continue; }
+        $other = true;
         if (!js_true($it['absent'])) $it['absent'] = $r['type'] === 'makeup' ? 'สอนชดเชยวันอื่น' : 'มีผู้สอนแทน';
       }
     }
+    if ($madeUp && !$other) { $it['absent'] = ''; $it['made_up'] = substr((string)$madeUp['date'], 0, 10); }
+  } elseif (ot_makeup_reported($sub, $tid)) {
+    // นับไว้ที่คาบเดิมแล้ว วันสอนชดเชยจึงไม่นับซ้ำ
+    $od = js_true($sub['original_date'] ?? '') ? $sub['original_date'] : $sub['date'];
+    $it['absent'] = 'นับที่คาบเดิม ' . substr((string)$od, 0, 10);
   } elseif ($sub['type'] === 'makeup' && (string)$sub['report_done'] !== 'true') {
     $it['pending'] = 'รอแนบรายงานผลการสอนชดเชย';
   }
   return $it;
+}
+
+/** สอนชดเชยโดยครูคนเดิมที่รายงานผลแล้ว จึงนับชั่วโมงที่คาบเดิมได้ */
+function ot_makeup_reported(array $r, string $tid): bool {
+  return ($r['type'] ?? '') === 'makeup' && (string)($r['report_done'] ?? '') === 'true'
+    && (string)$r['original_teacher_id'] === $tid && (string)$r['teacher_id'] === $tid;
 }
 
 /** ชั่วโมงสอนจริงของครูในรอบ (รวมสอนแทน/สอนชดเชย) */
@@ -178,10 +193,10 @@ function ot_hours_for(array $D): array {
 function ot_per_head_rule(array $it, array $rules, ?array $course): ?array {
   if (!$it['students']) return null;
   $sg = $course['subject_group'] ?? '';
-  foreach ($rules as $r) {
-    if ($r['track'] === $it['level'] && $r['course_kind'] === $it['kind'] && (!js_true($r['subject_group'] ?? '') || !js_true($sg) || $r['subject_group'] === $sg) && $it['students'] < num($r['below_students'])) return $r;
-  }
-  return null;
+  $match = array_values(array_filter($rules, fn($r) => $r['track'] === $it['level'] && $r['course_kind'] === $it['kind'] && (!js_true($r['subject_group'] ?? '') || !js_true($sg) || $r['subject_group'] === $sg) && $it['students'] < num($r['below_students'])));
+  // ใช้ช่วงจำนวนคนที่แคบที่สุดก่อน และเกณฑ์ของกลุ่มวิชานั้นก่อนเกณฑ์ทุกกลุ่ม (ตรงกับ Ot.perHeadRule)
+  stable_usort($match, fn($a, $b) => [num($a['below_students']), js_true($a['subject_group'] ?? '') ? 0 : 1] <=> [num($b['below_students']), js_true($b['subject_group'] ?? '') ? 0 : 1]);
+  return $match[0] ?? null;
 }
 
 /**
@@ -204,7 +219,7 @@ function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, arr
       if (js_true($it['pending'] ?? '')) $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['pending'] . ' (ระเบียบข้อ 8)';
       if ($it['sub'] === 'sub') $subUsed[$it['sub_id']] = ($subUsed[$it['sub_id']] ?? 0) + 1;
       $rule = !empty($ph[$it['course_id'] . '|' . $it['group_id']]) ? ot_per_head_rule($it, $ctx['perHead'] ?? [], $ctx['courses'][$it['course_id']] ?? null) : null;
-      if ($rule) { $res['byLevel'][$lv]['perhead']++; $phAmount = $it['students'] * num($rule['rate_per_head']); $res['perHeadAmount'] += $phAmount; $phByLevel[$lv] = ($phByLevel[$lv] ?? 0) + $phAmount; }
+      if ($rule) { $res['byLevel'][$lv]['perhead']++; $phAmount = num($rule['rate_per_head']); /* อัตราในเกณฑ์เป็นยอดต่อชั่วโมงของทั้งกลุ่มแล้ว ไม่คูณจำนวนคนซ้ำ */ $res['perHeadAmount'] += $phAmount; $phByLevel[$lv] = ($phByLevel[$lv] ?? 0) + $phAmount; }
       else $res['byLevel'][$lv]['claim']++;
     }
   }
