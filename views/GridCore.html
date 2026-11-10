@@ -404,10 +404,15 @@ var Grid = (function () {
     return own.length ? own : slots.filter(function (x) { return !x.teacher_id && String(x.department_id || '') === String(departmentId || ''); });
   }
 
+  /** ตำแหน่งหัวหน้าแผนกพร้อมชื่อแผนก เช่น หัวหน้าแผนกวิชาการตลาด (ชื่อแผนกที่ขึ้นต้นด้วย "แผนกวิชา" อยู่แล้วไม่ซ้ำคำ) */
+  function deptHeadTitle(deptName) {
+    return 'หัวหน้าแผนกวิชา' + String(deptName || '').trim().replace(/^แผนก(วิชา)?\s*/, '');
+  }
+
   /** ช่องลงนามท้ายตาราง */
-  function signBlock(st, headName, omitHead) {
+  function signBlock(st, headName, omitHead, deptName) {
     function one(name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
-    return '<div class="signs">' + (omitHead ? '' : one(headName, 'หัวหน้าแผนกวิชา')) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') +
+    return '<div class="signs">' + (omitHead ? '' : one(headName, esc(deptHeadTitle(deptName)))) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') +
       one(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + one(st.signer_director, 'ผู้อำนวยการ') + '</div>';
   }
 
@@ -571,6 +576,6 @@ var Grid = (function () {
   }
 
   return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap, mergeItems: mergeItems,
-    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, teacherSheet: teacherSheet, studentSheet: studentSheet, roomSheet: roomSheet, shortTeacherNames: shortTeacherNames, displayControl: displayControl, bindDisplayControl: bindDisplayControl, displayMode: displayMode, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
+    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, deptHeadTitle: deptHeadTitle, teacherSheet: teacherSheet, studentSheet: studentSheet, roomSheet: roomSheet, shortTeacherNames: shortTeacherNames, displayControl: displayControl, bindDisplayControl: bindDisplayControl, displayMode: displayMode, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
 })();
 </script>

@@ -432,7 +432,7 @@ VIEWS['ot-summary'] = function (el) {
       '<tr><td colspan="' + (all ? 9 : 8) + '" style="text-align:right"><b>รวมเป็นเงินทั้งสิ้น</b></td><td style="text-align:right"><b>' + money(r.total) + '</b></td><td class="no-print"></td></tr>' +
       '<tr><td colspan="' + (all ? 11 : 10) + '" style="text-align:center">(' + esc(r.totalText) + ')</td></tr></tbody></table>' +
       (all ? '<h3 style="margin-top:20px">ยอดรวมรายแผนกวิชา</h3><table class="data"><thead><tr><th>แผนกวิชา</th><th>ใบเบิกที่ล็อกแล้ว</th><th>รวมชั่วโมง</th><th>จำนวนเงิน (บาท)</th></tr></thead><tbody>' + (r.departments || []).map(function (d) { return '<tr><td>' + esc(d.department_name) + '</td><td>' + d.locked_count + '</td><td>' + d.hours + '</td><td>' + money(d.amount) + '</td></tr>'; }).join('') + '<tr><td colspan="3"><b>รวมทั้งวิทยาลัย</b></td><td><b>' + money(r.total) + '</b></td></tr></tbody></table>' : '') +
-      '<div class="signs">' + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + (all ? '' : sign(head && head.name, 'หัวหน้าแผนกวิชา' + esc(deptName(dept)))) + '</div>' +
+      '<div class="signs">' + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + (all ? '' : sign(head && head.name, esc(Grid.deptHeadTitle(deptName(dept))))) + '</div>' +
       '<div class="signs">' + sign(s.signer_deputy, 'ผู้รับรอง<br>รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_finance, 'ผู้รับรอง<br>หัวหน้างานการเงิน') + sign(s.signer_admin_deputy, 'ผู้รับรอง<br>รองผู้อำนวยการฝ่ายบริหารทรัพยากร') + '</div>' +
       '<div class="signs">' + sign(s.signer_director, 'ผู้อนุมัติ<br>ผู้อำนวยการวิทยาลัย') + '</div></div>';
     if (can('curriculum') && all) $('#smAct').innerHTML = '<span class="small muted">เลือกแผนกวิชาเพื่อบันทึกเสนอเบิก</span>';

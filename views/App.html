@@ -892,7 +892,7 @@ function planModal(p) {
 /* ===================== รายงาน ===================== */
 function signBlock(deptId) {
   var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(deptId) && String(t.is_dept_head) === 'true'; })[0];
-  return Grid.signBlock(S.settings, head && head.name);
+  return Grid.signBlock(S.settings, head && head.name, false, deptName(deptId));
 }
 
 /* แบบฟอร์มตารางสอนครู (โค้ดอยู่ใน GridCore ใช้ร่วมกับหน้าเผยแพร่) */
