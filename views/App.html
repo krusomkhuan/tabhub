@@ -199,6 +199,7 @@ function renderShell() {
   $('#mb').onclick = function () { $('#side').classList.toggle('open'); $('#sideBg').classList.toggle('open'); };
   $('#sideBg').onclick = function () { $('#side').classList.remove('open'); this.classList.remove('open'); };
   TableFilter.watch($('#content'));
+  TeacherSearch.watch();
 }
 
 function go(v) {
@@ -303,6 +304,62 @@ var TableFilter = (function () {
     root._tf = new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(function () { scan(root); }, 60); });
     root._tf.observe(root, { childList: true, subtree: true });
     scan(root);
+  }
+  return { watch: watch, scan: scan };
+})();
+
+/* ===================== พิมพ์ค้นหาชื่อครู (ทุกจุดที่เลือกครู) =====================
+   ติดช่องค้นหาให้ทุกช่องเลือกที่รายการเป็นรายชื่อครูโดยอัตโนมัติ ทั้งในหน้าเนื้อหาและหน้าต่าง
+   ช่องในฟอร์ม: เลือกคนแรกที่ตรงให้ทันที · ช่องบนแถบเครื่องมือ (เปลี่ยนแล้วโหลดหน้าใหม่): เลือกเมื่อเหลือคนเดียวหรือกด Enter
+   ช่องที่หน้าเว็บทำช่องค้นหาเองแล้ว (.sb-search ก่อนหน้า) หรือติด data-nosearch จะข้าม */
+var TeacherSearch = (function () {
+  var MIN = 8;
+  function isTeacherSelect(sel) {
+    if (sel.multiple || sel.hasAttribute('data-nosearch') || sel.closest('[data-nosearch],.rp-doc,.tf-bar')) return false;
+    var vals = Array.prototype.filter.call(sel.options, function (o) { return o.value; });
+    if (vals.length < MIN || !window.IDX || !IDX.Teachers) return false;
+    var hit = vals.filter(function (o) { return IDX.Teachers[o.value]; }).length;
+    return hit >= MIN && hit >= vals.length * 0.6;
+  }
+  function enhance(sel) {
+    var prev = sel.previousElementSibling;
+    if (sel._ts || (prev && prev.classList && prev.classList.contains('sb-search'))) return;
+    sel._ts = true;
+    var inline = sel.offsetWidth && sel.parentNode.clientWidth && sel.offsetWidth < sel.parentNode.clientWidth * 0.8;
+    var inp = document.createElement('input');
+    inp.type = 'search'; inp.placeholder = '🔍 พิมพ์ชื่อครู…'; inp.setAttribute('aria-label', 'ค้นหาชื่อครู');
+    inp.className = 'sb-search ts-search' + (sel.classList.contains('form-select') ? ' form-control' : '') + (sel.classList.contains('form-select-sm') ? ' form-control-sm' : '');
+    if (inline) { inp.style.width = '150px'; inp.style.display = 'inline-block'; inp.style.marginRight = '4px'; }
+    else { inp.style.display = 'block'; inp.style.marginBottom = '4px'; }
+    inp.hidden = sel.disabled;
+    sel.parentNode.insertBefore(inp, sel);
+    function filter(pick) {
+      var q = inp.value.trim().toLowerCase(), hits = [];
+      Array.prototype.forEach.call(sel.options, function (o) {
+        if (!o.value) return;
+        var hit = !q || o.text.toLowerCase().indexOf(q) >= 0;
+        o.hidden = !hit;
+        if (hit && !o.disabled) hits.push(o);
+      });
+      if (q && hits.length && (pick || hits.length === 1) && sel.value !== hits[0].value) {
+        sel.value = hits[0].value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    inp.addEventListener('input', function () { filter(!inline); });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); filter(true); } });
+  }
+  function scan(root) {
+    Array.prototype.forEach.call((root || document).querySelectorAll('select'), function (sel) {
+      if (sel._ts) { var p = sel.previousElementSibling; if (p && p.classList.contains('ts-search')) p.hidden = sel.disabled; return; }
+      if (isTeacherSelect(sel)) enhance(sel);
+    });
+  }
+  function watch() {
+    if (document.body._ts) return;
+    var timer;
+    document.body._ts = new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(function () { scan(document.body); }, 50); });
+    document.body._ts.observe(document.body, { childList: true, subtree: true });
+    scan(document.body);
   }
   return { watch: watch, scan: scan };
 })();

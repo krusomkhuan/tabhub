@@ -615,6 +615,40 @@
     el.insertBefore(reminder.firstElementChild, el.querySelector('.rp-doc'));
   }
 
+  /* ใบขออนุญาตให้ครูสอนแทน/ดูแลแทน: ครูผู้สอนเดิมขออนุญาต ครูผู้สอนแทนลงชื่อรับทราบ แล้วเสนอตามสายงาน */
+  window.subRequestForm = function (rows) {
+    var first = rows[0], t = IDX.Teachers[first.original_teacher_id] || {}, by = IDX.Teachers[first.teacher_id] || {};
+    var m = modal('<h3>ขออนุญาตสอนแทน/ดูแลแทน</h3><div id="sdSaved"></div><p class="small muted">' + esc(t.name) + ' → ผู้สอนแทน ' + esc(by.name) + ' · ' + rows.length + ' รายการ ข้อมูลในหน้าต่างนี้ใช้สร้างเอกสาร หลังสร้างแล้วกดบันทึกเอกสารเพื่อเก็บไว้พิมพ์หรือแก้ไขภายหลัง</p>' +
+      '<div class="form-grid"><div><label class="form-label mb-1">เลขที่บันทึกข้อความ</label><input id="sqNo" class="form-control" placeholder="คม. .../2569"></div><div><label class="form-label mb-1">ลงวันที่</label><input id="sqD" type="date" class="form-control"></div>' +
+      '<div><label class="form-label mb-1">ลักษณะงาน</label><select id="sqK" class="form-select"><option value="สอนแทน/ดูแลแทน">สอนแทน/ดูแลแทน</option><option value="สอนแทน">สอนแทน</option><option value="ดูแลแทน">ดูแลแทน</option></select></div></div>' +
+      '<label class="form-label mb-1 mt-2">เหตุผลที่สอนตามปกติไม่ได้ *</label><textarea id="sqR" class="form-control mb-2" rows="3" placeholder="ลาป่วย / ได้รับคำสั่งให้ไปราชการ ... ระหว่างวันที่ ...">' + esc(first.reason + (first.note ? ' ' + first.note : '')) + '</textarea>' +
+      '<label class="form-label mb-1">งานที่มอบหมายให้ผู้เรียน (ถ้ามี)</label><textarea id="sqW" class="form-control mb-2" rows="2" placeholder="เช่น ทำใบงานหน่วยที่ 3 ส่งท้ายคาบ"></textarea>' +
+      '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="sqGo">สร้างเอกสาร</button></div>', true);
+    $j('#sqD').val(todayStr());
+    savedDocsBox(m.querySelector('#sdSaved'), rows, 'sub_request');
+    $j('#sqGo', m).on('click', function () {
+      var f = { no: val('#sqNo'), date: val('#sqD'), kind: val('#sqK'), reason: val('#sqR'), work: val('#sqW') };
+      if (!f.reason.trim()) return toast('กรุณาระบุเหตุผล', 1);
+      closeModal();
+      showSubRequest(rows, f);
+    });
+  };
+  function showSubRequest(rows, f) {
+    var el = document.getElementById('content'), view = S.view, first = rows[0], t = IDX.Teachers[first.original_teacher_id] || {}, by = IDX.Teachers[first.teacher_id] || {}, dept = deptName(t.department_id);
+    var sessionOf = function (id) { return S.sessions.filter(function (s) { return String(s.id) === String(id); })[0] || {}; };
+    var days = rows.map(function (r) { return r.original_date || r.date; }).sort(), when = days[0] === days[days.length - 1] ? 'ในวันที่ ' + thLongDate(days[0]) : 'ระหว่างวันที่ ' + thLongDate(days[0]) + ' ถึงวันที่ ' + thLongDate(days[days.length - 1]);
+    var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('ขออนุญาตให้ครู' + f.kind, f.no, f.date, dept ? 'แผนกวิชา' + dept : '') +
+      '<p class="rp-para">ด้วยข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + ' ' + esc(thNum(when)) + '</p>' +
+      '<p class="rp-para">เพื่อไม่ให้การจัดการเรียนการสอนเกิดความเสียหาย และผู้เรียนได้รับการดูแลตามตารางเรียน ข้าพเจ้าจึงขออนุญาตให้ ' + esc(by.name) + ' ตำแหน่ง ' + esc(by.position || 'ครู') + ' แผนกวิชา' + esc(deptName(by.department_id)) + ' เป็นผู้' + esc(f.kind) + ' โดยมีรายละเอียด ดังนี้</p>' +
+      '<table class="rp-table"><thead><tr><th>วัน/เดือน/ปี</th><th>เวลา</th><th>รหัส/วิชา</th><th>แผนก/ชั้นปี</th><th>จำนวนคาบ</th><th>ผู้' + esc(f.kind) + '</th></tr></thead><tbody>' +
+      rows.map(function (r) { var c = courseOf(r.course_id), s = sessionOf(r.session_id); return '<tr><td>' + shortDate(r.original_date || r.date) + '</td><td>' + timeRange(r.start || s.start, r.length || s.length) + '</td><td data-lookup="course" data-field="combined">' + esc(thNum(c.code)) + '<br>' + esc(c.name) + '</td><td data-lookup="group" data-field="combined">' + esc(groupCode(r.group_id)) + '</td><td>' + thNum(r.length) + '</td><td>' + esc(nm('Teachers', r.teacher_id)) + '</td></tr>'; }).join('') +
+      '</tbody></table>' + (f.work.trim() ? '<p class="rp-para" style="margin-top:8px">งานที่มอบหมายให้ผู้เรียน ' + esc(thNum(f.work)) + '</p>' : '') +
+      '<p class="rp-para" style="margin-top:10px">จึงเรียนมาเพื่อโปรดพิจารณาอนุญาต</p>' +
+      '<div class="rp-sign-pair">' + rpSign(t.name, 'ผู้ขออนุญาต') + rpSign(by.name, 'ผู้' + f.kind + ' (รับทราบ)') + '</div>' + rpApproval(t, 'เพื่อโปรดพิจารณาอนุญาต') + '</div>';
+    var title = 'ขออนุญาต' + f.kind + ' ' + (t.name || '') + ' ' + thLongDate(f.date);
+    docToolbar(el, memo, title, view, true, docSaver(rows, 'sub_request', '', title));
+  }
+
   /* ---------- รายงานการสอนของฉัน ---------- */
   var TR = { date: todayStr(), teacher: '' };
   VIEWS['teach-report'] = function (el) {

@@ -5,7 +5,7 @@
  * อ่าน/เขียนตารางนี้ด้วย SQL ตรง เพราะเนื้อเอกสารใหญ่ ไม่ควรโหลดทั้งตารางทุกครั้ง
  */
 // sub_part = ส่วนของรายวิชาเดียว (เนื้อหา จำนวนผู้เรียน ภาพ) บันทึกทีละวิชาก่อนรวมเป็นรายงานฉบับเดียว
-const SUB_DOC_KINDS = ['makeup_request', 'sub_report', 'sub_part'];
+const SUB_DOC_KINDS = ['makeup_request', 'sub_request', 'sub_report', 'sub_part'];
 const SUB_DOC_MAX_HTML = 2 * 1024 * 1024;
 const SUB_DOC_MAX_IMAGES = 80;
 const SUB_DOC_UNSAFE = '/<\s*\/?\s*(script|iframe|object|embed|link|meta|style|base|form|input|textarea|button|select|svg|math|template|frame|frameset|noscript|audio|video|source)\b|\son[a-z]+\s*=|javascript:|vbscript:|style="[^"]*(url|expression)\s*\(/i';

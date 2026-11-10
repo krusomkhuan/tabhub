@@ -341,12 +341,13 @@ function listSubs() {
           : '<span class="tag ' + (today > r.report_due ? 'bad' : 'warn') + '">ครบกำหนด ' + thDate(r.report_due) + (today > r.report_due ? ' (เลยกำหนด)' : '') + '</span>';
         return '<tr' + (cancelled ? ' style="opacity:.45;text-decoration:line-through"' : '') + '><td>' + (r.type === 'sub' ? 'สอนแทน' : 'สอนชดเชย') + '<br><span class="small muted">' + esc(r.reason) + '</span></td><td>' + esc(nm('Teachers', r.original_teacher_id)) + '</td><td>' + esc(nm('Teachers', r.teacher_id)) +
           '</td><td>' + esc(c.code) + ' ' + esc(groupCode(r.group_id)) + '</td><td>' + thDate(r.original_date) + '</td><td>' + thDate(r.date) + ' คาบ ' + Grid.periodRange(S.settings, r.start, r.length) + '</td><td>' + rep + '</td><td style="white-space:nowrap">' +
-          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' : '') + (!cancelled && (can('dept') || String(r.original_teacher_id) === String(S.me.teacher_id) || String(r.teacher_id) === String(S.me.teacher_id)) ? '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
+          (!cancelled ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' : '') + (!cancelled && (can('dept') || String(r.original_teacher_id) === String(S.me.teacher_id) || String(r.teacher_id) === String(S.me.teacher_id)) ? '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
       }).join('') || '<tr><td colspan="8" class="muted">ไม่มีรายการ</td></tr>') + '</tbody></table></div></div>';
-    // ใบขออนุญาตรวมทุกรายการสอนชดเชยของครูคนเดียวกันที่มีเหตุผลเดียวกัน
+    // ใบขออนุญาตรวมทุกรายการชุดเดียวกัน (ครูเดิม ผู้สอน และเหตุผลเดียวกัน)
     $$('[data-req]').forEach(function (b) { b.onclick = function () {
       var r = rows.filter(function (x) { return String(x.id) === b.dataset.req; })[0];
-      if (r) makeupRequestForm(subDocumentRows(rows, r));
+      // สอนชดเชย: ใบขออนุญาตพร้อมหนังสือผู้ปกครอง · สอนแทน/ดูแลแทน: ใบขออนุญาตให้ครูผู้สอนแทน
+      if (r) (r.type === 'makeup' ? makeupRequestForm : subRequestForm)(subDocumentRows(rows, r));
     }; });
     $$('[data-rep]').forEach(function (b) { b.onclick = function () {
       var r = rows.filter(function (x) { return String(x.id) === b.dataset.rep; })[0];
