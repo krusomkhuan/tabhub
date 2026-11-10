@@ -638,13 +638,13 @@
     var sessionOf = function (id) { return S.sessions.filter(function (s) { return String(s.id) === String(id); })[0] || {}; };
     var days = rows.map(function (r) { return r.original_date || r.date; }).sort(), when = days[0] === days[days.length - 1] ? 'ในวันที่ ' + thLongDate(days[0]) : 'ระหว่างวันที่ ' + thLongDate(days[0]) + ' ถึงวันที่ ' + thLongDate(days[days.length - 1]);
     var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('ขออนุญาตให้ครู' + f.kind, f.no, f.date, dept ? 'แผนกวิชา' + dept : '') +
-      '<p class="rp-para">ด้วยข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + ' ' + esc(thNum(when)) + '</p>' +
-      '<p class="rp-para">เพื่อไม่ให้การจัดการเรียนการสอนเกิดความเสียหาย และผู้เรียนได้รับการดูแลตามตารางเรียน ข้าพเจ้าจึงขออนุญาตให้ ' + esc(by.name) + ' ตำแหน่ง ' + esc(by.position || 'ครู') + ' แผนกวิชา' + esc(deptName(by.department_id)) + ' เป็นผู้' + esc(f.kind) + ' โดยมีรายละเอียด ดังนี้</p>' +
+      '<p class="rp-para">ด้วย ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + ' ' + esc(thNum(when)) + '</p>' +
+      '<p class="rp-para">เพื่อไม่ให้การจัดการเรียนการสอนเกิดความเสียหาย และผู้เรียนได้รับการดูแลตามตารางเรียน ข้าพเจ้า ' + esc(by.name) + ' ตำแหน่ง ' + esc(by.position || 'ครู') + ' แผนกวิชา' + esc(deptName(by.department_id)) + ' จึงขออนุญาตเป็นผู้' + esc(f.kind) + ' โดยมีรายละเอียด ดังนี้</p>' +
       '<table class="rp-table"><thead><tr><th>วัน/เดือน/ปี</th><th>เวลา</th><th>รหัส/วิชา</th><th>แผนก/ชั้นปี</th><th>จำนวนคาบ</th><th>ผู้' + esc(f.kind) + '</th></tr></thead><tbody>' +
       rows.map(function (r) { var c = courseOf(r.course_id), s = sessionOf(r.session_id); return '<tr><td>' + shortDate(r.original_date || r.date) + '</td><td>' + timeRange(r.start || s.start, r.length || s.length) + '</td><td data-lookup="course" data-field="combined">' + esc(thNum(c.code)) + '<br>' + esc(c.name) + '</td><td data-lookup="group" data-field="combined">' + esc(groupCode(r.group_id)) + '</td><td>' + thNum(r.length) + '</td><td>' + esc(nm('Teachers', r.teacher_id)) + '</td></tr>'; }).join('') +
       '</tbody></table>' + (f.work.trim() ? '<p class="rp-para" style="margin-top:8px">งานที่มอบหมายให้ผู้เรียน ' + esc(thNum(f.work)) + '</p>' : '') +
       '<p class="rp-para" style="margin-top:10px">จึงเรียนมาเพื่อโปรดพิจารณาอนุญาต</p>' +
-      '<div class="rp-sign-pair">' + rpSign(t.name, 'ผู้ขออนุญาต') + rpSign(by.name, 'ผู้' + f.kind + ' (รับทราบ)') + '</div>' + rpApproval(t, 'เพื่อโปรดพิจารณาอนุญาต') + '</div>';
+      '<div class="rp-sign-one">' + rpSign(by.name, 'ครูผู้สอน') + '</div>' + rpApproval(t, 'เพื่อโปรดพิจารณาอนุญาต') + '</div>';
     var title = 'ขออนุญาต' + f.kind + ' ' + (t.name || '') + ' ' + thLongDate(f.date);
     docToolbar(el, memo, title, view, true, docSaver(rows, 'sub_request', '', title));
   }

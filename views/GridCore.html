@@ -278,8 +278,10 @@ var Grid = (function () {
       paintTree(ctx, clone, box.left, box.top);
       var data = canvas.toDataURL('image/jpeg', 0.92).split(',')[1], bin = atob(data), bytes = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      var avoid = [];
+      var avoid = [], contentBottom = 0;
       if (memo) {
+        // ขอบล่างของเนื้อหาจริง: ระยะว่างท้ายเอกสารต้องไม่ล้นเป็นหน้าเปล่า
+        clone.querySelectorAll('*').forEach(function (el) { var r = el.getBoundingClientRect(); if (r.height > 0 && r.width > 0) contentBottom = Math.max(contentBottom, (r.bottom - box.top) * PDF_SCALE); });
         var protect = function (r) { if (r.height > 0) avoid.push({ top: (r.top - box.top) * PDF_SCALE, bottom: (r.bottom - box.top) * PDF_SCALE }); };
         clone.querySelectorAll('p,tr,.rp-memo-line,.rp-sign-one,.rp-memo-head,.rp-letter-head').forEach(function (el) { protect(el.getBoundingClientRect()); });
         // ถ้าย่อหน้ายาวเกินหน้า ยังหลบตำแหน่งตัวอักษรแต่ละบรรทัดได้
@@ -290,7 +292,7 @@ var Grid = (function () {
           Array.prototype.forEach.call(range.getClientRects(), protect);
         }
       }
-      return { bytes: bytes, width: canvas.width, height: canvas.height, portrait: pageEl.hasAttribute('data-pdf-width'), memo: memo, avoidBreaks: avoid };
+      return { bytes: bytes, width: canvas.width, height: canvas.height, portrait: pageEl.hasAttribute('data-pdf-width'), memo: memo, avoidBreaks: avoid, contentBottom: contentBottom };
     }).then(function (img) { host.remove(); return img; }, function (e) { host.remove(); throw e; });
   }
 
@@ -302,7 +304,7 @@ var Grid = (function () {
     images.forEach(function (img) {
       if (!img.memo) { sheets.push({ img: img }); return; }
       var scale = (595.28 - 50 * 72 / 25.4) / img.width;
-      var height = img.height * scale, usable = 841.89 - 30 * 72 / 25.4;
+      var height = Math.min(img.height, img.contentBottom ? img.contentBottom + 2 : img.height) * scale, usable = 841.89 - 30 * 72 / 25.4;
       var offset = 0, blocks = (img.avoidBreaks || []).map(function (b) { return { top: b.top * scale, bottom: b.bottom * scale }; });
       do {
         var end = Math.min(offset + usable, height), limit = end;

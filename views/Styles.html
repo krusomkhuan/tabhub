@@ -346,6 +346,12 @@
     .page.rp-page { page: report; width: auto; min-width: 0; padding: 0; margin: 0; }
     .page.rp-page.rp-memo { page: memo; width: auto; min-width: 0; padding: 0; }
     .page.rp-page.rp-parent-letter { page: memo; width: auto; min-width: 0; padding: 0; }
+    /* พิมพ์เอกสาร: ไม่ให้สิ่งอื่นต่อท้ายเอกสาร (รวมถึงกล่องที่ส่วนขยายของเบราว์เซอร์แทรกไว้ท้ายหน้า)
+       เพราะเมื่อเปลี่ยนชนิดหน้ากระดาษ เบราว์เซอร์จะขึ้นหน้าใหม่ให้ แม้กล่องนั้นจะว่างเปล่า */
+    body:has(.rp-doc) > *:not(#root):not(.modal-bg) { display: none !important; }
+    .content:has(> .rp-doc) > *:not(.rp-doc), .rp-doc > *:not(.rp-page) { display: none !important; }
+    .rp-doc > .rp-page:last-child { break-after: avoid; page-break-after: avoid; }
+    .rp-doc > .rp-page > :last-child { margin-bottom: 0; }
   }
   /* หน้าเผยแพร่ */
   .pub-wrap { max-width: 1300px; margin: 0 auto; }
