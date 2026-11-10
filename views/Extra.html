@@ -454,12 +454,13 @@
       '<div class="alert alert-info"><b>รายวิชาชุดเดียวกับใบขออนุญาต</b><ul class="mb-0">' + rows.map(function (r) { var c = courseOf(r.course_id); return '<li>' + esc(c.code + ' ' + c.name) + ' · ' + esc(groupCode(r.group_id)) + ' · ' + esc(dayLabel(r.date)) + ' · ' + periodLabel(r.start, r.length) + '</li>'; }).join('') + '</ul></div>' +
       '<div class="form-grid"><div><label class="form-label">รูปแบบรายงาน</label><select id="srKind" class="form-select"><option value="sub">การสอนแทน</option><option value="makeup">การสอนชดเชย</option></select></div><div><label class="form-label">วันที่บันทึกข้อความ</label><input id="srDate" type="date" class="form-control"></div><div><label class="form-label">เลขที่บันทึกข้อความ</label><input id="srNo" class="form-control"></div><div><label class="form-label">ตำแหน่งผู้รายงาน</label><input id="srRank" class="form-control" value="' + esc(rankText(t.position)) + '"></div></div>' +
       '<label class="form-label mt-2">เหตุผล / รายละเอียดการมอบหมาย</label><textarea id="srReason" class="form-control" rows="2">' + esc(first.reason + (first.note ? ' ' + first.note : '')) + '</textarea>' +
-      '<p class="small muted mt-2 mb-1">บันทึกข้อความรวมเป็นใบเดียว ส่วนภาพประกอบและเนื้อหาแยกเป็นหน้าของแต่ละรายวิชา กรอกให้ครบทุกวิชาด้านล่าง</p>' +
+      '<p class="small muted mt-2 mb-1">บันทึกข้อความรวมเป็นใบเดียว ส่วนภาพประกอบและเนื้อหาแยกเป็นหน้าของแต่ละรายวิชา กรอกทีละวิชาแล้วกด <b>บันทึกรายวิชานี้</b> เก็บไว้ทำต่อภายหลังได้ วิชาที่บันทึกแล้วนับว่ารายงานแล้ว เมื่อครบทุกวิชาจึงกดสร้างรายงานฉบับรวม</p>' +
       parts.map(function (p, pi) {
-        return '<fieldset class="sr-part"><legend>' + (parts.length > 1 ? (pi + 1) + '. ' : '') + esc(p.course.code + ' ' + p.course.name) + ' · ' + esc(groupCode(p.group_id)) + ' <small>' + p.rows.map(function (r) { return esc(dayLabel(r.date)); }).join(', ') + '</small></legend>' +
+        return '<fieldset class="sr-part" id="srPart' + pi + '"><legend>' + (parts.length > 1 ? (pi + 1) + '. ' : '') + esc(p.course.code + ' ' + p.course.name) + ' · ' + esc(groupCode(p.group_id)) + ' <small>' + p.rows.map(function (r) { return esc(dayLabel(r.date)); }).join(', ') + '</small> <span class="sr-state" id="srState' + pi + '"></span></legend>' +
           ['เนื้อหาที่สอน', 'กิจกรรมการเรียนการสอน', 'การวัดผลการประเมินผล', 'งานที่มอบหมาย'].map(function (label, i) { return '<label class="form-label mt-1">' + label + '</label><textarea id="srText' + pi + '_' + i + '" class="form-control" rows="2"></textarea>'; }).join('') +
           '<div class="form-grid mt-2">' + ['ผู้เรียนทั้งหมด', 'เข้าเรียน', 'ขาดเรียน'].map(function (label, i) { return '<div><label class="form-label">' + label + ' (คน)</label><input id="srCount' + pi + '_' + i + '" type="number" min="0" step="1" class="form-control"></div>'; }).join('') + '</div>' +
-          '<label class="form-label mt-2">ภาพประกอบวิชานี้ (จำเป็น 1–4 ภาพ JPG/PNG ระบบย่อไม่เกิน 200 KB ต่อภาพ)</label><input id="srImages' + pi + '" data-part="' + pi + '" type="file" accept="image/jpeg,image/png" multiple class="form-control"><div id="srPreview' + pi + '" class="sr-photo-preview"></div></fieldset>';
+          '<label class="form-label mt-2">ภาพประกอบวิชานี้ (จำเป็น 1–4 ภาพ JPG/PNG ระบบย่อไม่เกิน 200 KB ต่อภาพ)</label><input id="srImages' + pi + '" data-part="' + pi + '" type="file" accept="image/jpeg,image/png" multiple class="form-control"><div id="srPreview' + pi + '" class="sr-photo-preview"></div>' +
+          '<div class="sr-part-actions"><button type="button" class="btn sm pri" data-save-part="' + pi + '">💾 บันทึกรายวิชานี้</button></div></fieldset>';
       }).join('') +
       '<div class="actions mt-2"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="srGo">สร้างรายงาน</button></div>', true);
     $j('#srKind', m).val(first.type === 'sub' ? 'sub' : 'makeup');
@@ -477,19 +478,61 @@
         $j('#srPreview' + pi, m).html(p.images.map(function (img) { return '<img src="' + img.url + '" alt="ภาพประกอบรายงาน">'; }).join(''));
       }).catch(function () { if (version !== p.version) return; p.loading = false; p.images = []; toast('อ่านรูปไม่สำเร็จ กรุณาใช้ JPG หรือ PNG', 1); });
     });
+    /* ค่าในฟอร์มของรายวิชาหนึ่ง พร้อมตรวจความถูกต้อง */
+    function partInfo(p, pi) {
+      var label = p.course.code + ' ' + groupCode(p.group_id);
+      if (p.loading) return { err: 'กำลังเตรียมภาพวิชา ' + label + ' กรุณารอสักครู่' };
+      if (!p.images.length) return { err: 'กรุณาแนบภาพประกอบวิชา ' + label + ' อย่างน้อย 1 ภาพ' };
+      var counts = [0, 1, 2].map(function (i) { return String(val('#srCount' + pi + '_' + i) || '').trim(); });
+      if (counts.some(function (v) { return v && !/^\d+$/.test(v); })) return { err: label + ': จำนวนผู้เรียนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป' };
+      if (counts.every(function (v) { return v !== ''; }) && Number(counts[1]) + Number(counts[2]) !== Number(counts[0])) return { err: label + ': จำนวนเข้าเรียนและขาดเรียนต้องรวมเท่ากับผู้เรียนทั้งหมด' };
+      return { info: { texts: [0, 1, 2, 3].map(function (i) { return val('#srText' + pi + '_' + i); }), counts: counts, images: p.images } };
+    }
+    function showState(p, pi) {
+      var at = p.doc ? (p.doc.updated_at || p.doc.created_at || '') : '';
+      $j('#srState' + pi, m).html(p.doc ? '<span class="tag ok">✓ บันทึกแล้ว ' + esc(thDate(at) + ' ' + String(at).slice(11, 16)) + ' น.</span>' : '<span class="tag">ยังไม่บันทึก</span>');
+    }
+    function showImages(p, pi) {
+      $j('#srPreview' + pi, m).html(p.images.map(function (img) { return '<img src="' + img.url + '" alt="ภาพประกอบรายงาน">'; }).join(''));
+    }
+    // บันทึกทีละรายวิชา: เก็บหน้าภาพประกอบของวิชานั้น พร้อมค่าในฟอร์มไว้เปิดกลับมาแก้
+    $j(m).find('[data-save-part]').on('click', function () {
+      var btn = this, pi = Number(btn.getAttribute('data-save-part')), p = parts[pi], r = partInfo(p, pi);
+      if (r.err) return toast(r.err, 1);
+      var map = {}; map[p.key] = r.info;
+      var data = encodeURIComponent(JSON.stringify({ texts: r.info.texts, counts: r.info.counts }));
+      var html = '<div class="sr-part-data" hidden data-sr-part="' + data + '"></div>' + srActivityPages(p.rows, map);
+      btn.disabled = true;
+      api('subDocSave', S.token, { id: p.doc ? p.doc.id : '', kind: 'sub_part', sub_ids: p.rows.map(function (x) { return x.id; }), title: 'รายวิชา ' + p.course.code + ' ' + groupCode(p.group_id) + ' · ' + (t.name || ''), html: html })
+        .then(function (res) { p.doc = { id: res.id, updated_at: res.updated_at }; showState(p, pi); toast('บันทึกรายวิชา ' + p.course.code + ' แล้ว'); })
+        .catch(function () {}).then(function () { btn.disabled = false; });
+    });
+    // เปิดฟอร์มอีกครั้ง: โหลดส่วนรายวิชาที่บันทึกไว้กลับมาให้แก้ต่อ
+    parts.forEach(function (p, pi) { showState(p, pi); });
+    var sameIds = function (a, b) { return a.slice().sort().join(',') === b.slice().sort().join(','); };
+    api('subDocList', S.token, rows.map(function (x) { return x.id; }), 'sub_part').then(function (list) {
+      parts.forEach(function (p, pi) {
+        var mine = p.rows.map(function (x) { return String(x.id); });
+        var d = list.filter(function (x) { return sameIds(String(x.sub_ids).split(','), mine); })[0];
+        if (!d) return;
+        p.doc = d; showState(p, pi);
+        api('subDocGet', S.token, d.id).then(function (full) {
+          var doc = new DOMParser().parseFromString(full.html, 'text/html'), box = doc.querySelector('[data-sr-part]');
+          var saved = {}; try { saved = JSON.parse(decodeURIComponent(box ? box.getAttribute('data-sr-part') : '') || '{}'); } catch (e) { saved = {}; }
+          (saved.texts || []).forEach(function (v, i) { var el = m.querySelector('#srText' + pi + '_' + i); if (el && !el.value) el.value = v || ''; });
+          (saved.counts || []).forEach(function (v, i) { var el = m.querySelector('#srCount' + pi + '_' + i); if (el && !el.value) el.value = v || ''; });
+          if (!p.images.length) {
+            var seen = {};
+            p.images = Array.prototype.slice.call(doc.querySelectorAll('.rp-pics img')).map(function (img) { return img.getAttribute('src'); }).filter(function (u) { if (!u || seen[u]) return false; seen[u] = 1; return /^data:image\//.test(u); }).slice(0, MAX_IMAGES).map(function (u) { return { url: u }; });
+            showImages(p, pi);
+          }
+        });
+      });
+    }).catch(function () {});
     $j('#srGo', m).on('click', function () {
-      if (parts.some(function (p) { return p.loading; })) return toast('กำลังเตรียมภาพ กรุณารอสักครู่', 1);
-      var noPic = parts.filter(function (p) { return !p.images.length; })[0];
-      if (noPic) return toast('กรุณาแนบภาพประกอบวิชา ' + noPic.course.code + ' ' + groupCode(noPic.group_id) + ' อย่างน้อย 1 ภาพ', 1);
       if (!val('#srDate')) return toast('กรุณาระบุวันที่บันทึกข้อความ', 1);
       var bad = '', info = {};
-      parts.forEach(function (p, pi) {
-        var counts = [0, 1, 2].map(function (i) { return String(val('#srCount' + pi + '_' + i) || '').trim(); });
-        var label = p.course.code + ' ' + groupCode(p.group_id);
-        if (!bad && counts.some(function (v) { return v && !/^\d+$/.test(v); })) bad = label + ': จำนวนผู้เรียนต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป';
-        if (!bad && counts.every(function (v) { return v !== ''; }) && Number(counts[1]) + Number(counts[2]) !== Number(counts[0])) bad = label + ': จำนวนเข้าเรียนและขาดเรียนต้องรวมเท่ากับผู้เรียนทั้งหมด';
-        info[p.key] = { texts: [0, 1, 2, 3].map(function (i) { return val('#srText' + pi + '_' + i); }), counts: counts, images: p.images };
-      });
+      parts.forEach(function (p, pi) { if (bad) return; var r = partInfo(p, pi); if (r.err) bad = r.err; else info[p.key] = r.info; });
       if (bad) return toast(bad, 1);
       var f = { kind: val('#srKind'), date: val('#srDate'), no: val('#srNo'), rank: val('#srRank'), reason: val('#srReason'), parts: info };
       closeModal();
@@ -515,9 +558,15 @@
         return '<tr><td>' + shortDate(r.date) + '</td><td data-lookup="course" data-field="name">' + text(c.name) + '</td><td data-lookup="course" data-field="code">' + text(c.code) + '</td><td data-lookup="group" data-field="level">' + esc(parts[0]) + '</td><td data-lookup="group" data-field="room">' + esc(parts[1]) + '</td><td>' + timeRange(r.start, r.length) + '</td><td>' + (outside ? '' : thNum(r.length)) + '</td><td>' + (outside ? thNum(r.length) : '') + '</td><td>' + text((IDX.Teachers[r.teacher_id] || {}).name) + '</td></tr>';
       }).join('') + '</tbody></table><p class="rp-para">จึงเรียนมาเพื่อโปรดทราบ</p><div class="rp-sign-one">' + rpSign(t.name, 'ตำแหน่ง ' + (f.rank || blank)) + '</div>' + rpApproval(t, 'เพื่อโปรดทราบ') + '</div>';
     // ภาพและเนื้อหาอยู่หน้าถัดจากบันทึกข้อความ แยกตามวิชา/วัน/กลุ่ม โดยใช้ภาพและเนื้อหาของวิชานั้น
+    return html + srActivityPages(rows, f.parts);
+  }
+
+  /* หน้าภาพประกอบกิจกรรม หนึ่งหน้าต่อคาบที่สอน ใช้ทั้งรายงานฉบับรวมและการบันทึกทีละรายวิชา */
+  function srActivityPages(rows, partsByKey) {
+    var blank = '................................', text = function (v) { return esc(thNum(v || blank)); }, html = '';
     rows.forEach(function (r) {
-      var c = courseOf(r.course_id), g = IDX.Groups[r.group_id] || {}, part = f.parts[r.course_id + '|' + r.group_id], images = part.images;
-      f = Object.assign({}, f, { texts: part.texts, counts: part.counts });
+      var c = courseOf(r.course_id), g = IDX.Groups[r.group_id] || {}, part = partsByKey[r.course_id + '|' + r.group_id], images = part.images;
+      var f = { texts: part.texts, counts: part.counts };
       html += '<div class="page rp-page sr-activity" data-pdf-width="760"><h2 class="rp-title">ภาพประกอบกิจกรรมการเรียนการสอน</h2><div class="rp-center">ชื่อวิชา ' + text(c.name) + ' รหัสวิชา ' + text(c.code) + '<br>ระดับชั้น ' + text(g.level) + ' กลุ่มเรียน ' + esc(groupCode(r.group_id)) + ' สาขาวิชา ' + text(nm('Majors', g.major_id)) + '<br>' + text(dayLabel(r.date)) + ' เวลา ' + timeRange(r.start, r.length) + '</div><h3>รูปภาพประกอบการเรียนการสอน</h3><div class="rp-pics rp-pics-' + images.length + '">' + images.map(function (img) { return '<img src="' + esc(img.url) + '" alt="ภาพประกอบการรายงาน">'; }).join('') + '</div>' +
         ['เนื้อหาที่สอน', 'กิจกรรมการเรียนการสอน', 'การวัดผลการประเมินผล', 'งานที่มอบหมาย'].map(function (label, i) { return '<h3>' + label + '</h3><p class="rp-text">' + text(f.texts[i]).replace(/\n/g, '<br>') + '</p>'; }).join('') + '<p class="rp-room">จำนวนผู้เรียน ทั้งหมด ' + text(f.counts[0]) + ' คน เข้าเรียน ' + text(f.counts[1]) + ' คน ขาด ' + text(f.counts[2]) + ' คน</p></div>';
     });

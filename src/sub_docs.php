@@ -4,7 +4,8 @@
  * เก็บ HTML ของเอกสารหลังแก้ไข รูปแยกเป็นไฟล์ในโฟลเดอร์เดียวกับรูปรายงานการสอน เพื่อให้รวมในไฟล์สำรองข้อมูล
  * อ่าน/เขียนตารางนี้ด้วย SQL ตรง เพราะเนื้อเอกสารใหญ่ ไม่ควรโหลดทั้งตารางทุกครั้ง
  */
-const SUB_DOC_KINDS = ['makeup_request', 'sub_report'];
+// sub_part = ส่วนของรายวิชาเดียว (เนื้อหา จำนวนผู้เรียน ภาพ) บันทึกทีละวิชาก่อนรวมเป็นรายงานฉบับเดียว
+const SUB_DOC_KINDS = ['makeup_request', 'sub_report', 'sub_part'];
 const SUB_DOC_MAX_HTML = 2 * 1024 * 1024;
 const SUB_DOC_MAX_IMAGES = 80;
 const SUB_DOC_UNSAFE = '/<\s*\/?\s*(script|iframe|object|embed|link|meta|style|base|form|input|textarea|button|select|svg|math|template|frame|frameset|noscript|audio|video|source)\b|\son[a-z]+\s*=|javascript:|vbscript:|style="[^"]*(url|expression)\s*\(/i';
@@ -32,7 +33,8 @@ function sub_doc_scope(array $me, $subIds): array {
 function sub_reported_map(): array {
   assert_table('SubDocs');
   $map = [];
-  foreach (db()->query("SELECT `id`, `sub_ids` FROM `SubDocs` WHERE `kind` = 'sub_report' ORDER BY `_seq`")->fetchAll() as $d) {
+  // รายงานฉบับรวม หรือส่วนของรายวิชาที่บันทึกแล้ว นับว่ารายวิชานั้นรายงานแล้ว
+  foreach (db()->query("SELECT `id`, `sub_ids` FROM `SubDocs` WHERE `kind` IN ('sub_report', 'sub_part') ORDER BY `_seq`")->fetchAll() as $d) {
     foreach (explode(',', (string)$d['sub_ids']) as $s) if ($s !== '' && !isset($map[$s])) $map[$s] = (string)$d['id'];
   }
   return $map;
