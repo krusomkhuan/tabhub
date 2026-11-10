@@ -9,10 +9,19 @@ function assert_ot_teacher(array $me, $teacherId): void {
   throw new Exception('จัดการได้เฉพาะครูในแผนกของตัวเอง');
 }
 
-/** สอนแทน/สอนชดเชย: ครูทำรายการได้เฉพาะคาบของตนเอง จึงเพิ่มชั่วโมงเบิกให้ตัวเองจากคาบของครูอื่นไม่ได้ */
-function assert_ot_sub_owner(array $me, $originalTeacherId): void {
-  if ($me['role'] !== 'teacher') { assert_ot_teacher($me, $originalTeacherId); return; }
-  if (!js_true($me['teacher_id'] ?? '') || (string)$me['teacher_id'] !== str($originalTeacherId)) throw new Exception('ครูทำรายการได้เฉพาะคาบสอนของตนเอง');
+/**
+ * สอนแทน/สอนชดเชย: ครูทำรายการได้เมื่อเป็นครูผู้สอนเดิมหรือครูผู้สอนแทนของรายการนั้น
+ * (ครูที่ลาบางครั้งบันทึกเองไม่ได้ ครูผู้สอนแทนจึงบันทึกได้) ส่วนวิชาการแผนกจัดการได้เมื่อครูฝ่ายใดฝ่ายหนึ่งอยู่ในแผนก
+ */
+function assert_ot_sub_owner(array $me, $originalTeacherId, $teacherId = ''): void {
+  $ids = array_values(array_unique(array_filter([str($originalTeacherId), str($teacherId)], fn($x) => $x !== '')));
+  if ($me['role'] === 'teacher') {
+    if (js_true($me['teacher_id'] ?? '') && in_array((string)$me['teacher_id'], $ids, true)) return;
+    throw new Exception('ครูทำรายการได้เฉพาะคาบที่ตนเองเป็นครูผู้สอนเดิมหรือครูผู้สอนแทน');
+  }
+  $err = null;
+  foreach ($ids ?: [''] as $id) { try { assert_ot_teacher($me, $id); return; } catch (Exception $e) { $err = $err ?: $e; } }
+  throw $err;
 }
 
 /** ใบเบิกที่ล็อกแล้วอ้างอิงรายการนี้อยู่ ครูจึงแก้ไม่ได้ ต้องให้วิชาการแผนกหรือผู้ดูแลจัดการ */
@@ -202,12 +211,12 @@ function api_otSaveSub($token = '', $rec = []) {
     $all = readTable('OtSubs');
     $i0 = find_row($all, $recId);
     if ($i0 !== null) {
-      assert_ot_sub_owner($me, $all[$i0]['original_teacher_id']); // ตรวจจากแถวเดิมก่อนเขียนทับ
+      assert_ot_sub_owner($me, $all[$i0]['original_teacher_id'], $all[$i0]['teacher_id']); // ตรวจจากแถวเดิมก่อนเขียนทับ
       assert_ot_sub_claims_open($me, $all[$i0]['round_id'], [$all[$i0]['original_teacher_id'], $all[$i0]['teacher_id']]);
     }
   }
   $origId = $rec['original_teacher_id'] ?? '';
-  assert_ot_sub_owner($me, $origId);
+  assert_ot_sub_owner($me, $origId, ($rec['type'] ?? '') === 'makeup' ? $origId : ($rec['teacher_id'] ?? ''));
   return with_lock(function () use ($me, $rec, $recId, $origId) {
     $round = idx_table('OtRounds')[str($rec['round_id'] ?? '')] ?? null;
     if (!$round) throw new Exception('ไม่พบรอบการเบิก');
@@ -251,6 +260,9 @@ function api_otSaveSub($token = '', $rec = []) {
         if ($r['id'] !== $recId && $r['type'] === 'sub' && (string)$r['teacher_id'] === str($teacherId) && in_array(substr((string)$r['date'], 0, 10), $w['dates'], true) && $r['status'] !== 'cancelled') $otherSubs += num($r['length']);
       }
       $origLeft = $origCap - $usedIn($orig['id']); $subLeft = $subCap - $usedIn($subT['id']) - $otherSubs;
+      $busy = [];
+      for ($pp = $start; $pp < $start + $length; $pp++) if (ot_own_session_at(readTable('Sessions'), str($teacherId), num($s['day']), $pp, (string)$s['id'])) $busy[] = period_no($pp);
+      if ($busy) $warnings[] = 'ครูผู้สอนแทนมีคาบสอนของตนเองในคาบที่ ' . implode(', ', $busy) . ' — บันทึกเป็นดูแลแทนได้ แต่นำคาบนั้นมาเบิกไม่ได้ (เบิกได้เฉพาะคาบที่ตารางว่าง)';
       if ($length > $origLeft) $warnings[] = 'สิทธิ์คงเหลือของครูผู้สอนเดิมในสัปดาห์นี้ ' . max(0, $origLeft) . ' ชม. — เบิกสอนแทนได้ไม่เกินนี้';
       // ครูไม่ควรเห็นตัวเลขสิทธิ์เบิกของครูคนอื่น
       if ($length > $subLeft) $warnings[] = $me['role'] === 'teacher' ? 'ชั่วโมงนี้เกินสิทธิ์คงเหลือของครูผู้สอนแทน กรุณาตรวจสอบกับวิชาการแผนก' : 'ครูผู้สอนแทนมีสิทธิ์คงเหลือ ' . max(0, $subLeft) . ' ชม. (รวมแล้วต้องไม่เกิน ' . $subCap . ' ชม./สัปดาห์)';
@@ -282,7 +294,7 @@ function api_otSubReport($token = '', $id = '', $link = '', $done = true) {
     $rows = readTable('OtSubs');
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายการ');
-    assert_ot_sub_owner($me, $rows[$i]['original_teacher_id']);
+    assert_ot_sub_owner($me, $rows[$i]['original_teacher_id'], $rows[$i]['teacher_id']);
     $rows[$i]['report_link'] = js_true($link) ? $link : $rows[$i]['report_link'];
     $rows[$i]['report_done'] = $done !== false;
     writeTable('OtSubs', $rows);
@@ -296,7 +308,7 @@ function api_otCancelSub($token = '', $id = '') {
     $rows = readTable('OtSubs');
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบรายการ');
-    assert_ot_sub_owner($me, $rows[$i]['original_teacher_id']);
+    assert_ot_sub_owner($me, $rows[$i]['original_teacher_id'], $rows[$i]['teacher_id']);
     assert_ot_sub_claims_open($me, $rows[$i]['round_id'], [$rows[$i]['original_teacher_id'], $rows[$i]['teacher_id']]);
     $rows[$i]['status'] = 'cancelled';
     writeTable('OtSubs', $rows);
@@ -310,7 +322,10 @@ function api_otListSubs($token = '', $roundId = '') {
   return ot_subs_with_reports(array_values(array_filter(readTable('OtSubs'), function ($r) use ($me, $t, $roundId) {
     if ((string)$r['round_id'] !== str($roundId)) return false;
     if (is_academic_manager($me)) return true;
-    if ($me['role'] === 'dept') return isset($t[$r['original_teacher_id']]) && (string)$t[$r['original_teacher_id']]['department_id'] === (string)$me['department_id'];
+    if ($me['role'] === 'dept') {
+      foreach ([$r['original_teacher_id'], $r['teacher_id']] as $id) if (isset($t[$id]) && (string)$t[$id]['department_id'] === (string)$me['department_id']) return true;
+      return false;
+    }
     return (string)$r['teacher_id'] === (string)$me['teacher_id'] || (string)$r['original_teacher_id'] === (string)$me['teacher_id'];
   })));
 }

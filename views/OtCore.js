@@ -144,6 +144,12 @@ var Ot = (function () {
     return weeks;
   }
 
+  function ownSessionAt(sessions, tid, day, p, exceptId) {
+    return (sessions || []).some(function (x) {
+      return String(x.id) !== exceptId && n(x.day) === day && String(x.teacher_ids).split(',').indexOf(tid) >= 0 && p >= n(x.start) && p < n(x.start) + n(x.length);
+    });
+  }
+
   function item(D, s, date, day, p, tid, sub) {
     var g = D.groups[s.group_id] || {}, c = D.courses[s.course_id] || {};
     var it = {
@@ -167,6 +173,9 @@ var Ot = (function () {
         }
       });
       if (madeUp && !other) { it.absent = ''; it.made_up = String(madeUp.date).slice(0, 10); }
+    } else if (sub.type === 'sub' && ownSessionAt(D.sessions, tid, day, p, String(s.id))) {
+      // ระเบียบข้อ 8: ครูผู้สอนแทนเบิกได้เฉพาะคาบที่ตารางสอนของตนเองว่าง (ต้องตรงกับ ot.php)
+      it.absent = 'ดูแลแทนขณะมีคาบสอนของตนเอง — เบิกไม่ได้';
     } else if (makeupReported(sub, tid)) {
       // นับไว้ที่คาบเดิมแล้ว วันสอนชดเชยจึงไม่นับซ้ำ
       it.absent = 'นับที่คาบเดิม ' + String(sub.original_date || sub.date).slice(0, 10);

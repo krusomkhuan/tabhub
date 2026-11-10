@@ -341,7 +341,7 @@ function listSubs() {
           : '<span class="tag ' + (today > r.report_due ? 'bad' : 'warn') + '">ครบกำหนด ' + thDate(r.report_due) + (today > r.report_due ? ' (เลยกำหนด)' : '') + '</span>';
         return '<tr' + (cancelled ? ' style="opacity:.45;text-decoration:line-through"' : '') + '><td>' + (r.type === 'sub' ? 'สอนแทน' : 'สอนชดเชย') + '<br><span class="small muted">' + esc(r.reason) + '</span></td><td>' + esc(nm('Teachers', r.original_teacher_id)) + '</td><td>' + esc(nm('Teachers', r.teacher_id)) +
           '</td><td>' + esc(c.code) + ' ' + esc(groupCode(r.group_id)) + '</td><td>' + thDate(r.original_date) + '</td><td>' + thDate(r.date) + ' คาบ ' + Grid.periodRange(S.settings, r.start, r.length) + '</td><td>' + rep + '</td><td style="white-space:nowrap">' +
-          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' : '') + (!cancelled && (can('dept') || String(r.original_teacher_id) === String(S.me.teacher_id)) ? '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
+          (!cancelled && r.type === 'makeup' ? '<button class="btn sm" data-req="' + esc(r.id) + '">ขออนุญาต</button> ' : '') + (!cancelled ? '<button class="btn sm" data-rep="' + esc(r.id) + '">รายงานการสอน</button> ' : '') + (!cancelled && (can('dept') || String(r.original_teacher_id) === String(S.me.teacher_id) || String(r.teacher_id) === String(S.me.teacher_id)) ? '<button class="btn sm bad" data-cx="' + esc(r.id) + '">ยกเลิก</button>' : '') + '</td></tr>';
       }).join('') || '<tr><td colspan="8" class="muted">ไม่มีรายการ</td></tr>') + '</tbody></table></div></div>';
     // ใบขออนุญาตรวมทุกรายการสอนชดเชยของครูคนเดียวกันที่มีเหตุผลเดียวกัน
     $$('[data-req]').forEach(function (b) { b.onclick = function () {
@@ -359,9 +359,10 @@ function listSubs() {
 
 function subModal(kind) {
   var tOpts = function (dept) { return '<option value="">— เลือก —</option>' + otTeachers(dept).map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.name) + ' · ' + esc(deptName(t.department_id)) + '</option>'; }).join(''); };
-  var myDept = S.me.role === 'dept' ? S.me.department_id : '';
   var round = IDX.OtRounds[OT.round];
   var isSub = kind === 'sub';
+  // วิชาการแผนกบันทึกสอนแทนได้เมื่อครูผู้สอนเดิมหรือครูผู้สอนแทนอยู่ในแผนก จึงเลือกครูผู้สอนเดิมจากทุกแผนกได้
+  var myDept = S.me.role === 'dept' && !isSub ? S.me.department_id : '';
   var m = modal('<h3>' + (isSub ? 'บันทึกการสอนแทน/ดูแลแทน' : 'บันทึกการสอนชดเชย') + '</h3><p class="small muted" style="margin:0 0 6px">' + (isSub ? 'ครูคนอื่นสอนแทนในวันเดิม' : 'ครูคนเดิมสอนในวันอื่น') + '</p>' +
     '<label class="f">เหตุผล</label><select id="sbWhy"><option>ลา</option><option>ไปราชการ</option><option>ลาป่วย</option><option>อื่นๆ</option></select>' +
     '<label class="f">ครูผู้สอนเดิม</label><select id="sbO">' + tOpts(myDept) + '</select>' +
@@ -386,11 +387,22 @@ function subModal(kind) {
     }).join('') : '<option value="">ไม่มีคาบสอนในวันนี้</option>';
     var o = $('#sbS').selectedOptions[0]; if (o && o.dataset.len) $('#sbL').value = o.dataset.len;
   }
-  $('#sbO').onchange = fillSessions; $('#sbOD').onchange = fillSessions;
-  // ครูทำรายการได้เฉพาะคาบของตนเอง
+  $('#sbOD').onchange = fillSessions;
+  var me = String(S.me.teacher_id || '');
+  // ครู: สอนชดเชยทำได้เฉพาะคาบของตนเอง · สอนแทน/ดูแลแทน บันทึกได้ทั้งครูที่ลา (เลือกผู้สอนแทน) และครูผู้สอนแทน (เลือกครูผู้สอนเดิม)
+  function lockSelf() {
+    if (can('dept') || !isSub) return;
+    var by = $('#sbBy'), orig = $('#sbO').value;
+    $$('option', by).forEach(function (o) { o.hidden = o.disabled = !orig ? false : orig === me ? o.value === me : (o.value !== me && o.value !== ''); });
+    if (orig && orig !== me) { by.value = me; by.disabled = true; }
+    else { by.disabled = false; if (by.value === me) by.value = ''; }
+  }
+  $('#sbO').onchange = function () { lockSelf(); fillSessions(); };
   if (!can('dept')) {
-    $('#sbO').value = S.me.teacher_id; $('#sbO').disabled = true;
-    var selfOption = $('#sbBy option[value="' + String(S.me.teacher_id).replace(/["\\]/g, '\\$&') + '"]'); if (selfOption) selfOption.remove();
+    if (isSub) {
+      $('#sbO').insertAdjacentHTML('afterend', '<p class="small muted" style="margin:4px 0 0">ครูที่ลาเลือกชื่อตนเองแล้วเลือกครูผู้สอนแทน หรือครูผู้สอนแทนเลือกชื่อครูที่ลา (ระบบใส่ชื่อท่านเป็นผู้สอนแทนให้)</p>');
+      lockSelf();
+    } else { $('#sbO').value = me; $('#sbO').disabled = true; }
   }
   $('#sbS').onchange = function () { var o = this.selectedOptions[0]; if (o && o.dataset.len) $('#sbL').value = o.dataset.len; };
   $('#sbGo').onclick = function () {

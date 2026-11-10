@@ -22,7 +22,7 @@ function sub_doc_scope(array $me, $subIds): array {
   foreach ($rows as $r) if ((string)$r['original_teacher_id'] !== $orig || (string)$r['teacher_id'] !== $tid) throw new Exception('เอกสารหนึ่งฉบับต้องเป็นรายการของครูชุดเดียวกัน');
   // ครูผู้สอนเดิมหรือผู้สอนแทนเปิดเอกสารของรายการนี้ได้ ผู้อื่นใช้สิทธิ์ตามแผนก
   $mine = $me['role'] === 'teacher' && js_true($me['teacher_id'] ?? '') && in_array((string)$me['teacher_id'], [$orig, $tid], true);
-  if (!$mine) assert_ot_sub_owner($me, $orig);
+  if (!$mine) assert_ot_sub_owner($me, $orig, $tid);
   return ['ids' => $ids, 'orig' => $orig, 'teacher' => $tid, 'round' => (string)$rows[0]['round_id']];
 }
 

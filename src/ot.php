@@ -138,6 +138,9 @@ function ot_item(array $D, array $s, string $date, int $day, int $p, string $tid
       }
     }
     if ($madeUp && !$other) { $it['absent'] = ''; $it['made_up'] = substr((string)$madeUp['date'], 0, 10); }
+  } elseif ($sub['type'] === 'sub' && ot_own_session_at($D['sessions'], $tid, $day, $p, (string)$s['id'])) {
+    // ระเบียบข้อ 8: ครูผู้สอนแทนเบิกได้เฉพาะคาบที่ตารางสอนของตนเองว่าง
+    $it['absent'] = 'ดูแลแทนขณะมีคาบสอนของตนเอง — เบิกไม่ได้';
   } elseif (ot_makeup_reported($sub, $tid)) {
     // นับไว้ที่คาบเดิมแล้ว วันสอนชดเชยจึงไม่นับซ้ำ
     $od = js_true($sub['original_date'] ?? '') ? $sub['original_date'] : $sub['date'];
@@ -146,6 +149,15 @@ function ot_item(array $D, array $s, string $date, int $day, int $p, string $tid
     $it['pending'] = 'รอแนบรายงานผลการสอนชดเชย';
   }
   return $it;
+}
+
+/** ครูมีคาบสอนของตนเองตามตารางในวันและคาบนี้หรือไม่ (ไม่นับคาบที่กำลังสอนแทน) */
+function ot_own_session_at(array $sessions, string $tid, int $day, int $p, string $exceptId = ''): bool {
+  foreach ($sessions as $x) {
+    if ((string)$x['id'] === $exceptId || num($x['day']) !== $day || !in_array($tid, explode(',', (string)$x['teacher_ids']), true)) continue;
+    if ($p >= num($x['start']) && $p < num($x['start']) + num($x['length'])) return true;
+  }
+  return false;
 }
 
 /** สอนชดเชยโดยครูคนเดิมที่รายงานผลแล้ว จึงนับชั่วโมงที่คาบเดิมได้ */
