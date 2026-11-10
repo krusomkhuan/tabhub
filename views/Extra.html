@@ -103,7 +103,7 @@
       '<p class="rp-para">' + esc(thNum(r.memo_reason || memoTemplate(r.date))) + '</p>' +
       '<p class="rp-para">ในการนี้ ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' แผนกวิชา' + esc(dept) + ' ได้ดำเนินการจัดการเรียนการสอนออนไลน์ ในช่วงเวลาดังกล่าวเสร็จสิ้นเป็นที่เรียบร้อยแล้ว จึงขออนุญาตรายงานผลการจัดการเรียนการสอนดังกล่าว ดังรายละเอียดที่แนบมาพร้อมนี้</p>' +
       '<p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและพิจารณา</p><div class="rp-sign-one">' + sign(t.name, 'ตำแหน่ง ' + rank, 'ครูผู้สอน') + '</div>' +
-      '<table class="rp-opinions"><tr>' + opinion('ความเห็นของหัวหน้าแผนกวิชา', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], head.name, 'หัวหน้าแผนกวิชา' + dept) + opinion('ความเห็นของหัวหน้างานพัฒนาหลักสูตรฯ', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</tr><tr>' +
+      '<table class="rp-opinions"><tr>' + opinion('ความเห็นของหัวหน้าแผนกวิชา', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], head.name, 'หัวหน้าแผนกวิชา' + dept) + opinion('ความเห็นของหัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</tr><tr>' +
       opinion('ความเห็นของรองผู้อำนวยการฝ่ายวิชาการ', ['เพื่อโปรดทราบ', 'เพื่อโปรดพิจารณาอนุญาต'], st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') +
       '<td><b>ความเห็นของผู้อำนวยการ</b><div class="rp-check"><span>(   ) ทราบ</span><span>(   ) อนุญาต</span><span>(   ) ไม่อนุญาต</span><span>(   ) อื่น ๆ ..............</span></div><div class="rp-sig">ลงชื่อ' + dots + '<br>( ' + esc(st.signer_director || dots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div></td></tr></table></div>';
     var detailHead = '<h2 class="rp-title">รายงานการสอนออนไลน์</h2><div class="rp-line">ชื่อวิชา' + f(c.name, 'grow') + 'รหัสวิชา' + f(c.code) + '</div><div class="rp-line">ระดับชั้น' + f(levels) + 'กลุ่มชั้นเรียน/ห้อง' + '<span class="rp-f grow">' + esc(gids.map(groupCode).join(' , ')) + '</span>' + 'สาขาวิชา' + f(majors, 'grow') + '</div>' +
@@ -166,7 +166,7 @@
     return '<div class="page rp-page" data-pdf-width="760"><h2 class="rp-title">กิจกรรมการเรียนการสอน</h2><div class="rp-center">ชื่อวิชา ' + esc(c.name) + ' รหัสวิชา ' + esc(thNum(c.code)) + '<br>ระดับชั้น ' + esc(thNum(uniq(groups.map(function (g) { return g.year_level || g.level; })).join(', '))) + ' กลุ่มชั้นเรียน/ห้อง ' + esc(ids.map(groupCode).join(', ')) + ' สาขาวิชา ' + esc(uniq(groups.map(function (g) { return nm('Majors', g.major_id).replace(/\s*\((ปวช|ปวส)\.?\)\s*$/, ''); })).join(', ')) + '<br>วัน' + esc(dayName) + ' ที่ ' + thNum(d.day) + ' เดือน ' + d.month + ' พ.ศ. ' + thNum(d.year) + ' เวลา ' + timeRange(r.start, r.length) + ' น.</div><hr class="rp-dash">' +
       '<h3>รูปภาพประกอบการเรียนการสอน</h3>' + (images.length ? '<div class="rp-pics rp-pics-' + Math.min(images.length, 4) + '">' + images.map(function (x) { return '<img src="' + x.url + '" alt="รูปประกอบการเรียนการสอน">'; }).join('') + '</div>' : '<p class="rp-empty">ไม่มีรูปประกอบ</p>') +
       '<h3>เนื้อหาที่สอน</h3>' + bullets(r.topic) + '<h3>กิจกรรมการเรียนการสอน</h3>' + bullets(r.activity) + '<h3>การวัดผลการประเมินผล</h3>' + bullets(r.evaluation) + '<h3>งานที่มอบหมาย</h3>' + bullets(r.assignment) + att +
-      '<div class="rp-sign-three">' + rpSign(deptHead(t).name, 'หัวหน้าแผนกวิชา') + rpSign(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ') + rpSign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div></div>';
+      '<div class="rp-sign-three">' + rpSign(deptHead(t).name, 'หัวหน้าแผนกวิชา') + rpSign(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + rpSign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div></div>';
   }
 
   /* บันทึกข้อความรายงาน แยกชนิดและครูผู้สอนเดิม */
@@ -886,7 +886,7 @@
           '<tr class="fw-bold"><td colspan="3" class="text-end">รวมทั้งสิ้น</td>' + r.weeks.map(function (w) { return num(r.weekTotals[w.index] || 0); }).join('') + '<td class="text-end">' + r.totals.hours + '</td>' + num(r.totals.amount) + '</tr>' +
           '<tr><td colspan="' + (r.weeks.length + 5) + '" class="text-center">(' + esc(r.totalText) + ')</td></tr></tbody></table></div>' +
           '<p class="small">ผู้มีสิทธิ์เบิกระดับ ' + lv + ' ' + r.rows.length + ' คน</p>' +
-          '<div class="signs">' + sign(head && head.name, 'หัวหน้าแผนกวิชา<br>ผู้จัดทำ') + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ<br>ผู้ตรวจสอบ') + '</div>' +
+          '<div class="signs">' + sign(head && head.name, 'หัวหน้าแผนกวิชา<br>ผู้จัดทำ') + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้<br>ผู้ตรวจสอบ') + '</div>' +
           '<div class="signs">' + sign(s.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_director, 'ผู้อำนวยการวิทยาลัย<br>ผู้อนุมัติ') + '</div></div>');
       });
     }

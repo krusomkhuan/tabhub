@@ -407,7 +407,7 @@ var Grid = (function () {
   /** ช่องลงนามท้ายตาราง */
   function signBlock(st, headName, omitHead) {
     function one(name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
-    return '<div class="signs">' + (omitHead ? '' : one(headName, 'หัวหน้าแผนกวิชา')) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรฯ') +
+    return '<div class="signs">' + (omitHead ? '' : one(headName, 'หัวหน้าแผนกวิชา')) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') +
       one(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + one(st.signer_director, 'ผู้อำนวยการ') + '</div>';
   }
 
