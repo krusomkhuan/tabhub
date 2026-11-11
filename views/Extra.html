@@ -99,7 +99,7 @@
     var numbered = function (text) { return '<ol class="rp-list">' + String(text || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(String).map(function (x, i) { return '<li><span>' + thNum(i + 1) + '.</span>' + esc(thNum(x)) + '</li>'; }).join('') + '</ol>'; };
     var dots = '.............................................';
     var opinion = function (title, lines, name, role) { return '<td><b>' + title + '</b><div>เรียน ผู้อำนวยการ' + esc(college) + '</div>' + lines.map(function (l) { return '<div class="rp-ind">- ' + l + '</div>'; }).join('') + '<div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + dots + '<br>( ' + esc(name || dots) + ' )<br>' + esc(role) + '</div></td>'; };
-    var sign = function (name, role, suffix) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + dots + (suffix || '') + '<br>( ' + esc(name || dots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
+    var sign = function (name, role, suffix, own) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name, '', own) : '') + dots + (suffix || '') + '<br>( ' + esc(name || dots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
     var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('รายงานการสอนออนไลน์', r.memo_no, r.memo_date || r.date) +
       '<p class="rp-para">' + esc(thNum(r.memo_reason || memoTemplate(r.date))) + '</p>' +
       '<p class="rp-para">ในการนี้ ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' แผนกวิชา' + esc(dept) + ' ได้ดำเนินการจัดการเรียนการสอนออนไลน์ ในช่วงเวลาดังกล่าวเสร็จสิ้นเป็นที่เรียบร้อยแล้ว จึงขออนุญาตรายงานผลการจัดการเรียนการสอนดังกล่าว ดังรายละเอียดที่แนบมาพร้อมนี้</p>' +
@@ -114,7 +114,7 @@
     var att = parseAttendance(r);
     var page3 = '<div class="page rp-page" data-pdf-width="760"><h3>สื่อการสอน</h3>' + numbered(r.media) + '<h3>การวัดและประเมินผล</h3>' + numbered(r.evaluation) + '<h3>งานที่มอบหมาย</h3><p class="rp-text">' + esc(thNum(r.assignment)) + '</p>' +
       att.map(function (a) { return '<p class="rp-room">ห้อง ' + esc(groupCode(a.group_id)) + ' มีจำนวนผู้เรียนทั้งหมด ' + f(a.total) + ' คน เข้าเรียน ' + f(a.present) + ' คน ขาดเรียน ' + f(a.absent) + ' คน' + (a.numbers ? '<br>(เลขที่ ' + f(a.numbers) + ')' : '') + '</p>'; }).join('') +
-      '<div class="rp-sign-four">' + sign(t.name, '', 'ครูผู้สอน') + sign(head.name, '', Grid.deptHeadTitle(dept)) + sign(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + sign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div></div>';
+      '<div class="rp-sign-four">' + sign(t.name, '', 'ครูผู้สอน', true) + sign(head.name, '', Grid.deptHeadTitle(dept)) + sign(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + sign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div></div>';
     return memo + page2 + page3;
   }
 

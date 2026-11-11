@@ -589,9 +589,10 @@ var Sig = (function () {
   var map = null, places = {}, timer;
   function key(name) { return String(name || '').replace(/\s+/g, '').replace(/ํา/g, 'ำ'); }
   /* spot = จุดในเอกสารที่ผู้ดูแลระบบปรับตำแหน่งแยกได้ ไม่ระบุ = ตามหน้าที่เปิด (เมนูในระบบ หรือ public) */
-  function slot(name, spot) {
+  /* own = ช่องลงชื่อของครูผู้ทำรายการเอง (สอนแทน สอนชดเชย รายงานต่าง ๆ) ให้แสดงลายเซ็น */
+  function slot(name, spot, own) {
     var k = key(name);
-    return k ? '<span class="sig-slot" data-sig="' + Grid.esc(k) + '"' + (spot ? ' data-spot="' + Grid.esc(spot) + '"' : '') + '></span>' : '';
+    return k ? '<span class="sig-slot" data-sig="' + Grid.esc(k) + '"' + (spot ? ' data-spot="' + Grid.esc(spot) + '"' : '') + (own ? ' data-own="1"' : '') + '></span>' : '';
   }
   function spotOf(s) { return s.getAttribute('data-spot') || (window.S && S.view) || 'public'; }
   /* ตำแหน่งที่ใช้: ที่ผู้ดูแลปรับไว้สำหรับจุดนี้ ถ้าไม่มีใช้ที่เจ้าของตั้งไว้ */
@@ -604,10 +605,17 @@ var Sig = (function () {
     var t = p && (p.x || p.y || (p.s && p.s !== 1)) ? 'translate(' + (+p.x || 0) + 'em,' + (+p.y || 0) + 'em) scale(' + (+p.s || 1) + ')' : '';
     if (img.style.transform !== t) img.style.transform = t;
   }
+  /* แสดงลายเซ็นเฉพาะ
+     1) ตารางเรียน ตารางสอน และตารางการใช้ห้อง (signBlock วางจุด 'timetable')
+     2) ช่องลงชื่อของครูผู้ทำรายการ (สอนแทน สอนชดเชย รายงานการสอน รายงานการนิเทศ) — data-own
+        หรืออยู่ในกรอบ .rp-sign-one / .vr-tsign ซึ่งใช้กับครูผู้ทำรายการเท่านั้น (ครอบคลุมเอกสารที่บันทึกไว้ก่อนมี data-own)
+     ช่องของผู้บริหาร/ผู้รับรอง/ผู้อนุมัติ และเอกสารอื่น เช่น ใบเบิก ใบสรุป ไม่เติมรูป ให้ลงนามด้วยมือ */
+  var SHOW_SPOTS = { timetable: 1 };
+  function shown(s) { return !!(SHOW_SPOTS[s.getAttribute('data-spot')] || s.getAttribute('data-own') || (s.closest && s.closest('.rp-sign-one, .vr-tsign'))); }
   function fill(root) {
     if (!map) return;
     Array.prototype.forEach.call((root || document).querySelectorAll('.sig-slot[data-sig]'), function (s) {
-      var v = map[s.getAttribute('data-sig')], src = v && (v.src || v), img = s.querySelector('img');
+      var v = shown(s) && map[s.getAttribute('data-sig')], src = v && (v.src || v), img = s.querySelector('img');
       if (src) {
         if (!img) { img = document.createElement('img'); img.alt = ''; s.appendChild(img); }
         if (img.getAttribute('src') !== src) img.setAttribute('src', src);
