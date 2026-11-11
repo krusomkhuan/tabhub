@@ -196,12 +196,15 @@ function renderShell() {
     (PWA.installed() ? '' : '<a class="nav" href="javascript:void 0" onclick="PWA.add()"><span class="ic">📲</span>เพิ่มไอคอนลงมือถือ</a>') +
     '<p class="app-ver side-ver">เวอร์ชัน ' + esc(APP_VERSION) + '<br>ผู้พัฒนา: ' + esc(APP_DEVELOPERS) + '</p></aside>' +
     '<div class="main"><div class="top no-print"><button class="btn sm menu-btn" id="mb">☰</button><h2 id="title"></h2>' +
-    '<select id="semSel" class="sem">' + semOpts + '</select><button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>' +
+    '<select id="semSel" class="sem">' + semOpts + '</select>' +
+    ((S.me.dept_options || []).length > 1 ? '<select id="deptSel" class="sem" title="หัวหน้าแผนกวิชาหลายแผนก: เลือกแผนกที่จะทำงาน">' + S.me.dept_options.map(function (d) { return '<option value="' + esc(d) + '"' + (String(d) === String(S.me.department_id) ? ' selected' : '') + '>แผนก' + esc(deptName(d)) + '</option>'; }).join('') + '</select>' : '') +
+    '<button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>' +
     (menuOk('plancheck') ? '<button type="button" class="bell-btn" id="bellBtn" aria-label="การแจ้งเตือนแผนการเรียน">🔔<span class="bell-n" id="bellN"></span></button>' : '') +
     '<div class="user" id="userBtn"><span class="av">' + (S.me.avatar ? '<img src="' + esc(S.me.avatar) + '" alt="">' : esc(initials)) + '</span><span class="un"><b>' + esc(S.me.name) + '</b><small>' + roleTh + '</small></span>' +
     '<div class="umenu" id="umenu"><a href="javascript:void 0" id="profBtn">👤 แก้ไขโปรไฟล์</a><a href="javascript:void 0" id="sigBtn">✍️ ลายเซ็นของฉัน</a><a href="javascript:void 0" id="pwBtn">🔑 เปลี่ยนรหัสผ่าน</a><a href="javascript:void 0" id="outBtn">⎋ ออกจากระบบ</a></div></div></div>' +
     '<div class="content" id="content"></div></div></div>';
   $('#semSel').onchange = function () { S.sem = this.value; store('tt_sem', S.sem); loadSchedule().then(function () { go(S.view); }); };
+  if ($('#deptSel')) $('#deptSel').onchange = function () { api('setActiveDept', S.token, this.value).then(function () { location.reload(); }); };
   $('#outBtn').onclick = function () { api('logout', S.token); store('tt_token', null); S.token = null; S.sel = { mode: 'group' }; renderLogin(); };
   $('#pwBtn').onclick = changePw;
   $('#profBtn').onclick = editProfile;
@@ -1368,7 +1371,7 @@ function planModal(p) {
 
 /* ===================== รายงาน ===================== */
 function signBlock(deptId) {
-  var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(deptId) && String(t.is_dept_head) === 'true'; })[0];
+  var head = Grid.deptHead(S.D.Teachers, deptId);
   return Grid.signBlock(S.settings, head && head.name, false, deptName(deptId));
 }
 
@@ -1769,7 +1772,7 @@ var TABLES = {
   Majors: { title: 'สาขาวิชา', fields: [['department_id', 'แผนกวิชา', 'ref:Departments'], ['name', 'ชื่อสาขาวิชา', 'text'], ['level', 'ระดับ', 'text'], ['sort', 'ลำดับ', 'number']] },
   Teachers: { title: 'ครูผู้สอน', search: true, fields: [['code', 'รหัสครู', 'text'], ['name', 'ชื่อ-สกุล', 'text'], ['department_id', 'แผนกวิชา', 'ref:Departments'], ['position', 'ตำแหน่ง', 'text'],
     ['employment', 'สถานะการจ้าง', 'enum:gov=ข้าราชการครู,civil=พนักงานราชการ,perm=ลูกจ้างประจำ,contract=ครูอัตราจ้าง,other=อื่นๆ'],
-    ['is_dept_head', 'หัวหน้าแผนก', 'bool'], ['is_dept_academic', 'วิชาการแผนกวิชา', 'bool'], ['is_unit_head', 'หัวหน้างาน', 'bool'], ['service_start', 'วันเริ่มงาน (อายุงานอัตราจ้าง)', 'date'],
+    ['is_dept_head', 'หัวหน้าแผนก', 'bool'], ['head_dept_ids', 'หัวหน้าแผนกวิชาเพิ่มเติม (แผนกอื่นนอกจากแผนกที่สังกัด)', 'multi:Departments'], ['is_dept_academic', 'วิชาการแผนกวิชา', 'bool'], ['is_unit_head', 'หัวหน้างาน', 'bool'], ['service_start', 'วันเริ่มงาน (อายุงานอัตราจ้าง)', 'date'],
     ['award_bonus', 'สิทธิ์เพิ่มชั่วโมงเบิก (รางวัลระดับชาติ ข้อ 5.6)', 'enum:=ไม่มี,1=เพิ่ม 1 ชม.,2=เพิ่ม 2 ชม.,3=เพิ่ม 3 ชม.'], ['ot_cap', 'เพดานคาบเบิกรายบุคคล (ชม./สัปดาห์ เว้นว่าง = คำนวณตามระเบียบ)', 'number'], ['award_note', 'หลักฐาน/มติคณะกรรมการสถานศึกษา', 'text'],
     ['ot_enabled', 'เบิกค่าสอนเกินภาระงาน', 'bool'], ['ot_scheme_ids', 'แบบการเบิกที่ใช้ได้', 'multi:OtSchemes'],
     ['max_per_day', 'สอนไม่เกิน (คาบ/วัน)', 'number'], ['unavailable', 'ช่วงไม่ว่าง', 'slots'], ['email', 'อีเมล', 'text']] },

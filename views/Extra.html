@@ -88,7 +88,7 @@
   function reportDocHtml(r, images) {
     var st = S.settings, college = st.college_name || '', t = IDX.Teachers[r.teacher_id] || {}, c = courseOf(r.course_id), gids = reportGroupIds(r), groups = gids.map(function (g) { return IDX.Groups[g] || {}; });
     var dept = deptName(t.department_id), rank = rankText(t.position);
-    var head = S.D.Teachers.filter(function (x) { return String(x.department_id) === String(t.department_id) && String(x.is_dept_head) === 'true'; })[0] || {};
+    var head = Grid.deptHead(S.D.Teachers, t.department_id) || {};
     var uniq = function (a) { return a.filter(function (x, i) { return x && a.indexOf(x) === i; }); };
     var levels = uniq(groups.map(function (g) { return g.year_level || g.level; })).join(', ');
     var majors = uniq(groups.map(function (g) { return nm('Majors', g.major_id).replace(/\s*\((ปวช|ปวส)\.?\)\s*$/, ''); })).join(', ');
@@ -135,7 +135,7 @@
   var timeRange = function (start, len) { var t = Grid.periodTimes(S.settings), a = t[Number(start) - 1] || ['', ''], b = t[Number(start) + Number(len) - 2] || a; return thNum(String(a[0]).replace(':', '.') + '-' + String(b[1]).replace(':', '.')); };
   var rpDots = '.............................................';
   var rpSign = function (name, role, suffix) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + rpDots + (suffix || '') + '<br>( ' + esc(name || rpDots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
-  var deptHead = function (t) { return S.D.Teachers.filter(function (x) { return String(x.department_id) === String(t.department_id) && String(x.is_dept_head) === 'true'; })[0] || {}; };
+  var deptHead = function (t) { return Grid.deptHead(S.D.Teachers, t.department_id) || {}; };
   /* unit: หน่วยงานเจ้าของเรื่องต่อท้ายส่วนราชการ ตามแบบบันทึกข้อความงานสารบรรณ เช่น แผนกวิชา */
   var rpMemoHead = function (subject, no, date, unit) {
     var st = S.settings;
@@ -971,7 +971,7 @@
 
   function visitReportHtml(teacherId, list, imgs) {
     var st = S.settings, t = IDX.Teachers[teacherId] || {}, dept = t.department_id, blank = '................................';
-    var head = S.D.Teachers.filter(function (x) { return String(x.department_id) === String(dept) && String(x.is_dept_head) === 'true'; })[0] || {};
+    var head = Grid.deptHead(S.D.Teachers, dept) || {};
     var box = function (on) { return on ? '☑' : '☐'; };
     var text = function (v) { return v ? esc(thNum(v)).replace(/\n/g, '<br>') : blank; };
     var sign = function (name, role) { return '<div class="vr-sign">ลงชื่อ ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')' + (role ? '<br>' + role : '') + '</div>'; };
@@ -1228,7 +1228,7 @@
       api('otCoverSheet', S.token, S.sem, CV.dept, CV.level).then(function (r) {
         if (r.noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่มีวันเปิดภาคเรียนและรอบการเบิกของภาคเรียนนี้ — กำหนดวันเปิด-ปิดที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
         var s = S.settings, sem = r.semester, lv = CV_LEVELS[r.level];
-        var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(CV.dept) && String(t.is_dept_head) === 'true'; })[0];
+        var head = Grid.deptHead(S.D.Teachers, CV.dept);
         var sign = function (name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
         var num = function (v) { return '<td class="text-end">' + (v ? money(v) : '') + '</td>'; };
         var last = r.weeks[r.weeks.length - 1];

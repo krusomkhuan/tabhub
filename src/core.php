@@ -14,7 +14,7 @@ const SCHEMA = [
   'Semesters'    => ['id', 'year', 'term', 'label', 'is_default', 'start_date', 'end_date'],
   'Departments'  => ['id', 'name', 'sort'],
   'Majors'       => ['id', 'department_id', 'name', 'level', 'sort'],
-  'Teachers'     => ['id', 'code', 'name', 'department_id', 'major_id', 'position', 'employment', 'is_dept_head', 'is_unit_head', 'service_start',
+  'Teachers'     => ['id', 'code', 'name', 'department_id', 'major_id', 'position', 'employment', 'is_dept_head', 'head_dept_ids', 'is_unit_head', 'service_start',
                      'award_bonus', 'award_note', 'ot_enabled', 'ot_scheme_ids', 'education', 'special_duty', 'max_per_day', 'unavailable', 'email', 'tab_id', 'is_dept_academic', 'ot_cap'],
   'Buildings'    => ['id', 'name'],
   'Rooms'        => ['id', 'building_id', 'name', 'type', 'capacity', 'shareable', 'tab_id'],

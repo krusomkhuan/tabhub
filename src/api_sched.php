@@ -263,7 +263,7 @@ function api_getPublicData($semesterId = '') {
     'departments' => $pick(readTable('Departments'), ['id', 'name']),
     'groups' => $pick(readTable('Groups'), ['id', 'code', 'name', 'level', 'department_id', 'room_id', 'advisor_id', 'student_code']),
     // วุฒิการศึกษาและหน้าที่พิเศษ แสดงในแบบฟอร์มตารางสอนตามที่วิทยาลัยกำหนด
-    'teachers' => $pick(readTable('Teachers'), ['id', 'name', 'department_id', 'is_dept_head', 'education', 'special_duty']),
+    'teachers' => $pick(readTable('Teachers'), ['id', 'name', 'department_id', 'is_dept_head', 'head_dept_ids', 'education', 'special_duty']),
     'rooms' => $pick(readTable('Rooms'), ['id', 'name', 'building_id']),
     'buildings' => readTable('Buildings'),
     'locked' => readTable('LockedSlots'),

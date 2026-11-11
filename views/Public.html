@@ -126,7 +126,7 @@
     P.title = title + (sem ? ' ภาคเรียน ' + sem.label : '');
     if (P.type === 'teacher') {
       var t = IX.teachers[P.id] || {};
-      var head = D.teachers.filter(function (x) { return String(x.department_id) === String(t.department_id) && String(x.is_dept_head) === 'true'; })[0];
+      var head = Grid.deptHead(D.teachers, t.department_id);
       out.innerHTML = Grid.teacherSheet({
         settings: D.settings, dayNames: D.days, locked: D.locked || [], teacher: t, teacherId: P.id, sessions: D.sessions, groups: D.groups,
         hourType: function (s) { return s.hour_type || 'in'; }, plc: D.plc || [],
@@ -144,7 +144,7 @@
       room: function (id) { return (IX.rooms[id] || {}).name || ''; }, color: publicSessionColor,
       teacherNames: function (ids) { return Grid.shortTeacherNames(ids, function (id) { return IX.teachers[id]; }); },
       buildingName: (IX.buildings[r.building_id] || {}).name || '', semLabel: sem ? sem.label : '',
-      sign: Grid.signBlock(D.settings, (D.teachers.filter(function (t) { return String(t.department_id) === String(g.department_id) && String(t.is_dept_head) === 'true'; })[0] || {}).name, P.type === 'room', (IX.departments[g.department_id] || {}).name)
+      sign: Grid.signBlock(D.settings, (Grid.deptHead(D.teachers, g.department_id) || {}).name, P.type === 'room', (IX.departments[g.department_id] || {}).name)
     };
     out.innerHTML = P.type === 'group' ? Grid.studentSheet(options) : Grid.roomSheet(options);
   }

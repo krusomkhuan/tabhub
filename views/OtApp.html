@@ -465,7 +465,7 @@ VIEWS['ot-summary'] = function (el) {
   api('otDeptSummary', S.token, OT.round, dept).then(function (r) {
     var round = IDX.OtRounds[OT.round], s = S.settings;
     function sign(name, role) { var person = otSignatureName(name); return '<div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(person.name || '.................................') + ')<br>' + role + '</div>'; }
-    var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(dept) && String(t.is_dept_head) === 'true'; })[0];
+    var head = Grid.deptHead(S.D.Teachers, dept);
     $('#smOut').className = '';
     $('#smOut').innerHTML = '<div class="page"><h2>ใบสรุปเสนอเบิกค่าสอนเกินภาระงาน</h2><div class="sub">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(dept))) + ' · ' + esc(round.name) + ' ภาคเรียนที่ ' + esc(semLabel(round.semester_id)) + ' (' + thDate(round.start_date) + ' – ' + thDate(round.end_date) + ')</div>' +
       (r.notLocked.length ? '<p class="tag warn no-print">ยังไม่ล็อกใบเบิก: ' + esc(r.notLocked.join(', ')) + ' — ใบสรุปนับเฉพาะใบที่ล็อกแล้ว</p>' : '') +

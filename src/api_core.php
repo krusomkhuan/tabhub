@@ -66,6 +66,13 @@ function auth_user($token, ?string $need = null): array {
   $u = session_user($users[$i]); // สิทธิ์และแผนกปัจจุบัน ไม่ใช้สิทธิ์เก่าจาก token
   if (!isset(USER_ROLES[$u['role'] ?? ''])) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
   kvPut('cache:tok_' . $token, json_encode($u, JSON_UNESCAPED_UNICODE), 21600);
+  // หัวหน้าแผนกวิชาหลายแผนก: สลับแผนกที่ทำงานอยู่ได้ (เลือกไว้ต่อ token)
+  $opts = user_dept_options($u);
+  if (count($opts) > 1) {
+    $u['dept_options'] = $opts;
+    $act = (string)(kvGet('cache:actdept_' . $token) ?? '');
+    if ($act !== '' && in_array($act, $opts, true)) $u['department_id'] = $act;
+  }
   $menus = perm_effective($users[$i]);
   $base = $u['role'];
   if ($base === 'dept_head') $u['role'] = 'dept';
@@ -101,7 +108,28 @@ function api_login($username = '', $password = '') {
   return ['token' => $token, 'user' => $info];
 }
 
-function api_logout($token = '') { if (is_string($token)) kvDel('cache:tok_' . $token); return true; }
+function api_logout($token = '') { if (is_string($token)) { kvDel('cache:tok_' . $token); kvDel('cache:actdept_' . $token); } return true; }
+
+/** แผนกที่ผู้ใช้ระดับแผนกทำงานได้: แผนกของบัญชี + แผนกที่ครูที่ผูกไว้เป็นหัวหน้าแผนกวิชาเพิ่มเติม (head_dept_ids) */
+function user_dept_options(array $u): array {
+  if (!in_array($u['role'] ?? '', ['dept', 'dept_head'], true) || (string)($u['department_id'] ?? '') === '') return [];
+  $opts = [(string)$u['department_id']];
+  $t = (string)($u['teacher_id'] ?? '') !== '' ? (idx_table('Teachers')[(string)$u['teacher_id']] ?? null) : null;
+  if ($t) {
+    $depts = idx_table('Departments');
+    foreach (explode(',', (string)($t['head_dept_ids'] ?? '')) as $d) { $d = trim($d); if ($d !== '' && isset($depts[$d]) && !in_array($d, $opts, true)) $opts[] = $d; }
+  }
+  return $opts;
+}
+
+/** หัวหน้าแผนกวิชาหลายแผนกเลือกแผนกที่จะทำงาน */
+function api_setActiveDept($token = '', $deptId = '') {
+  $me = auth_user($token);
+  $deptId = str($deptId);
+  if (!in_array($deptId, $me['dept_options'] ?? [], true)) throw new Exception('ไม่มีสิทธิ์ในแผนกนี้');
+  kvPut('cache:actdept_' . $token, $deptId, 21600);
+  return true;
+}
 
 function api_getCollegeName() { return ['college_name' => readSettings()['college_name'] ?? '']; }
 function api_getWebAppUrl() { return $GLOBALS['REQ_URL'] ?? ''; }
