@@ -204,6 +204,26 @@ function normalize_person_name(string $name): string {
 function thai_digits(string $s): string { return strtr($s, ['0' => '๐', '1' => '๑', '2' => '๒', '3' => '๓', '4' => '๔', '5' => '๕', '6' => '๖', '7' => '๗', '8' => '๘', '9' => '๙']); }
 
 /** แปลงรหัส/ชื่อกลุ่มเรียนที่มีอยู่เดิมเป็นเลขไทยครั้งเดียว (บันทึกครั้งต่อไปแปลงเองใน normalize_row_names) */
+/** สิทธิ์เพิ่มชั่วโมงเบิก (ข้อ 5.6) เก็บเป็นจำนวนชั่วโมง 1–3 ค่าเดิมที่เป็นติ๊ก (true) นับเป็น 1 ชม. */
+function award_hours($v): int {
+  $v = trim((string)$v);
+  if ($v === 'true') return 1;
+  return is_numeric($v) ? max(0, min(3, (int)$v)) : 0;
+}
+
+/** แปลงค่าเดิม true/false เป็นจำนวนชั่วโมงครั้งเดียว เพื่อให้ช่องเลือกในหน้าเว็บแสดงค่าถูก */
+function award_bonus_hours_once(): void {
+  if ((readSettings()['award_bonus_hours'] ?? '') === '1') return;
+  with_lock(function () {
+    $rows = readTable('Teachers');
+    $changed = false;
+    foreach ($rows as &$r) { $n = award_hours($r['award_bonus'] ?? ''); $v = $n ? (string)$n : ''; if ((string)($r['award_bonus'] ?? '') !== $v) { $r['award_bonus'] = $v; $changed = true; } }
+    unset($r);
+    if ($changed) writeTable('Teachers', $rows);
+    saveSetting('award_bonus_hours', '1');
+  });
+}
+
 function groups_thai_digits_once(): void {
   if ((readSettings()['groups_thai_digits'] ?? '') === '1') return;
   with_lock(function () {
@@ -216,6 +236,7 @@ function groups_thai_digits_once(): void {
 }
 
 function normalize_row_names(string $table, array $row): array {
+  if ($table === 'Teachers' && array_key_exists('award_bonus', $row)) { $n = award_hours($row['award_bonus']); $row['award_bonus'] = $n ? (string)$n : ''; }
   if (($table === 'Teachers' || $table === 'users') && isset($row['name'])) {
     $row['name'] = normalize_person_name((string)$row['name']);
   }

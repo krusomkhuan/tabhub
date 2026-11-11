@@ -77,7 +77,8 @@ function ot_personal_cap(array $teacher, array $settings, ?string $atDate = null
       $cap = $hit['cap']; $note[] = 'อัตราจ้าง อายุงาน ' . $yrs . ' ปี เพดาน ' . $cap . ' ชม.';
     }
   }
-  if ((string)($teacher['award_bonus'] ?? '') === 'true') { $cap = min($collegeCap, $cap + 1); $note[] = 'สิทธิ์เพิ่ม 1 ชม. (รางวัลระดับชาติ ข้อ 5.6)'; }
+  $bonus = award_hours($teacher['award_bonus'] ?? ''); // 1–3 ชม. ค่าเดิม true = 1 (ต้องตรงกับ OtCore.js)
+  if ($bonus) { $cap = min($collegeCap, $cap + $bonus); $note[] = 'สิทธิ์เพิ่ม ' . $bonus . ' ชม. (รางวัลระดับชาติ ข้อ 5.6)'; }
   // ผู้ดูแลระบบ/งานหลักสูตรฯ กำหนดเพดานรายบุคคลได้ ใช้แทนค่าที่คำนวณ แต่ไม่เกินเพดานวิทยาลัย (ต้องตรงกับ OtCore.js)
   if (trim((string)($teacher['ot_cap'] ?? '')) !== '' && is_numeric($teacher['ot_cap'])) {
     $cap = max(0, min($collegeCap, num($teacher['ot_cap'])));
