@@ -499,7 +499,7 @@ VIEWS['ot-teachers'] = function (el) {
   $$('[data-te]', el).forEach(function (b) {
     b.onclick = function () {
       var t = IDX.Teachers[b.dataset.te];
-      rowModal('Teachers', t, { title: 'กำหนดแบบการเบิก: ' + t.name, only: ['employment', 'is_unit_head', 'service_start', 'award_bonus', 'award_note', 'ot_enabled', 'ot_scheme_ids'] });
+      rowModal('Teachers', t, { title: 'กำหนดแบบการเบิก: ' + t.name, only: ['employment', 'is_unit_head', 'service_start', 'award_bonus', 'award_note', 'ot_cap', 'ot_enabled', 'ot_scheme_ids'] });
     };
   });
   $('#otSug').onclick = function () {

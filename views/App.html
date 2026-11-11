@@ -1770,7 +1770,7 @@ var TABLES = {
   Teachers: { title: 'ครูผู้สอน', search: true, fields: [['code', 'รหัสครู', 'text'], ['name', 'ชื่อ-สกุล', 'text'], ['department_id', 'แผนกวิชา', 'ref:Departments'], ['position', 'ตำแหน่ง', 'text'],
     ['employment', 'สถานะการจ้าง', 'enum:gov=ข้าราชการครู,civil=พนักงานราชการ,perm=ลูกจ้างประจำ,contract=ครูอัตราจ้าง,other=อื่นๆ'],
     ['is_dept_head', 'หัวหน้าแผนก', 'bool'], ['is_dept_academic', 'วิชาการแผนกวิชา', 'bool'], ['is_unit_head', 'หัวหน้างาน', 'bool'], ['service_start', 'วันเริ่มงาน (อายุงานอัตราจ้าง)', 'date'],
-    ['award_bonus', 'สิทธิ์เพิ่ม 1 ชม. (รางวัลระดับชาติ ข้อ 5.6)', 'bool'], ['award_note', 'หลักฐาน/มติคณะกรรมการสถานศึกษา', 'text'],
+    ['award_bonus', 'สิทธิ์เพิ่ม 1 ชม. (รางวัลระดับชาติ ข้อ 5.6)', 'bool'], ['ot_cap', 'เพดานคาบเบิกรายบุคคล (ชม./สัปดาห์ เว้นว่าง = คำนวณตามระเบียบ)', 'number'], ['award_note', 'หลักฐาน/มติคณะกรรมการสถานศึกษา', 'text'],
     ['ot_enabled', 'เบิกค่าสอนเกินภาระงาน', 'bool'], ['ot_scheme_ids', 'แบบการเบิกที่ใช้ได้', 'multi:OtSchemes'],
     ['max_per_day', 'สอนไม่เกิน (คาบ/วัน)', 'number'], ['unavailable', 'ช่วงไม่ว่าง', 'slots'], ['email', 'อีเมล', 'text']] },
   Buildings: { title: 'อาคาร', fields: [['name', 'ชื่ออาคาร', 'text']] },

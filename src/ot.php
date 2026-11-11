@@ -78,6 +78,11 @@ function ot_personal_cap(array $teacher, array $settings, ?string $atDate = null
     }
   }
   if ((string)($teacher['award_bonus'] ?? '') === 'true') { $cap = min($collegeCap, $cap + 1); $note[] = 'สิทธิ์เพิ่ม 1 ชม. (รางวัลระดับชาติ ข้อ 5.6)'; }
+  // ผู้ดูแลระบบ/งานหลักสูตรฯ กำหนดเพดานรายบุคคลได้ ใช้แทนค่าที่คำนวณ แต่ไม่เกินเพดานวิทยาลัย (ต้องตรงกับ OtCore.js)
+  if (trim((string)($teacher['ot_cap'] ?? '')) !== '' && is_numeric($teacher['ot_cap'])) {
+    $cap = max(0, min($collegeCap, num($teacher['ot_cap'])));
+    $note = ['กำหนดเพดานรายบุคคล ' . $cap . ' ชม.'];
+  }
   return ['cap' => $cap, 'note' => implode(' · ', $note)];
 }
 

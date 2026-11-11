@@ -78,6 +78,11 @@ var Ot = (function () {
       }
     }
     if (String(teacher.award_bonus) === 'true') { cap = Math.min(collegeCap, cap + 1); note.push('สิทธิ์เพิ่ม 1 ชม. (รางวัลระดับชาติ ข้อ 5.6)'); }
+    // เพดานรายบุคคลที่ผู้ดูแลระบบ/งานหลักสูตรฯ กำหนด ใช้แทนค่าที่คำนวณ ไม่เกินเพดานวิทยาลัย (ต้องตรงกับ ot.php)
+    if (String(teacher.ot_cap == null ? '' : teacher.ot_cap).trim() !== '' && !isNaN(Number(teacher.ot_cap))) {
+      cap = Math.max(0, Math.min(collegeCap, Number(teacher.ot_cap)));
+      note = ['กำหนดเพดานรายบุคคล ' + cap + ' ชม.'];
+    }
     return { cap: cap, note: note.join(' · ') };
   }
 

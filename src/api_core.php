@@ -311,7 +311,7 @@ function api_bulkCreateTeacherUsers($token = '', $defaultPassword = '') {
 
 // ======================= สิทธิ์อ่านข้อมูล =======================
 const TEACHER_PRIVATE = ['email', 'education', 'special_duty', 'award_note'];
-const TEACHER_OT_FIELDS = ['employment', 'service_start', 'award_bonus', 'ot_scheme_ids'];
+const TEACHER_OT_FIELDS = ['employment', 'service_start', 'award_bonus', 'ot_scheme_ids', 'ot_cap'];
 
 /** ตัดข้อมูลส่วนตัวของครูตามสิทธิ์ผู้ดู: แถวของตัวเองเห็นครบ, แผนกเห็นข้อมูลการเบิกเฉพาะครูในแผนก */
 function teachers_for(array $me, array $rows): array {
