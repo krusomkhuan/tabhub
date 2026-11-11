@@ -1,3 +1,9 @@
+<style>
+  /* Multiple teaching groups share a cell; each card must size to its content. */
+  .ot-claim-grid .ss { height: auto; min-height: 40px; }
+  .ot-claim-grid td.cell { vertical-align: top; }
+  .ot-claim-grid .ot-homeroom { background: #eceef3; color: #334155; }
+</style>
 <script>
 /* ===================== ค่าสอนเกินภาระงาน (ตามระเบียบวิทยาลัยการอาชีพโพนทอง) ===================== */
 (function () {
@@ -193,13 +199,17 @@ function renderClaim() {
 function weekHtml(w, r, canEdit) {
   var n = Number(S.settings.periods_per_day || 12);
   var days = String(S.settings.days || '0,1,2,3,4').split(',').map(Number);
+  var locks = Grid.lockedMap(S.D.LockedSlots || [], days);
+  var teacherId = String((OT.data.teacher || {}).id || OT.teacher || '');
+  var advisees = (S.D.Groups || []).filter(function (g) { return teacherId && String(g.advisor_id) === teacherId; })
+    .map(function (g) { return groupCode(g.id); }).sort(function (a, b) { return a.localeCompare(b, 'th', { numeric: true }); });
   var byCell = {};
   w.items.forEach(function (it) { (byCell[it.date + '|' + it.period] = byCell[it.date + '|' + it.period] || []).push(it); });
   var h = '<div class="card page"><div class="row" style="margin-bottom:6px"><h3 class="grow" style="margin:0">สัปดาห์ที่ ' + w.index + ' <span class="small muted">' + thDate(w.dates[0]) + ' – ' + thDate(w.dates[w.dates.length - 1]) + '</span></h3>';
   if (canEdit) h += '<button class="btn sm" data-wauto="' + w.index + '">อัตโนมัติ</button>' +
     (w.index > 1 ? '<button class="btn sm" data-wcopy="' + w.index + '">ใช้ตามสัปดาห์ที่ ' + (w.index - 1) + '</button>' : '') +
     '<button class="btn sm" data-wall="' + w.index + '">คัดลอกไปทุกสัปดาห์ที่เหลือ</button><button class="btn sm" data-wclr="' + w.index + '">ล้าง</button>';
-  h += '</div><div class="tt-wrap"><table class="tt"><thead><tr><th style="width:110px">วันที่</th>';
+  h += '</div><div class="tt-wrap"><table class="tt ot-claim-grid"><thead><tr><th style="width:110px">วันที่</th>';
   for (var p = 1; p <= n; p++) h += '<th>' + Grid.periodNo(S.settings, p) + '</th>';
   h += '</tr></thead><tbody>';
   w.dates.forEach(function (date) {
@@ -207,7 +217,9 @@ function weekHtml(w, r, canEdit) {
     h += '<tr><td class="day">' + esc(S.days[day]) + '<br><span class="small muted">' + thDate(date) + '</span></td>';
     for (var p = 1; p <= n; p++) {
       var its = byCell[date + '|' + p] || [];
-      h += '<td class="cell" style="height:46px">' + its.map(function (it) {
+      var homeRoom = !its.length && advisees.length && /โฮมรูม|home\s*room/i.test(locks[day + '-' + p] || '');
+      // Informational only: do not create a teaching item or a selectable claim key.
+      h += '<td class="cell" style="height:46px">' + (homeRoom ? '<div class="ss ot-homeroom"><b>โฮมรูม</b><span>' + esc(advisees.join(', ')) + '</span><span>ไม่ใช้เลือกชั่วโมงเบิก</span></div>' : '') + its.map(function (it) {
         var v = (OT.sel[w.index] || {})[it.key] || '';
         var bg = it.blocked ? '#eceef3' : it.absent ? '#fde8e8' : v === 'L' ? '#dff5e3' : v === 'C' ? '#2457d6' : '#fff';
         var fg = v === 'C' && !it.blocked && !it.absent ? '#fff' : '#1d2433';
@@ -483,13 +495,17 @@ VIEWS['ot-teachers'] = function (el) {
   var schemes = sortBy(S.D.OtSchemes || [], function (s) { return (s.sort || 99) + s.name; });
   var dept = OT.dept || '';
   var list = otTeachers(dept);
+  var capDate = ((IDX.OtRounds || {})[OT.round] || {}).start_date || null;
   el.innerHTML = '<div class="card"><div class="row" style="margin-bottom:10px"><select id="otD" style="width:auto">' + deptOptions(dept) + '</select><span class="grow"></span>' +
     '<button class="btn sm" id="otSug">แนะนำแบบการเบิกอัตโนมัติ</button></div>' +
     '<p class="small muted">แนะนำตามสถานะการจ้าง · หน้าที่หัวหน้างาน · ระดับที่สอนในภาคเรียนนี้ — ตรวจก่อนบันทึก · ครูอัตราจ้างต้องใส่ "วันเริ่มงาน" เพื่อคิดเพดาน 6/7/8 ชม. ตามอายุงาน</p>' +
     '<p class="small muted" style="margin:0">เปิดเบิกแล้ว ' + list.filter(function (t) { return String(t.ot_enabled) === 'true'; }).length + ' จาก ' + list.length + ' คน · เลือกชื่อครูเพื่อกำหนดแบบการเบิก</p></div>' +
     teacherCards(list, function (t, icon, role) {
       var on = String(t.ot_enabled) === 'true', schemes = Sched.ids(t.ot_scheme_ids).map(function (id) { return nm('OtSchemes', id); }).filter(Boolean);
+      // คาบเบิกได้ต่อสัปดาห์ — คิดแบบเดียวกับ ot_personal_cap (ณ วันเริ่มรอบการเบิก)
+      var pc = Ot.personalCap(t, S.settings || {}, capDate);
       var tags = '<span class="tag' + (on ? ' ok' : '') + '">' + (on ? 'เปิดเบิก' : 'ยังไม่เปิดเบิก') + '</span>' + (schemes.length ? '<span class="tag">' + schemes.length + ' แบบ</span>' : '') +
+        '<span class="tag" title="' + esc(pc.note || 'เพดานวิทยาลัย') + '">เบิกได้ ' + pc.cap + ' ชม./สัปดาห์</span>' +
         (t.employment === 'contract' && !t.service_start ? '<span class="tag warn">ยังไม่ใส่วันเริ่มงาน</span>' : '');
       var title = [role].concat(schemes).filter(Boolean).join(' · ');
       return '<button type="button" class="hours-card ot-card" data-te="' + esc(t.id) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + icon +
