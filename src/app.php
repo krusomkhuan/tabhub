@@ -29,6 +29,7 @@ const API_ALLOW = [
   'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet',
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
   'signatureMap', 'signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary', 'signaturePlaceSave',
+  'userPermList', 'userPermSave',
   'teachDocGet', 'teachDocSave', 'teachDocReset', 'docFileGet', 'docFileDownload', 'docFileSave', 'docFileDelete',
   'planHourType',
   'issueList', 'issueSave', 'issueReply', 'issueDelete', 'backupList', 'backupCreate', 'backupDownload', 'backupDelete', 'backupUploadChunk', 'backupRestore',

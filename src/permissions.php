@@ -45,6 +45,7 @@ const MENU_ACCESS = [
   'import' => ['curriculum', ['listTabSemesters', 'importFromTAB']],
   'issues' => ['teacher', ['issueList', 'issueSave', 'issueDelete']],
   // เมนูระบบ: ให้ผู้อื่นไม่ได้ เพราะการจัดการบัญชีหรือกู้คืนข้อมูลจะข้ามการกำหนดสิทธิ์โดยผู้ดูแลระบบ
+  'user-perms' => ['curriculum', ['userPermList', 'userPermSave']],
   'users' => ['admin', []],
   'colors' => ['admin', []],
   'settings' => ['admin', []],
@@ -61,6 +62,10 @@ const MENU_TABLES = [
 
 function perm_is_admin_only(string $menu): bool { return (MENU_ACCESS[$menu][0] ?? 'admin') === 'admin'; }
 
+/** เมนูที่เป็นไปตามบทบาทเท่านั้น เพิ่มหรือถอนรายคนไม่ได้ (กันการส่งต่อสิทธิ์กำหนดสิทธิ์) */
+const PERM_FIXED_MENUS = ['user-perms'];
+function perm_is_fixed(string $menu): bool { return perm_is_admin_only($menu) || in_array($menu, PERM_FIXED_MENUS, true); }
+
 function perm_is_default(string $menu, string $role): bool {
   return !perm_is_admin_only($menu) && (USER_ROLES[$role] ?? 0) >= USER_ROLES[MENU_ACCESS[$menu][0]];
 }
@@ -68,7 +73,7 @@ function perm_is_default(string $menu, string $role): bool {
 /** อ่านค่าที่เก็บไว้ และตัดรหัสเมนูที่ไม่รู้จักหรือให้ผู้อื่นไม่ได้ออก */
 function perm_parse($raw): array {
   $o = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
-  $clean = fn($k) => array_values(array_filter(is_array($o[$k] ?? null) ? $o[$k] : [], fn($m) => is_string($m) && isset(MENU_ACCESS[$m]) && !perm_is_admin_only($m)));
+  $clean = fn($k) => array_values(array_filter(is_array($o[$k] ?? null) ? $o[$k] : [], fn($m) => is_string($m) && isset(MENU_ACCESS[$m]) && !perm_is_fixed($m)));
   return ['grant' => $clean('grant'), 'deny' => $clean('deny')];
 }
 
@@ -91,7 +96,7 @@ function perm_encode(string $role, $selected): string {
   $sel = array_filter((array)$selected, 'is_string');
   $p = ['grant' => [], 'deny' => []];
   foreach (array_keys(MENU_ACCESS) as $m) {
-    if (perm_is_admin_only($m)) continue;
+    if (perm_is_fixed($m)) continue;
     $on = in_array($m, $sel, true); $def = perm_is_default($m, $role);
     if ($on && !$def) $p['grant'][] = $m;
     if (!$on && $def) $p['deny'][] = $m;

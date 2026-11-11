@@ -37,10 +37,10 @@ const EXEC_BLOCKED_APIS = [
   'teachReportImageAdd', 'teachReportImageDelete', 'teachReportSave', 'teachReportReview', 'teachReportDelete',
   'visitSave', 'visitDelete', 'visitImageAdd', 'visitImageDelete', 'visitDocSave', 'visitDocDelete',
   'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
-  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete', 'planHourType',
+  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete', 'planHourType', 'userPermSave',
 ];
 /** เมนูที่มีไว้แก้ข้อมูลอย่างเดียว ผู้บริหารไม่ต้องเห็น */
-const EXEC_HIDDEN_MENUS = ['import', 'windows'];
+const EXEC_HIDDEN_MENUS = ['import', 'windows', 'user-perms'];
 
 function is_academic_manager(array $me): bool { return in_array($me['role'] ?? '', ['admin', 'curriculum'], true); }
 
@@ -168,6 +168,44 @@ function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
     kvPut('cache:tok_' . $token, json_encode($me, JSON_UNESCAPED_UNICODE), 21600);
     log_action($me, 'แก้ไขโปรไฟล์', '');
     return $me + ['avatar' => user_avatar($me['id'])];
+  });
+}
+
+// ======================= สิทธิ์เมนูรายบุคคล (เจ้าหน้าที่งานพัฒนาหลักสูตรฯ) =======================
+/** งานหลักสูตรฯ กำหนดสิทธิ์เมนูให้ครูและวิชาการแผนกได้ ไม่เกี่ยวกับบัญชี บทบาท หรือรหัสผ่าน ซึ่งยังเป็นของผู้ดูแลระบบ */
+const PERM_EDITABLE_ROLES = ['teacher', 'dept'];
+
+/** ต้องเป็นงานหลักสูตรฯ หรือผู้ดูแลระบบจริง ไม่ใช่สิทธิ์ที่ได้จากการเพิ่มเมนู เพื่อไม่ให้ส่งต่อสิทธิ์กันเองได้ */
+function perm_manager(string $token): array {
+  $me = auth_user($token, 'curriculum');
+  if (!in_array($me['base_role'] ?? '', ['curriculum', 'admin'], true)) throw new Exception('เฉพาะเจ้าหน้าที่งานพัฒนาหลักสูตรฯ และผู้ดูแลระบบ');
+  return $me;
+}
+
+function api_userPermList($token = '') {
+  perm_manager($token);
+  $out = [];
+  foreach (readTable('users') as $u) {
+    if (!in_array($u['role'], PERM_EDITABLE_ROLES, true)) continue;
+    $out[] = ['id' => $u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'], 'department_id' => $u['department_id'],
+      'teacher_id' => $u['teacher_id'], 'active' => $u['active'], 'menu_perms' => perm_parse($u['menu_perms'] ?? '')];
+  }
+  return $out;
+}
+
+/** $menus = รหัสเมนูที่ติ๊กไว้ทั้งหมด ระบบเก็บเฉพาะส่วนที่ต่างจากบทบาท */
+function api_userPermSave($token = '', $id = '', $menus = []) {
+  $me = perm_manager($token);
+  return with_lock(function () use ($me, $id, $menus) {
+    $users = readTable('users');
+    $i = find_row($users, str($id));
+    if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
+    if ((string)$users[$i]['id'] === (string)$me['id']) throw new Exception('กำหนดสิทธิ์ของตัวเองไม่ได้');
+    if (!in_array($users[$i]['role'], PERM_EDITABLE_ROLES, true)) throw new Exception('กำหนดสิทธิ์ได้เฉพาะบัญชีครูผู้สอนและวิชาการแผนก');
+    $users[$i]['menu_perms'] = perm_encode($users[$i]['role'], is_array($menus) ? $menus : []);
+    writeTable('users', $users);
+    log_action($me, 'กำหนดสิทธิ์เมนูรายบุคคล', $users[$i]['name']);
+    return perm_parse($users[$i]['menu_perms']);
   });
 }
 

@@ -167,6 +167,7 @@ var NAV = [
   { id: 't-Courses', label: 'รายวิชา', role: 'curriculum' },
   { id: 't-Groups', label: 'กลุ่มเรียน', role: 'curriculum' },
   { id: 't-Windows', label: 'คิวจัดตารางของแผนก', role: 'curriculum' },
+  { id: 'user-perms', label: 'สิทธิ์ผู้ใช้รายบุคคล', role: 'curriculum', hideIf: 'users', noGrant: true },
   { sec: 'ระบบ', role: 'admin' },
   { id: 'users', label: 'ผู้ใช้งาน', role: 'admin' },
   { id: 'colors', label: 'สีตารางเรียน', role: 'admin' },
@@ -177,7 +178,7 @@ var NAV = [
   { id: 'issues', label: 'แจ้งปัญหาการใช้งาน', role: 'teacher' }
 ];
 
-var NAV_ICON = { dashboard: '🏠', mine: '🗓', signature: '✍️', 'plans-view': '📚', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
+var NAV_ICON = { dashboard: '🏠', mine: '🗓', signature: '✍️', 'plans-view': '📚', 'user-perms': '🔐', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
   'ot-claims': '💰', 'ot-subs': '🔁', 'ot-summary': '🧾', 'ot-teachers': '🎚', 'ot-holidays': '🏖', users: '👤', settings: '⚙', import: '⤵',
   't-OtSchemes': '📋', 't-OtPerHead': '🙋', 't-OtRounds': '📆', 't-OtBlocked': '⛔', 't-Semesters': '📅', 't-Departments': '🏫', 't-Majors': '🎓',
   't-Teachers': '🧑‍🏫', 't-Buildings': '🏢', 't-Rooms': '🚪', 't-Courses': '📘', 't-Groups': '👩‍🎓', 't-Windows': '⏳', 't-PlcSlots': '🤝' };
@@ -1715,7 +1716,7 @@ VIEWS.manual = function (el) {
   el.innerHTML = '<div class="card man-intro"><div class="row"><div class="grow"><h3>คู่มือการใช้งานระบบจัดตารางเรียน–ตารางสอน</h3><p class="small muted" style="margin:0">ปรับปรุง 11 พฤศจิกายน 2569 · สิทธิ์ของคุณ: ' + esc(ROLE_LABELS[S.me.role] || S.me.role) + '</p></div><button class="btn no-print" onclick="window.print()">🖨 พิมพ์คู่มือ</button></div><p class="mt-2">เลือกหัวข้อด้านล่างเพื่อดูวิธีใช้ เมนูที่เปิดได้จะแสดงเป็นลิงก์ ส่วนเมนูของสิทธิ์อื่นจะแสดงเป็นข้อความเพื่ออธิบายขั้นตอน</p><div class="actions no-print">' + topics.map(function (t) { return '<button class="btn sm" data-manual-jump="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div></div>' +
     section(1, 'rights', 'สิทธิ์ผู้ใช้และการกำหนดบัญชี', 'ทุกคน / ผู้ดูแลระบบ',
       list(['<b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ:</b> จัดการข้อมูลวิชาการ แผนการเรียน ตารางเรียน รายงาน นิเทศ และงานค่าสอนทุกแผนก', '<b>วิชาการแผนก:</b> จัดแผนและตาราง ตรวจรายงาน นิเทศ และทำรายการเบิกเฉพาะแผนกตนเอง ตามคิวจัดตารางที่กำหนด', '<b>ครูผู้สอน:</b> ดูตารางและข้อมูลที่เผยแพร่ จัดทำรายงานการสอนของตนเอง ดูใบเบิก และบันทึกนิเทศในวิชาที่ตนเองสอน', '<b>ผู้บริหาร:</b> สำหรับผู้อำนวยการและรองผู้อำนวยการ ดูตาราง รายงานการสอน การนิเทศ สอนแทน/สอนชดเชย ใบเบิก และงบหน้าได้ทุกแผนก พิมพ์และดาวน์โหลดเอกสารได้ แต่แก้ไขหรือบันทึกข้อมูลไม่ได้ (ระบบแจ้งว่าดูข้อมูลได้อย่างเดียว) ยกเว้นเรื่องของตนเอง เช่น รหัสผ่าน โปรไฟล์ และลายเซ็น', '<b>ผู้ดูแลระบบ:</b> ทำงานได้ทั้งหมด รวมถึงจัดการบัญชีผู้ใช้ ตั้งค่าระบบ สำรองและกู้คืนข้อมูล']) +
-      '<p>ผู้ดูแลกำหนดสิทธิ์ที่ ' + menu('users') + ' → <b>เพิ่มผู้ใช้</b> หรือ <b>แก้ไข</b> → เลือกสิทธิ์ โดยวิชาการแผนกต้องระบุแผนก ส่วนครูผู้สอนต้องผูกกับรายชื่อครู บัญชีผู้บริหารควรตั้งชื่อ-สกุลให้ตรงกับชื่อผู้ลงนามในหน้าตั้งค่า เพื่อให้ลายเซ็นขึ้นในเอกสาร การเปลี่ยนสิทธิ์ แผนก หรือปิดบัญชีมีผลในการทำรายการครั้งถัดไป หากเมนูยังเป็นของเดิมให้รีเฟรชหน้า</p>') +
+      '<p>ผู้ดูแลกำหนดสิทธิ์ที่ ' + menu('users') + ' → <b>เพิ่มผู้ใช้</b> หรือ <b>แก้ไข</b> → เลือกสิทธิ์ โดยวิชาการแผนกต้องระบุแผนก ส่วนครูผู้สอนต้องผูกกับรายชื่อครู บัญชีผู้บริหารควรตั้งชื่อ-สกุลให้ตรงกับชื่อผู้ลงนามในหน้าตั้งค่า เพื่อให้ลายเซ็นขึ้นในเอกสาร การเปลี่ยนสิทธิ์ แผนก หรือปิดบัญชีมีผลในการทำรายการครั้งถัดไป หากเมนูยังเป็นของเดิมให้รีเฟรชหน้า</p>' + '<p><b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ</b> เพิ่มหรือถอนเมนูให้ครูผู้สอนและวิชาการแผนกรายคนได้ที่ ' + menu('user-perms') + ' → <b>กำหนดสิทธิ์</b> (ไม่รวมการสร้างบัญชี เปลี่ยนบทบาท และตั้งรหัสผ่าน ซึ่งเป็นงานของผู้ดูแลระบบ)</p>') +
     section(2, 'start', 'เริ่มใช้งานและเลือกภาคเรียน', 'ทุกคน',
       list(['เข้าระบบด้วยบัญชีของตนเอง แล้วตรวจ <b>ภาคเรียน</b> ด้านบนก่อนบันทึกข้อมูล', 'คลิกชื่อผู้ใช้เพื่อแก้ไขข้อมูลส่วนตัวหรือเปลี่ยนรหัสผ่าน หากชื่อครูหรือแผนกผิดให้ผู้ดูแลแก้ที่บัญชีผู้ใช้', 'หลังอัปโหลดโค้ดใหม่ ให้กด <b>Ctrl+F5</b> แล้วเปิดหน้าที่ต้องการใหม่ เพื่อโหลดหน้าจอรุ่นล่าสุด'])) +
     section(3, 'data', 'เตรียมข้อมูลและคิวจัดตาราง', 'เจ้าหน้าที่หลักสูตรฯ / ผู้ดูแลระบบ',
@@ -2107,7 +2108,7 @@ function permMenuHtml() {
   var html = '', open = false;
   NAV.forEach(function (n) {
     if (n.sec) { html +=(open ? '</div>' : '') + '<div class="perm-sec">' + esc(n.sec) + '</div><div class="perm-grid">'; open = true; return; }
-    if (n.role === 'admin') return;
+    if (n.role === 'admin' || n.noGrant) return;
     html += '<label class="perm-item"><input type="checkbox" data-menu="' + esc(n.id) + '" data-level="' + esc(n.role) + '"><span>' + esc(n.permLabel || n.label) + '</span><small></small></label>';
   });
   return html + (open ? '</div>' : '');
@@ -2161,6 +2162,73 @@ function userModal(u) {
   $('#uS', m).onclick = function () {
     api('saveUser', S.token, { id: u.id, username: $('#uU').value, name: $('#uN').value, role: $('#uR').value, department_id: $('#uD').value, teacher_id: $('#uT').value, password: $('#uP').value, active: $('#uA').checked, menus: $$('[data-menu]', m).filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.menu; }) })
       .then(function () { closeModal(); toast('บันทึกสิทธิ์แล้ว'); if (String(u.id) === String(S.me.id)) start(); else VIEWS.users($('#content')); });
+  };
+}
+
+/* ===================== สิทธิ์ผู้ใช้รายบุคคล (เจ้าหน้าที่งานพัฒนาหลักสูตรฯ) =====================
+   เพิ่ม–ถอนเมนูให้ครูผู้สอนและวิชาการแผนกรายคน ไม่แก้บัญชี บทบาท หรือรหัสผ่าน (เป็นงานของผู้ดูแลระบบ) */
+VIEWS['user-perms'] = function (el) {
+  var f = S.upFilter = S.upFilter || { q: '', dept: '', role: '' };
+  api('userPermList', S.token).then(function (users) {
+    el.innerHTML = '<div class="card"><h3 style="margin-top:0">สิทธิ์ผู้ใช้รายบุคคล</h3><p class="small muted">เพิ่มหรือถอนเมนูให้ครูผู้สอนและวิชาการแผนกเป็นรายคน เช่น ให้ครูที่ช่วยงานแผนกเปิดเมนูจัดตารางของแผนกตัวเองได้ การสร้างบัญชี เปลี่ยนบทบาท และตั้งรหัสผ่านให้ติดต่อผู้ดูแลระบบ</p>' +
+      '<div class="row"><input id="upQ" placeholder="ค้นหาชื่อหรือชื่อผู้ใช้…" value="' + esc(f.q) + '" style="max-width:240px"><select id="upD" style="width:auto">' + deptOptions(f.dept) + '</select>' +
+      '<select id="upR" style="width:auto"><option value="">ทุกบทบาท</option><option value="dept"' + (f.role === 'dept' ? ' selected' : '') + '>' + esc(ROLE_LABELS.dept) + '</option><option value="teacher"' + (f.role === 'teacher' ? ' selected' : '') + '>' + esc(ROLE_LABELS.teacher) + '</option></select>' +
+      '<label class="row small" style="gap:4px"><input type="checkbox" id="upOnly" style="width:auto"' + (f.only ? ' checked' : '') + '> เฉพาะที่ปรับสิทธิ์แล้ว</label><span class="grow"></span><span class="small muted" id="upN"></span></div></div><div class="card" id="upOut" data-nofilter></div>';
+    function draw() {
+      var q = digitsKey(f.q.trim());
+      var list = sortBy(users.filter(function (u) {
+        var p = u.menu_perms || { grant: [], deny: [] };
+        return (!f.dept || String(u.department_id) === String(f.dept)) && (!f.role || u.role === f.role) && (!f.only || p.grant.length || p.deny.length) &&
+          (!q || digitsKey(u.name + ' ' + u.username).indexOf(q) >= 0);
+      }), function (u) { return deptName(u.department_id) + u.name; });
+      $('#upN').textContent = list.length + ' บัญชี';
+      $('#upOut').innerHTML = list.length ? '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อ-สกุล</th><th>ชื่อผู้ใช้</th><th>บทบาท</th><th>แผนก</th><th>สิทธิ์เมนู</th><th></th></tr></thead><tbody>' + list.map(function (u) {
+        return '<tr' + (String(u.active) === 'false' ? ' class="muted"' : '') + '><td>' + esc(u.name) + (String(u.active) === 'false' ? ' <span class="tag bad">ปิด</span>' : '') + '</td><td class="small">' + esc(u.username) + '</td><td>' + esc(ROLE_LABELS[u.role] || u.role) + '</td><td class="small">' + esc(deptName(u.department_id)) + '</td><td>' + userPermTag(u) + '</td>' +
+          '<td style="text-align:right">' + (String(u.id) === String(S.me.id) ? '' : '<button class="btn sm" data-up="' + esc(u.id) + '">กำหนดสิทธิ์</button>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<p class="muted">ไม่พบบัญชี</p>';
+      $$('[data-up]', el).forEach(function (b) {
+        b.onclick = function () {
+          var u = users.filter(function (x) { return String(x.id) === b.dataset.up; })[0];
+          permModal(u, function (p) { u.menu_perms = p; draw(); });
+        };
+      });
+    }
+    $('#upQ').oninput = function () { f.q = this.value; draw(); };
+    $('#upD').onchange = function () { f.dept = this.value; draw(); };
+    $('#upR').onchange = function () { f.role = this.value; draw(); };
+    $('#upOnly').onchange = function () { f.only = this.checked; draw(); };
+    draw();
+  });
+};
+
+/* หน้าต่างติ๊กเมนูของผู้ใช้หนึ่งคน บทบาทคงเดิม ติ๊กเพิ่ม = ให้สิทธิ์ เอาออก = ถอนสิทธิ์ */
+function permModal(u, onSaved) {
+  var perms = u.menu_perms || { grant: [], deny: [] };
+  var m = modal('<h3>กำหนดสิทธิ์: ' + esc(u.name) + '</h3><p class="small muted">' + esc(ROLE_LABELS[u.role] || u.role) + (u.department_id ? ' · แผนก' + esc(deptName(u.department_id)) : '') + ' — ' + esc(ROLE_SCOPES[u.role] || '') + '</p>' +
+    '<div class="perm-box"><div class="row"><b class="grow">สิทธิ์เมนูรายบุคคล</b><button type="button" class="btn sm" id="pmReset">คืนค่าตามบทบาท</button></div>' +
+    '<p class="small muted">ติ๊กเพื่อให้สิทธิ์ เอาออกเพื่อถอนสิทธิ์ เมนูระดับแผนกจะทำงานในขอบเขตแผนกของบัญชีนั้น การเปลี่ยนสิทธิ์มีผลเมื่อผู้ใช้โหลดหน้าใหม่</p><div id="pmPerms">' + permMenuHtml() + '</div></div>' +
+    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pmGo">บันทึก</button></div>', true);
+  function isDefault(box) { return rank(u.role) >= rank(box.dataset.level); }
+  function mark(box) {
+    var def = isDefault(box), label = box.parentNode.querySelector('small');
+    label.textContent = box.checked === def ? '' : box.checked ? 'เพิ่มให้' : 'ถอนออก';
+    box.parentNode.classList.toggle('changed', label.textContent !== '');
+  }
+  function fill(useSaved) {
+    $$('[data-menu]', m).forEach(function (box) {
+      var id = box.dataset.menu;
+      box.checked = (useSaved && perms.grant.indexOf(id) >= 0) || (isDefault(box) && !(useSaved && perms.deny.indexOf(id) >= 0));
+      mark(box);
+    });
+  }
+  $$('[data-menu]', m).forEach(function (box) { box.onchange = function () { mark(box); }; });
+  $('#pmReset', m).onclick = function () { fill(false); };
+  fill(true);
+  $('#pmGo', m).onclick = function () {
+    var btn = this; btn.disabled = true;
+    api('userPermSave', S.token, u.id, $$('[data-menu]', m).filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.menu; }))
+      .then(function (p) { closeModal(); toast('บันทึกสิทธิ์ของ ' + u.name + ' แล้ว'); if (onSaved) onSaved(p); })
+      .catch(function () { btn.disabled = false; });
   };
 }
 
