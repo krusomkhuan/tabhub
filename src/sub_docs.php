@@ -171,6 +171,7 @@ function api_subDocDelete($token = '', $id = '') {
     if (!$doc) throw new Exception('ไม่พบเอกสาร');
     sub_doc_scope($me, $doc['sub_ids']);
     db()->prepare('DELETE FROM `SubDocs` WHERE `id` = ?')->execute([$doc['id']]);
+    db()->prepare('DELETE FROM `DocFiles` WHERE `ref` = ?')->execute(['sub:' . $doc['id']]);
     foreach (report_image_names($doc) as $n) @unlink(report_image_dir() . '/' . $n);
     unset(Tbl::$cache['SubDocs']);
     log_action($me, 'ลบเอกสารสอนแทน/สอนชดเชย', $doc['title']);

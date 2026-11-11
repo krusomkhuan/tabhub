@@ -47,9 +47,9 @@ function modal(html, wide) {
 }
 function closeModal() { var m = $('#mbg'); if (m) m.remove(); }
 
-var ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', curriculum: 'เจ้าหน้าที่งานพัฒนาหลักสูตรฯ', dept: 'วิชาการแผนก', teacher: 'ครูผู้สอน' };
-var ROLE_SCOPES = { admin: 'จัดการบัญชีผู้ใช้ สำรองข้อมูล ตั้งค่าระบบ และงานวิชาการทั้งหมด', curriculum: 'จัดการข้อมูลและงานวิชาการทุกแผนก จัดตาราง ตรวจรายงาน นิเทศ และค่าสอน โดยไม่จัดการบัญชีผู้ใช้ สำรองข้อมูล หรือตั้งค่าระบบ', dept: 'จัดแผนและตาราง ตรวจรายงาน นิเทศ และงานเบิกเฉพาะแผนกที่ได้รับมอบหมาย', teacher: 'ดูตารางและข้อมูลเผยแพร่ จัดทำรายงานการสอน บันทึกสอนแทน/สอนชดเชยของตนเอง และดูใบเบิกของตนเอง' };
-function rank(r) { return { teacher: 1, dept: 2, curriculum: 3, admin: 4 }[r] || 0; }
+var ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', executive: 'ผู้บริหาร', curriculum: 'เจ้าหน้าที่งานพัฒนาหลักสูตรฯ', dept: 'วิชาการแผนก', teacher: 'ครูผู้สอน' };
+var ROLE_SCOPES = { executive: 'ดูตารางเรียน ตารางสอน รายงานการสอน การนิเทศ สอนแทน/สอนชดเชย ใบเบิก และงบหน้าได้ทุกแผนก พิมพ์เอกสารได้ และจัดการลายเซ็นของตัวเอง แต่แก้ไขข้อมูลไม่ได้', admin: 'จัดการบัญชีผู้ใช้ สำรองข้อมูล ตั้งค่าระบบ และงานวิชาการทั้งหมด', curriculum: 'จัดการข้อมูลและงานวิชาการทุกแผนก จัดตาราง ตรวจรายงาน นิเทศ และค่าสอน โดยไม่จัดการบัญชีผู้ใช้ สำรองข้อมูล หรือตั้งค่าระบบ', dept: 'จัดแผนและตาราง ตรวจรายงาน นิเทศ และงานเบิกเฉพาะแผนกที่ได้รับมอบหมาย', teacher: 'ดูตารางและข้อมูลเผยแพร่ จัดทำรายงานการสอน บันทึกสอนแทน/สอนชดเชยของตนเอง และดูใบเบิกของตนเอง' };
+function rank(r) { return { teacher: 1, dept: 2, curriculum: 3, executive: 3, admin: 4 }[r] || 0; }
 function academicRole(r) { return r === 'admin' || r === 'curriculum'; }
 function can(r) { return S.me && rank(S.me.role) >= rank(r); }
 /* เมนูมาจากเซิร์ฟเวอร์ S.me.role คือบทบาทของหน้าปัจจุบัน ส่วน S.me.base_role คือบทบาทจริงของบัญชี */
@@ -205,6 +205,8 @@ function renderShell() {
   TableFilter.watch($('#content'));
   TeacherSearch.watch();
   Sig.watch();
+  if (!document.body._sigAdj) { document.body._sigAdj = 1; SigAdjust.watch(); }
+  SigAdjust.refresh();
 }
 
 function go(v) {
@@ -213,6 +215,7 @@ function go(v) {
   v = n.id;
   // ทำงานในหน้านี้ตามระดับของเมนูที่ได้รับ เช่น ครูที่ได้เมนูจัดตารางจะใช้หน้านั้นแบบวิชาการแผนก
   var base = S.me.base_role || S.me.role;
+  if (base === 'executive') base = 'curriculum'; // ผู้บริหารดูหน้าต่าง ๆ แบบทุกแผนก (เซิร์ฟเวอร์กันการแก้ไขไว้)
   S.me.role = rank(n.role) > rank(base) ? n.role : base;
   if (S.me.role === 'dept' && !S.sel.dept) S.sel.dept = S.me.department_id;
   S.view = v;
@@ -386,42 +389,6 @@ function avatarFromFile(file) {
     img.src = url;
   });
 }
-/* ===================== ลายเซ็นในเอกสาร =====================
-   เอกสารวาง Sig.slot(ชื่อ) ไว้หลังคำว่า "ลงชื่อ" แล้วระบบเติมรูปลายเซ็นของชื่อนั้นให้เอง (ไม่สนช่องว่างในชื่อ)
-   รูปวางทับเส้นจุดโดยไม่ดันข้อความ เอกสารที่บันทึกเก็บไว้เก็บเฉพาะช่องว่าง รูปจึงเป็นลายเซ็นล่าสุดเสมอ */
-var Sig = (function () {
-  var map = null, timer;
-  function key(name) { return String(name || '').replace(/\s+/g, '').replace(/ํา/g, 'ำ'); }
-  function slot(name) { var k = key(name); return k ? '<span class="sig-slot" data-sig="' + esc(k) + '"></span>' : ''; }
-  /* ตำแหน่งที่เจ้าของตั้งไว้: เลื่อนเป็นหน่วย em จึงตามขนาดตัวอักษรของเอกสารแต่ละแบบ */
-  function place(img, p) {
-    var t = p && (p.x || p.y || (p.s && p.s !== 1)) ? 'translate(' + (+p.x || 0) + 'em,' + (+p.y || 0) + 'em) scale(' + (+p.s || 1) + ')' : '';
-    if (img.style.transform !== t) img.style.transform = t;
-  }
-  function fill(root) {
-    if (!map) return;
-    Array.prototype.forEach.call((root || document).querySelectorAll('.sig-slot[data-sig]'), function (s) {
-      var v = map[s.getAttribute('data-sig')], src = v && (v.src || v), img = s.querySelector('img');
-      if (src) {
-        if (!img) { img = document.createElement('img'); img.alt = ''; s.appendChild(img); }
-        if (img.getAttribute('src') !== src) img.setAttribute('src', src);
-        place(img, v);
-      } else if (img) img.remove();
-    });
-  }
-  function load() {
-    if (!S.token) return Promise.resolve();
-    return api('signatureMap', S.token).then(function (m) { map = m || {}; fill(); }).catch(function () {});
-  }
-  function watch() {
-    if (document.body._sig) return;
-    document.body._sig = new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(function () { fill(); }, 30); });
-    document.body._sig.observe(document.body, { childList: true, subtree: true });
-  }
-  /* ตอนบันทึกเอกสารเก็บไว้ ตัดรูปออกให้เหลือช่องว่าง */
-  function strip(root) { Array.prototype.forEach.call(root.querySelectorAll('.sig-slot img'), function (i) { i.remove(); }); }
-  return { key: key, slot: slot, fill: fill, load: load, watch: watch, strip: strip, place: place };
-})();
 
 /* ทำรูปลายเซ็น: ลบพื้นหลังสว่าง (รูปถ่าย/สแกน) ตัดขอบว่าง ย่อให้ไม่เกิน 600x200 แล้วส่งออกเป็น PNG พื้นใส */
 function signatureImage(source, removeBg, strength) {
@@ -600,6 +567,92 @@ function editSignature(target, onClose) {
   var box = $('#sgBox', m); box._onClose = onClose;
   signatureList(box, target);
 }
+
+/* ===================== ผู้ดูแลระบบปรับลายเซ็นบนเอกสาร =====================
+   กด "✍️ ปรับลายเซ็น" แล้วลากหรือปรับขนาดลายเซ็นบนเอกสารได้ทันที บันทึกแยกตามจุด (ชนิดเอกสาร) และคน
+   ใช้แทนตำแหน่งที่เจ้าของตั้งไว้เฉพาะในจุดนั้น และใช้กับเอกสารชนิดเดียวกันทุกฉบับ */
+var SigAdjust = (function () {
+  var on = false, btn = null, panel = null, drag = null, timer;
+  function isAdmin() { return !!S.me && (S.me.base_role || S.me.role) === 'admin'; }
+  function spotLabel(spot) {
+    if (spot === 'timetable') return 'ตารางเรียน / ตารางสอน (ทุกหน้า รวมหน้าเผยแพร่)';
+    var n = NAV.filter(function (x) { return x.id === spot; })[0];
+    return n ? n.label : spot;
+  }
+  function refresh() {
+    if (!isAdmin()) { if (btn) btn.hidden = true; return; }
+    if (!btn) {
+      btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn sig-adj-btn no-print';
+      btn.onclick = function () { toggle(); }; document.body.appendChild(btn);
+    }
+    var has = !!document.querySelector('#content .sig-slot[data-sig] img');
+    if (panel && !panel._slot.isConnected) closePanel(); // เปลี่ยนหน้าแล้ว
+    if (!has && on) toggle(false);
+    btn.hidden = !has; btn.textContent = on ? '✔ ปรับลายเซ็นเสร็จแล้ว' : '✍️ ปรับลายเซ็น';
+    btn.classList.toggle('pri', on);
+  }
+  function toggle(v) {
+    on = typeof v === 'boolean' ? v : !on;
+    document.body.classList.toggle('sig-adjusting', on);
+    if (!on) closePanel(); else toast('ลากลายเซ็นเพื่อขยับ หรือคลิกลายเซ็นเพื่อปรับขนาด');
+    refresh();
+  }
+  function closePanel() { if (panel) { panel.remove(); panel = null; } }
+  function save(slot, place) {
+    return api('signaturePlaceSave', S.token, Sig.spotOf(slot), slot.getAttribute('data-sig'), place).then(function (p) { Sig.setPlaces(p); });
+  }
+  /* แผงปรับขนาดของลายเซ็นที่เลือก */
+  function openPanel(slot) {
+    closePanel();
+    var cur = Sig.placeFor(slot), p = cur.place || { x: 0, y: 0, s: 1 }, name = slot.getAttribute('data-sig'), r = slot.getBoundingClientRect();
+    panel = document.createElement('div'); panel.className = 'sig-adj-panel no-print'; panel._slot = slot;
+    panel.innerHTML = '<div class="small"><b>' + esc(name) + '</b><br><span class="muted">จุด: ' + esc(spotLabel(Sig.spotOf(slot))) + '</span></div>' +
+      '<label class="row small" style="gap:6px;margin-top:6px">ขนาด <input type="range" min="50" max="200" step="5" value="' + Math.round((+p.s || 1) * 100) + '" style="width:120px"> <span>' + Math.round((+p.s || 1) * 100) + '%</span></label>' +
+      '<div class="small muted" style="margin:4px 0 6px">' + (cur.custom ? 'ใช้ตำแหน่งที่ผู้ดูแลปรับไว้สำหรับจุดนี้' : 'ใช้ตำแหน่งที่เจ้าของลายเซ็นตั้งไว้') + '</div>' +
+      '<div class="row" style="gap:6px"><button type="button" class="btn sm" data-a="reset"' + (cur.custom ? '' : ' disabled') + '>↺ ใช้ของเจ้าของ</button><button type="button" class="btn sm" data-a="close">ปิด</button></div>';
+    panel.style.left = Math.max(8, Math.min(innerWidth - 270, r.left)) + 'px';
+    panel.style.top = Math.min(innerHeight - 150, r.bottom + 12) + 'px';
+    document.body.appendChild(panel);
+    var range = $('input', panel), val = $('span', range.parentNode), t;
+    range.oninput = function () {
+      val.textContent = range.value + '%';
+      var np = { x: +p.x || 0, y: +p.y || 0, s: range.value / 100 };
+      $$('#content .sig-slot[data-sig="' + CSS.escape(name) + '"] img').forEach(function (i) { if (Sig.spotOf(i.parentNode) === Sig.spotOf(slot)) Sig.place(i, np); });
+      clearTimeout(t); t = setTimeout(function () { save(slot, np).then(function () { p = np; }); }, 400);
+    };
+    $('[data-a="reset"]', panel).onclick = function () { save(slot, null).then(function () { openPanel(slot); }); };
+    $('[data-a="close"]', panel).onclick = closePanel;
+  }
+  function watch() {
+    new MutationObserver(function (list) {
+      if (list.every(function (m) { return panel && panel.contains(m.target); })) return;
+      clearTimeout(timer); timer = setTimeout(refresh, 80);
+    }).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('pointerdown', function (e) {
+      if (!on) return;
+      var img = e.target.closest && e.target.closest('#content .sig-slot[data-sig] img');
+      if (!img) return;
+      e.preventDefault(); try { img.setPointerCapture(e.pointerId); } catch (err) { /* บางอุปกรณ์จับ pointer ไม่ได้ ลากต่อได้ตามปกติ */ }
+      var slot = img.parentNode, p = Sig.placeFor(slot).place || { x: 0, y: 0, s: 1 };
+      drag = { img: img, slot: slot, cx: e.clientX, cy: e.clientY, x: +p.x || 0, y: +p.y || 0, s: +p.s || 1, em: parseFloat(getComputedStyle(img).fontSize) || 16, moved: false };
+    });
+    document.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var dx = (e.clientX - drag.cx) / drag.em, dy = (e.clientY - drag.cy) / drag.em;
+      if (Math.abs(dx) + Math.abs(dy) > 0.05) drag.moved = true;
+      drag.np = { x: Math.max(-6, Math.min(12, drag.x + dx)), y: Math.max(-3, Math.min(3, drag.y + dy)), s: drag.s };
+      Sig.place(drag.img, drag.np);
+    });
+    function end() {
+      if (!drag) return;
+      var d = drag; drag = null;
+      if (d.moved) save(d.slot, { x: Math.round(d.np.x * 100) / 100, y: Math.round(d.np.y * 100) / 100, s: d.s }).then(function () { openPanel(d.slot); });
+      else openPanel(d.slot);
+    }
+    document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end);
+  }
+  return { refresh: refresh, watch: watch, toggle: toggle };
+})();
 
 function editProfile() {
   $('#umenu').classList.remove('open');
@@ -1928,7 +1981,7 @@ function sampleCsv(name) {
 VIEWS.users = function (el) {
   api('listUsers', S.token).then(function (users) {
     var roleTh = ROLE_LABELS;
-    el.innerHTML = '<div class="card"><h3>ขอบเขตสิทธิ์การใช้งาน</h3>' + ['curriculum', 'dept', 'teacher'].map(function (role) { return '<p class="small"><b>' + esc(ROLE_LABELS[role]) + '</b> — ' + esc(ROLE_SCOPES[role]) + '</p>'; }).join('') + '<p class="small muted">เลือกแก้ไขบัญชีเพื่อกำหนดสิทธิ์ วิชาการแผนกต้องระบุแผนก และครูผู้สอนต้องผูกกับรายชื่อครู ผู้ดูแลระบบเท่านั้นที่เพิ่มหรือถอนเมนูรายบุคคลได้ การเปลี่ยนสิทธิ์มีผลในการทำรายการครั้งถัดไป และเมนูจะอัปเดตเมื่อผู้ใช้โหลดหน้าใหม่</p></div><div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
+    el.innerHTML = '<div class="card"><h3>ขอบเขตสิทธิ์การใช้งาน</h3>' + ['executive', 'curriculum', 'dept', 'teacher'].map(function (role) { return '<p class="small"><b>' + esc(ROLE_LABELS[role]) + '</b> — ' + esc(ROLE_SCOPES[role]) + '</p>'; }).join('') + '<p class="small muted">เลือกแก้ไขบัญชีเพื่อกำหนดสิทธิ์ วิชาการแผนกต้องระบุแผนก และครูผู้สอนต้องผูกกับรายชื่อครู ผู้ดูแลระบบเท่านั้นที่เพิ่มหรือถอนเมนูรายบุคคลได้ การเปลี่ยนสิทธิ์มีผลในการทำรายการครั้งถัดไป และเมนูจะอัปเดตเมื่อผู้ใช้โหลดหน้าใหม่</p></div><div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
       '<button class="btn sm" id="uBulk">สร้างบัญชีครูทุกคน</button><button class="btn pri sm" id="uAdd">+ เพิ่มผู้ใช้</button></div>' +
       '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>บทบาท</th><th>สิทธิ์เมนู</th><th>แผนก</th><th>ผูกกับครู</th><th>ลายเซ็น</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
       sortBy(users, function (u) { return u.role + u.name; }).map(function (u) {
@@ -1971,7 +2024,7 @@ function userModal(u) {
   var m = modal('<h3>' + (u.id ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้') + '</h3>' +
     '<label class="f">ชื่อผู้ใช้ (ใช้เข้าระบบ)</label><input id="uU" value="' + esc(u.username) + '">' +
     '<label class="f">ชื่อ-สกุล</label><input id="uN" value="' + esc(u.name) + '">' +
-    '<label class="f">บทบาท</label><select id="uR">' + ['curriculum', 'dept', 'teacher', 'admin'].map(function (role) { return '<option value="' + role + '">' + esc(ROLE_LABELS[role]) + '</option>'; }).join('') + '</select><p id="uScope" class="small muted"></p>' +
+    '<label class="f">บทบาท</label><select id="uR">' + ['executive', 'curriculum', 'dept', 'teacher', 'admin'].map(function (role) { return '<option value="' + role + '">' + esc(ROLE_LABELS[role]) + '</option>'; }).join('') + '</select><p id="uScope" class="small muted"></p>' +
     '<label class="f">แผนกวิชา</label><select id="uD">' + deptOptions(u.department_id, '—') + '</select>' +
     '<label class="f">ผูกกับรายชื่อครู</label><select id="uT">' + tOpts + '</select>' +
     '<label class="f">' + (u.id ? 'ตั้งรหัสผ่านใหม่ (เว้นว่าง = ไม่เปลี่ยน)' : 'รหัสผ่าน (อย่างน้อย 6 ตัว)') + '</label><input id="uP" type="password" autocomplete="new-password">' +

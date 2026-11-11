@@ -94,7 +94,31 @@ function api_signatureMap($token = '') {
     }
   }
   // ลายเซ็นที่เจ้าตัวอัปเองมาก่อนลายเซ็นที่ผู้ดูแลอัปให้
-  return (object)($fromUsers + $fromSettings);
+  return ['sigs' => (object)($fromUsers + $fromSettings), 'places' => (object)sig_spot_places()];
+}
+
+// ======================= ตำแหน่งลายเซ็นรายจุดในเอกสาร =======================
+/** ผู้ดูแลระบบปรับตำแหน่ง/ขนาดลายเซ็นของแต่ละคนในแต่ละจุดได้ (จุด = ชนิดเอกสาร เช่น ตารางสอน งบหน้า)
+ *  ใช้แทนตำแหน่งที่เจ้าของตั้งไว้ เฉพาะในจุดนั้น เป็น {จุด: {ชื่อไม่มีช่องว่าง: {x, y, s}}} */
+function sig_spot_places(): array {
+  $out = [];
+  foreach (readTable('SignaturePlaces') as $r) $out[(string)$r['spot']][(string)$r['sig_key']] = sig_place($r['place']);
+  return $out;
+}
+
+/** $place = null หรือ '' = ลบการปรับของจุดนี้ กลับไปใช้ตำแหน่งที่เจ้าของตั้งไว้ */
+function api_signaturePlaceSave($token = '', $spot = '', $key = '', $place = null) {
+  $me = auth_user($token, 'admin');
+  $spot = str($spot); $key = sig_key(str($key));
+  if (!preg_match('/^[\w-]{1,60}$/', $spot)) throw new Exception('จุดในเอกสารไม่ถูกต้อง');
+  if ($key === '' || mb_strlen($key) > 120) throw new Exception('ชื่อผู้ลงนามไม่ถูกต้อง');
+  return with_lock(function () use ($me, $spot, $key, $place) {
+    $rows = array_values(array_filter(readTable('SignaturePlaces'), fn($r) => !((string)$r['spot'] === $spot && (string)$r['sig_key'] === $key)));
+    if ($place !== null && $place !== '') $rows[] = ['id' => new_id(), 'spot' => $spot, 'sig_key' => $key, 'place' => json_encode(sig_place($place)), 'updated_by' => $me['name'], 'updated_at' => now_dt()];
+    writeTable('SignaturePlaces', $rows);
+    log_action($me, 'ปรับตำแหน่งลายเซ็น', $spot . ' ' . $key);
+    return (object)sig_spot_places();
+  });
 }
 
 function api_signatureList($token = '', $target = '') {

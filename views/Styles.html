@@ -408,6 +408,22 @@
   /* ลายเซ็น: ช่องกว้าง 0 วางหลังคำว่า "ลงชื่อ" รูปลอยทับเส้นจุด จึงไม่ดันข้อความหรือเพิ่มความสูงหน้า */
   .sig-slot { position: relative; display: inline-block; width: 0; height: 1em; vertical-align: baseline; }
   .sig-slot img { position: absolute; left: 6px; bottom: -0.15em; height: 3.1em; max-width: 11em; object-fit: contain; object-position: left bottom; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* ไฟล์ Word/Excel ของเอกสาร */
+  .rd-file { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .rd-file-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rd-choice { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .rd-choice input { width: auto; margin-top: 4px; }
+  .rd-preview { max-height: 65vh; overflow: auto; background: #e9ecf1; padding: 10px; border-radius: 8px; }
+  .rd-preview .rp-page { margin-bottom: 10px; }
+  .rp-doc img.rp-doc-img { display: block; max-width: 100%; max-height: 420px; margin: 8px auto; }
+  .rp-doc-editing img:not(.sig-slot img) { cursor: pointer; }
+  .rp-doc img.rp-img-picked { outline: 3px solid #2563eb; outline-offset: 2px; }
+  table.rp-plain { width: 100%; border-collapse: collapse; }
+  table.rp-plain td { padding: 2px 4px; vertical-align: top; }
+  .rp-imported table.rp-table td { text-align: left; vertical-align: top; }
+  .sig-adj-btn { position: fixed; right: 18px; bottom: 18px; z-index: 60; box-shadow: 0 4px 14px rgba(0, 0, 0, .18); }
+  .sig-adjusting #content .sig-slot[data-sig] img { pointer-events: auto; cursor: move; touch-action: none; outline: 2px dashed rgba(36, 87, 214, .7); outline-offset: 2px; }
+  .sig-adj-panel { position: fixed; z-index: 61; width: 260px; padding: 10px 12px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
   .sig-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
   .sig-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .sig-item { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 16px; border-top: 1px solid var(--line); }

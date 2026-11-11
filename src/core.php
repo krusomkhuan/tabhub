@@ -53,6 +53,10 @@ const SCHEMA = [
   // ---- เอกสารสอนแทน/สอนชดเชยที่บันทึกเก็บไว้ (kind = makeup_request | sub_report) ----
   // ---- ลายเซ็นสำหรับพิมพ์ในเอกสาร (ดู signatures.php) ----
   'Signatures'   => ['id', 'owner', 'name', 'image', 'is_primary', 'updated_by', 'updated_at', 'place'],
+  'SignaturePlaces' => ['id', 'spot', 'sig_key', 'place', 'updated_by', 'updated_at'],
+  // ---- รายงานการสอนที่แก้แล้วบันทึกเก็บไว้ และไฟล์ Word/Excel ฉบับจริงของเอกสาร (ดู doc_files.php) ----
+  'TeachDocs'    => ['id', 'report_ids', 'teacher_id', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+  'DocFiles'     => ['id', 'ref', 'name', 'ext', 'size', 'file_data', 'uploaded_by', 'uploaded_at'],
   'SubDocs'      => ['id', 'kind', 'sub_ids', 'round_id', 'original_teacher_id', 'teacher_id', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
 ];
 
@@ -126,7 +130,7 @@ function db(): PDO {
 }
 function q(string $n): string { return '`' . str_replace('`', '', $n) . '`'; }
 
-function col_type(string $c): string { if ($c === 'html') return 'MEDIUMTEXT NULL'; return preg_match('/^(id|key|[a-z_]*_id)$/', $c) ? 'VARCHAR(64) NULL' : 'TEXT NULL'; }
+function col_type(string $c): string { if ($c === 'html' || $c === 'file_data') return 'MEDIUMTEXT NULL'; return preg_match('/^(id|key|[a-z_]*_id)$/', $c) ? 'VARCHAR(64) NULL' : 'TEXT NULL'; }
 function pk_of(array $cols): ?string { return in_array('id', $cols, true) ? 'id' : (in_array('key', $cols, true) ? 'key' : null); }
 
 function create_table_sql(string $name, array $cols): string {

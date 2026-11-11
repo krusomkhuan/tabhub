@@ -27,7 +27,20 @@ function pw_text($pw): string { return ($pw === null || is_array($pw)) ? '' : (i
 require_once __DIR__ . '/permissions.php';
 
 // ======================= ผู้ใช้และสิทธิ์ =======================
-const USER_ROLES = ['teacher' => 1, 'dept' => 2, 'curriculum' => 3, 'admin' => 4];
+const USER_ROLES = ['teacher' => 1, 'dept' => 2, 'curriculum' => 3, 'executive' => 3, 'admin' => 4];
+
+/** ผู้บริหาร (ผู้อำนวยการ รองผู้อำนวยการ): ดูข้อมูลได้ทุกแผนกเหมือนงานพัฒนาหลักสูตรฯ แต่แก้ไขไม่ได้
+ *  คำสั่งที่เปลี่ยนข้อมูลของระบบถูกกันไว้ทั้งหมด ยกเว้นเรื่องของตัวเอง (รหัสผ่าน โปรไฟล์ ลายเซ็น แจ้งปัญหา) */
+const EXEC_BLOCKED_APIS = [
+  'saveRow', 'deleteRow', 'bulkImport', 'copyPlans', 'placeSession', 'removeSession', 'toggleLock', 'runAutoSchedule', 'clearSchedule',
+  'otSaveClaim', 'otUnlockClaim', 'otSaveSub', 'otSubReport', 'otCancelSub', 'subDocSave', 'subDocDelete', 'otSubmit', 'importFromTAB',
+  'teachReportImageAdd', 'teachReportImageDelete', 'teachReportSave', 'teachReportReview', 'teachReportDelete',
+  'visitSave', 'visitDelete', 'visitImageAdd', 'visitImageDelete', 'visitDocSave', 'visitDocDelete',
+  'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
+  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete',
+];
+/** เมนูที่มีไว้แก้ข้อมูลอย่างเดียว ผู้บริหารไม่ต้องเห็น */
+const EXEC_HIDDEN_MENUS = ['import', 'windows'];
 
 function is_academic_manager(array $me): bool { return in_array($me['role'] ?? '', ['admin', 'curriculum'], true); }
 
@@ -54,6 +67,10 @@ function auth_user($token, ?string $need = null): array {
   kvPut('cache:tok_' . $token, json_encode($u, JSON_UNESCAPED_UNICODE), 21600);
   $menus = perm_effective($users[$i]);
   $base = $u['role'];
+  if ($base === 'executive') {
+    if (in_array($GLOBALS['REQ_FN'] ?? '', EXEC_BLOCKED_APIS, true)) throw new Exception('บัญชีผู้บริหารดูข้อมูลได้อย่างเดียว แก้ไขไม่ได้');
+    $u['role'] = 'curriculum'; // ขอบเขตการดูเท่างานพัฒนาหลักสูตรฯ คือทุกแผนก
+  }
   $u = perm_apply_request($u, $menus);
   if ($need && USER_ROLES[$u['role']] < (USER_ROLES[$need] ?? 99)) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
   return normalize_row_names('users', $u) + ['base_role' => $base, 'menus' => $menus];

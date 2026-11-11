@@ -122,13 +122,10 @@
     if (r.kind && r.kind !== 'normal') return showSubDocs([r]);
     var el = document.getElementById('content'), view = S.view;
     el.innerHTML = '<div class="card muted">กำลังโหลดเอกสาร…</div>';
-    api('teachReportImages', S.token, r.id).then(function (images) {
-      var c = courseOf(r.course_id);
-      el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button><button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button></div><div class="rp-doc">' + reportDocHtml(r, images) + '</div>';
-      document.getElementById('rdBack').onclick = function () { go(view); };
-      Grid.bindShareButton(document.getElementById('rdShare'), function () { return el.querySelectorAll('.rp-page'); }, function () { return 'รายงานการสอนออนไลน์ ' + c.code + ' ' + r.date; }, function (m, bad) { toast(m, bad); });
-      window.scrollTo(0, 0);
-    });
+    var c = courseOf(r.course_id);
+    openTeachDoc(el, [r.id], 'รายงานการสอนออนไลน์ ' + c.code + ' ' + r.date, view, function () {
+      return api('teachReportImages', S.token, r.id).then(function (images) { return reportDocHtml(r, images); });
+    }, function () { showReportDoc(r); });
   }
 
   /* ---------- เอกสารสอนแทน / สอนชดเชย ---------- */
@@ -145,8 +142,9 @@
     return '<div class="rp-memo-head"><img src="assets/krut.png" alt="ตราครุฑ"><h1>บันทึกข้อความ</h1></div><div class="rp-line rp-memo-line"><b class="rp-memo-label">ส่วนราชการ</b>' + field((unit ? unit + ' ' : '') + st.college_name) + '</div><div class="rp-memo-ref"><div class="rp-line rp-memo-line"><b class="rp-memo-label">ที่</b>' + field(no) + '</div><div class="rp-line rp-memo-line"><b class="rp-memo-label">วันที่</b>' + field(thLongDate(date)) + '</div></div><div class="rp-line rp-memo-line"><b class="rp-memo-label">เรื่อง</b>' + field(subject) + '</div><p class="rp-to">เรียน ผู้อำนวยการ' + esc(st.college_name) + '</p>';
   };
   /* ช่องเสนอตามสายงาน: หัวหน้าแผนกและงานหลักสูตรทางซ้าย รองฯ และผู้อำนวยการทางขวา */
+  /* ผู้พิจารณายังไม่ได้อนุญาตตอนพิมพ์ จึงไม่ใส่ลายเซ็นในช่องนี้ ลายเซ็นขึ้นเฉพาะผู้ขออนุญาต */
   var rpApproval = function (t, want) {
-    var st = S.settings, dept = deptName(t.department_id), line = '<b>เรียน</b> ผู้อำนวยการฯ ' + want, sig = function (name, role) { return '<div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + rpDots + '<br>( ' + esc(name || rpDots) + ' )<br>' + esc(role) + '</div>'; };
+    var st = S.settings, dept = deptName(t.department_id), line = '<b>เรียน</b> ผู้อำนวยการฯ ' + want, sig = function (name, role) { return '<div class="rp-sig">ลงชื่อ' + rpDots + '<br>( ' + esc(name || rpDots) + ' )<br>' + esc(role) + '</div>'; };
     return '<table class="rp-opinions"><tr><td>' + line + sig(deptHead(t).name, Grid.deptHeadTitle(dept)) + '<div class="rp-gap">' + line + '</div>' + sig(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</td><td>' + line + sig(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '<div class="rp-check rp-gap"><span>(   ) อนุมัติ</span><span>(   ) ไม่อนุมัติ</span></div>' + sig(st.signer_director, 'ผู้อำนวยการ' + st.college_name) + '</td></tr></table>';
   };
   var splitClass = function (code) { var m = String(code).match(/^(.*?)\s*([0-9๐-๙]+\/[0-9๐-๙]+)$/); return m ? [m[1], m[2]] : [code, '']; };
@@ -202,7 +200,7 @@
   /* เอกสารที่บันทึกเก็บไว้: รับเฉพาะแท็กและแอตทริบิวต์ของเอกสาร ตัดสคริปต์และลิงก์ภายนอกทิ้งทั้งตอนบันทึกและตอนเปิด */
   var DOC_TAGS = { DIV: 1, P: 1, B: 1, STRONG: 1, I: 1, U: 1, BR: 1, SPAN: 1, TABLE: 1, COLGROUP: 1, COL: 1, THEAD: 1, TBODY: 1, TR: 1, TH: 1, TD: 1, H1: 1, H2: 1, H3: 1, H4: 1, HR: 1, IMG: 1, SMALL: 1, UL: 1, OL: 1, LI: 1 };
   var DOC_DROP = /^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|LINK|META|BASE|FORM|INPUT|TEXTAREA|BUTTON|SELECT|SVG|MATH|TEMPLATE|NOSCRIPT|AUDIO|VIDEO|SOURCE|FRAME|FRAMESET)$/;
-  var DOC_ATTRS = { 'class': 1, colspan: 1, rowspan: 1, alt: 1, style: 1, src: 1, 'data-lookup': 1, 'data-field': 1, 'data-selected-id': 1, 'data-pdf-width': 1, 'data-editor-columns': 1, 'data-doc-img': 1, 'data-sig': 1 };
+  var DOC_ATTRS = { 'class': 1, colspan: 1, rowspan: 1, alt: 1, style: 1, src: 1, 'data-lookup': 1, 'data-field': 1, 'data-selected-id': 1, 'data-pdf-width': 1, 'data-editor-columns': 1, 'data-doc-img': 1, 'data-sig': 1, 'data-spot': 1 };
   function cleanDocHtml(html) {
     var tpl = document.createElement('template'); tpl.innerHTML = String(html || '');
     (function walk(parent) {
@@ -215,10 +213,10 @@
         Array.prototype.slice.call(node.attributes).forEach(function (a) {
           var name = a.name.toLowerCase(), v = a.value;
           var ok = DOC_ATTRS[name] && (name !== 'src' || (node.tagName === 'IMG' && (/^assets\/[\w.-]+$/.test(v) || /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(v)))) &&
-            (name !== 'style' || /^[a-z0-9\s:;.%#,-]*$/i.test(v)) && (name !== 'class' || /^[\w\s-]*$/.test(v)) && (name !== 'data-doc-img' || /^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/.test(v)) && (name !== 'data-sig' || /^[^<>"'&\s]{1,120}$/.test(v));
+            (name !== 'style' || /^[a-z0-9\s:;.%#,-]*$/i.test(v)) && (name !== 'class' || /^[\w\s-]*$/.test(v)) && (name !== 'data-doc-img' || /^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/.test(v)) && (name !== 'data-sig' || /^[^<>"'&\s]{1,120}$/.test(v)) && (name !== 'data-spot' || /^[\w-]{1,60}$/.test(v));
           if (!ok) node.removeAttribute(a.name);
         });
-        node.classList.remove('rp-selected-row');
+        node.classList.remove('rp-selected-row', 'rp-img-picked');
       });
     })(tpl.content);
     // รูปลายเซ็นเติมใหม่ทุกครั้งที่เปิด จึงเป็นลายเซ็นล่าสุดและไม่บันทึกติดไปกับเอกสาร
@@ -228,10 +226,14 @@
 
   /* save: function (html) คืน Promise เมื่อมีปุ่มบันทึกเก็บเอกสาร */
   function docToolbar(el, html, title, view, editable, save) {
-    el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button>' + (editable ? '<button class="btn" id="rdEdit">✏️ แก้ไขเอกสาร</button><button class="btn" id="rdReset">คืนค่าต้นฉบับ</button>' : '') + (save ? '<button class="btn ok" id="rdSave">💾 บันทึกเอกสาร</button>' : '') + '<button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button>' + (save ? '<span class="small muted" id="rdSaved"></span>' : '') + '</div>' +
+    el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button>' + (editable ? '<button class="btn" id="rdEdit">✏️ แก้ไขเอกสาร</button><button class="btn" id="rdReset">คืนค่าต้นฉบับ</button>' : '') + (save ? '<button class="btn ok" id="rdSave">💾 บันทึกเอกสาร</button>' : '') + '<button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button>' +
+      '<button class="btn" id="rdDocx" title="ดาวน์โหลดเป็นไฟล์ Word ไปแก้ไขในเครื่อง">⬇️ Word</button><button class="btn" id="rdXlsx" title="ดาวน์โหลดเป็นไฟล์ Excel ไปแก้ไขในเครื่อง">⬇️ Excel</button>' +
+      (save ? '<label class="btn" for="rdUpF" title="อัปไฟล์ .docx หรือ .xlsx ที่แก้แล้วกลับเข้าระบบ">⬆️ อัปไฟล์ที่แก้แล้ว</label><input type="file" id="rdUpF" accept=".docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>' : '') +
+      (save && save.rebuild ? '<button class="btn" id="rdRebuild" title="ทิ้งฉบับที่แก้ไว้ แล้วสร้างใหม่จากข้อมูลรายงาน">↺ สร้างใหม่จากข้อมูล</button>' : '') +
+      (save ? '<span class="small muted" id="rdSaved"></span>' : '') + '</div><div id="rdFile" class="no-print"></div>' +
       (editable ? '<p class="small muted no-print">กดแก้ไขเอกสาร แล้วคลิกข้อความที่ต้องการแก้ รวมถึงข้อมูลในตารางและหนังสือผู้ปกครอง ใช้เครื่องมือเพิ่ม–ลบแถวหรือตารางด้านล่างได้ พิมพ์รหัสหรือชื่อวิชา/กลุ่มในช่องตารางเพื่อเลือกจากข้อมูลในระบบ ' +
         (save ? 'กด <b>บันทึกเอกสาร</b> เพื่อเก็บฉบับที่แก้ไว้ แล้วเปิดกลับมาพิมพ์หรือแก้ได้จากปุ่มเดิมที่ใช้สร้างเอกสารนี้' : 'การแก้ไขใช้สำหรับพิมพ์และแชร์ PDF ครั้งนี้ เมื่อออกจากหน้านี้จะไม่เก็บข้อความที่แก้ไข') + ' การแก้เอกสารไม่เปลี่ยนข้อมูลตารางสอน</p>' : '') + '<div class="rp-doc">' + html + '</div>';
-    var dirty = false;
+    var dirty = false, saveNow = function () { return Promise.reject(new Error('readonly')); };
     document.getElementById('rdBack').onclick = function () {
       if (save && dirty && !confirm('ยังไม่ได้บันทึกเอกสารที่แก้ไข ออกจากหน้านี้หรือไม่?')) return;
       go(view);
@@ -299,8 +301,36 @@
       doc.addEventListener('scroll', hideLookup, true);
 
       var tools = document.createElement('div'); tools.className = 'actions no-print rp-table-tools'; tools.hidden = true;
-      tools.innerHTML = '<span class="small muted">คลิกช่องในตารางที่ต้องการแก้</span><button class="btn sm" data-table-action="add-row">เพิ่มแถว</button><button class="btn sm bad" data-table-action="delete-row">ลบแถว</button><button class="btn sm" data-table-action="add-table">เพิ่มตาราง</button><button class="btn sm bad" data-table-action="delete-table">ลบตาราง</button>';
+      tools.innerHTML = '<span class="small muted">คลิกช่องในตารางที่ต้องการแก้</span><button class="btn sm" data-table-action="add-row">เพิ่มแถว</button><button class="btn sm bad" data-table-action="delete-row">ลบแถว</button><button class="btn sm" data-table-action="add-table">เพิ่มตาราง</button><button class="btn sm bad" data-table-action="delete-table">ลบตาราง</button>' +
+        '<span class="small muted">· รูป: คลิกรูปเพื่อเลือก</span><button class="btn sm" data-img-action="add">🖼 เพิ่มรูป</button><button class="btn sm" data-img-action="replace">🔄 เปลี่ยนรูป</button><button class="btn sm bad" data-img-action="delete">ลบรูป</button><input type="file" accept="image/jpeg,image/png" hidden data-img-file>';
       doc.parentNode.insertBefore(tools, doc);
+      /* รูปในเอกสาร: เพิ่มต่อจากส่วนที่คลิกล่าสุด หรือเปลี่ยน/ลบรูปที่เลือก (ไม่รวมลายเซ็น) ย่อในเครื่องก่อนเก็บ */
+      var pickedImg = null, imgMode = 'add', imgInput = tools.querySelector('[data-img-file]');
+      function selectImg(img) {
+        if (pickedImg) pickedImg.classList.remove('rp-img-picked');
+        pickedImg = img; if (img) img.classList.add('rp-img-picked');
+        tools.querySelector('[data-img-action="replace"]').disabled = tools.querySelector('[data-img-action="delete"]').disabled = !img;
+      }
+      tools.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-img-action]'); if (!b || !editing || b.disabled) return;
+        imgMode = b.getAttribute('data-img-action');
+        if (imgMode === 'delete') { if (pickedImg && confirm('ลบรูปที่เลือกออกจากเอกสารนี้?')) { pickedImg.remove(); selectImg(null); dirty = true; } return; }
+        imgInput.click();
+      });
+      imgInput.addEventListener('change', function () {
+        var f = this.files[0]; this.value = ''; if (!f) return;
+        shrinkImage(f).then(function (data) {
+          if (imgMode === 'replace' && pickedImg) { pickedImg.removeAttribute('data-doc-img'); pickedImg.src = data; }
+          else {
+            var img = document.createElement('img'); img.src = data; img.alt = ''; img.className = 'rp-doc-img';
+            if (!page || !doc.contains(page)) page = doc.querySelector('.rp-page');
+            if (!page) return;
+            if (anchor && anchor.parentNode === page) page.insertBefore(img, anchor.nextSibling); else page.appendChild(img);
+            anchor = img; selectImg(img);
+          }
+          dirty = true;
+        }).catch(function () { toast('ใช้ได้เฉพาะรูป JPG หรือ PNG', 1); });
+      });
       function selectTable(nextTable, nextRow) {
         doc.querySelectorAll('.rp-selected-row').forEach(function (r) { r.classList.remove('rp-selected-row'); });
         table = nextTable; row = nextRow;
@@ -311,7 +341,7 @@
       }
       function setEditing(on) {
         editing = on; tools.hidden = !on; hideLookup();
-        selectTable(null, null);
+        selectTable(null, null); selectImg(null);
         doc.classList.toggle('rp-doc-editing', on);
         doc.querySelectorAll('.rp-page').forEach(function (p) {
           p.setAttribute('contenteditable', on ? 'plaintext-only' : 'false');
@@ -327,6 +357,7 @@
         hideLookup();
         var clickedTable = target.closest('table.rp-table');
         selectTable(clickedTable, clickedTable ? target.closest('tr') : null);
+        selectImg(target.tagName === 'IMG' && !target.closest('.sig-slot') ? target : null);
       });
       function hasMergedRows(t) {
         return Array.prototype.some.call(t.querySelectorAll('tbody td,tbody th'), function (cell) { return cell.rowSpan !== 1; });
@@ -382,22 +413,91 @@
         doc.innerHTML = html; page = null; anchor = null; dirty = true;
         setEditing(false);
       };
-      if (save) document.getElementById('rdSave').onclick = function () {
-        var btn = this;
+      saveNow = function (quiet) {
         if (editing) setEditing(false);
-        btn.disabled = true;
-        save(cleanDocHtml(doc.innerHTML)).then(function (r) {
+        return save(cleanDocHtml(doc.innerHTML)).then(function (r) {
           dirty = false;
           document.getElementById('rdSaved').textContent = 'บันทึกแล้ว ' + thDate(r.updated_at) + ' ' + String(r.updated_at).slice(11, 16) + ' น.';
-          toast('บันทึกเอกสารแล้ว');
-        }).catch(function () {}).then(function () { btn.disabled = false; });
+          if (!quiet) toast('บันทึกเอกสารแล้ว');
+          return r;
+        });
       };
-      selectTable(null, null);
+      if (save) document.getElementById('rdSave').onclick = function () {
+        var btn = this; btn.disabled = true;
+        saveNow().catch(function () {}).then(function () { btn.disabled = false; });
+      };
+      selectTable(null, null); selectImg(null);
       // รับเฉพาะข้อความ ป้องกันการลากไฟล์หรือ HTML มาเปลี่ยนโครงเอกสาร
       doc.addEventListener('drop', function (e) { if (editing) e.preventDefault(); });
     }
+
     Grid.bindShareButton(document.getElementById('rdShare'), function () { return el.querySelectorAll('.rp-page'); }, function () { return title; }, function (m, bad) { toast(m, bad); });
     window.scrollTo(0, 0);
+
+    /* ---------- Word / Excel ---------- */
+    var pages = function () { return el.querySelectorAll('.rp-doc .rp-page'); };
+    function download(ext) {
+      var btn = document.getElementById(ext === 'docx' ? 'rdDocx' : 'rdXlsx'); btn.disabled = true;
+      Sig.fill();
+      (ext === 'docx' ? Office.toDocx(pages()) : Office.toXlsx(pages())).then(function (blob) {
+        Office.save(blob, Office.safeName(title) + '.' + ext);
+        toast(ext === 'docx' ? 'ดาวน์โหลดไฟล์ Word แล้ว แก้เสร็จกด "อัปไฟล์ที่แก้แล้ว" เพื่อนำกลับเข้าระบบ' : 'ดาวน์โหลดไฟล์ Excel แล้ว (ไม่รวมรูปและลายเซ็น) แก้เสร็จกด "อัปไฟล์ที่แก้แล้ว" เพื่อนำกลับเข้าระบบ');
+      }).catch(function () { toast('สร้างไฟล์ไม่สำเร็จ', 1); }).then(function () { btn.disabled = false; });
+    }
+    document.getElementById('rdDocx').onclick = function () { download('docx'); };
+    document.getElementById('rdXlsx').onclick = function () { download('xlsx'); };
+    if (save && save.rebuild) document.getElementById('rdRebuild').onclick = function () {
+      if (!confirm('ทิ้งเอกสารฉบับที่แก้และไฟล์ฉบับจริงของรายงานนี้ แล้วสร้างใหม่จากข้อมูลรายงาน?')) return;
+      api('teachDocReset', S.token, save.reportIds).then(function () { toast('สร้างเอกสารใหม่จากข้อมูลรายงานแล้ว'); save.rebuild(); });
+    };
+    if (!save) return;
+
+    /* แถบไฟล์ฉบับจริง: แสดงเมื่อเอกสารนี้ใช้ไฟล์ Word/Excel ที่อัปโหลดเป็นฉบับจริง */
+    var fileBox = document.getElementById('rdFile');
+    function fileBanner(meta) {
+      if (!meta) { fileBox.innerHTML = ''; return; }
+      fileBox.innerHTML = '<div class="alert alert-info rd-file"><div><b>📎 ฉบับจริงของเอกสารนี้: ' + esc(meta.name) + '</b><br><small>อัปโดย ' + esc(meta.uploaded_by) + ' เมื่อ ' + esc(savedAt({ updated_at: meta.uploaded_at })) + ' · ' + Math.max(1, Math.round(meta.size / 1024)) + ' KB · ปุ่มพิมพ์และแชร์ PDF ด้านบนใช้ฉบับในระบบ ให้พิมพ์ฉบับจริงจาก ' + (meta.ext === 'xlsx' ? 'Excel' : 'Word') + '</small></div>' +
+        '<div class="rd-file-acts"><button class="btn sm pri" data-f="get">⬇️ ดาวน์โหลดฉบับจริง</button><button class="btn sm" data-f="view">👁 ดูตัวอย่าง</button><button class="btn sm bad" data-f="drop">เลิกใช้ไฟล์นี้</button></div></div>';
+      function fetchFile() { return api('docFileDownload', S.token, save.ref()).then(function (d) { return new Blob([Office.unb64(d.data)], { type: d.ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }); }); }
+      fileBox.querySelector('[data-f="get"]').onclick = function () { fetchFile().then(function (b) { Office.save(b, meta.name); }); };
+      fileBox.querySelector('[data-f="view"]').onclick = function () {
+        fetchFile().then(Office.fromFile).then(function (r) {
+          modal('<h3>ตัวอย่างฉบับจริง: ' + esc(meta.name) + '</h3><p class="small muted">แสดงแบบย่อเพื่อตรวจเนื้อหา รูปแบบจริงดูได้เมื่อเปิดไฟล์ใน ' + (meta.ext === 'xlsx' ? 'Excel' : 'Word') + '</p><div class="rp-doc rd-preview">' + cleanDocHtml(r.html) + '</div><div class="actions"><button class="btn" onclick="closeModal()">ปิด</button></div>', true);
+        }).catch(function () { toast('เปิดตัวอย่างไม่สำเร็จ ดาวน์โหลดไปเปิดในเครื่องแทน', 1); });
+      };
+      fileBox.querySelector('[data-f="drop"]').onclick = function () {
+        if (confirm('เลิกใช้ไฟล์ ' + meta.name + ' เป็นฉบับจริง แล้วกลับไปใช้เอกสารในระบบ?')) api('docFileDelete', S.token, save.ref()).then(function () { fileBanner(null); toast('กลับไปใช้เอกสารในระบบแล้ว'); });
+      };
+    }
+    if (save.ref && save.ref()) api('docFileGet', S.token, save.ref()).then(fileBanner).catch(function () {});
+
+    /* อัปไฟล์ที่แก้แล้ว: เลือกว่าจะเก็บเป็นฉบับจริง หรือแปลงเป็นเอกสารในระบบเพื่อแก้ต่อบนเว็บ */
+    document.getElementById('rdUpF').onchange = function () {
+      var f = this.files[0]; this.value = ''; if (!f) return;
+      var ext = (f.name.match(/\.(docx|xlsx)$/i) || [])[1];
+      if (!ext) return toast('รองรับเฉพาะไฟล์ .docx และ .xlsx', 1);
+      if (f.size > 5 * 1024 * 1024) return toast('ไฟล์ใหญ่เกิน 5 MB กรุณาย่อรูปในไฟล์ก่อน', 1);
+      var m = modal('<h3>อัปไฟล์ที่แก้แล้ว</h3><p><b>' + esc(f.name) + '</b> <span class="small muted">(' + Math.max(1, Math.round(f.size / 1024)) + ' KB)</span></p>' +
+        '<label class="rd-choice"><input type="radio" name="rdMode" value="file" checked><span><b>เก็บไฟล์นี้เป็นฉบับจริง</b><br><small>หน้าตาตรงตามที่แก้ใน ' + (ext.toLowerCase() === 'xlsx' ? 'Excel' : 'Word') + ' ดาวน์โหลดไปพิมพ์ได้ อัปไฟล์ใหม่ภายหลังจะแทนไฟล์เดิม</small></span></label>' +
+        '<label class="rd-choice"><input type="radio" name="rdMode" value="html"><span><b>แปลงเป็นเอกสารในระบบ</b><br><small>แทนเนื้อหาเอกสารบนเว็บด้วยเนื้อหาจากไฟล์ แก้ต่อ เพิ่มรูป และพิมพ์จากระบบได้ แต่รูปแบบบางอย่าง เช่น ระยะบรรทัดหรือการจัดหน้า อาจไม่ตรงกับไฟล์</small></span></label>' +
+        '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="rdUpGo">อัปไฟล์</button></div>');
+      m.querySelector('#rdUpGo').onclick = function () {
+        var btn = this, mode = m.querySelector('[name="rdMode"]:checked').value; btn.disabled = true;
+        var done = function () { btn.disabled = false; };
+        if (mode === 'html') {
+          Office.fromFile(f).then(function (r) {
+            var doc = el.querySelector('.rp-doc');
+            doc.innerHTML = cleanDocHtml(r.html); dirty = true;
+            return saveNow(true).then(function () { closeModal(); toast('แปลงไฟล์เป็นเอกสารในระบบและบันทึกแล้ว กดแก้ไขเอกสารเพื่อแก้ต่อได้'); });
+          }).catch(function (e) { if (!e || !e.message || /zip|docx|type|inflate/.test(e.message)) toast('อ่านไฟล์ไม่สำเร็จ กรุณาบันทึกจาก Word/Excel เป็น .docx/.xlsx แล้วลองใหม่', 1); done(); });
+          return;
+        }
+        // ฉบับจริงต้องผูกกับเอกสารที่บันทึกแล้ว ถ้ายังไม่เคยบันทึกจะบันทึกฉบับในระบบให้ก่อน
+        (save.ref() ? Promise.resolve() : saveNow(true)).then(function () { return f.arrayBuffer(); }).then(function (buf) {
+          return api('docFileSave', S.token, save.ref(), f.name, Office.b64(new Uint8Array(buf)));
+        }).then(function (meta) { closeModal(); fileBanner(meta); toast('เก็บไฟล์เป็นฉบับจริงของเอกสารนี้แล้ว'); }).catch(done);
+      };
+    };
   }
 
   /* รายงานสอนแทน/สอนชดเชย: บันทึกข้อความ ตามด้วยแผ่นกิจกรรมของแต่ละคาบ */
@@ -406,18 +506,41 @@
     el.innerHTML = '<div class="card muted">กำลังโหลดเอกสาร…</div>';
     var groupsBy = {}, order = [];
     reports.forEach(function (r) { var k = kind === 'sub' ? String((r.sub || {}).original_teacher_id || '') : 'all'; if (!groupsBy[k]) { groupsBy[k] = []; order.push(k); } groupsBy[k].push(r); });
-    Promise.all(reports.map(function (r) { return api('teachReportImages', S.token, r.id).then(function (imgs) { return [r.id, imgs]; }); })).then(function (list) {
-      var imgs = {}; list.forEach(function (x) { imgs[x[0]] = x[1]; });
-      var html = order.map(function (k) { return subMemoHtml(kind, groupsBy[k]) + groupsBy[k].map(function (r) { return activitySheet(r, imgs[r.id] || []); }).join(''); }).join('');
-      docToolbar(el, html, (kind === 'makeup' ? 'รายงานการสอนชดเชย ' : 'รายงานการสอนแทน ') + (nm('Teachers', reports[0].teacher_id) || '') + ' ' + reports[0].date, view, true);
-    });
+    var title = (kind === 'makeup' ? 'รายงานการสอนชดเชย ' : 'รายงานการสอนแทน ') + (nm('Teachers', reports[0].teacher_id) || '') + ' ' + reports[0].date;
+    openTeachDoc(el, reports.map(function (r) { return r.id; }), title, view, function () {
+      return Promise.all(reports.map(function (r) { return api('teachReportImages', S.token, r.id).then(function (imgs) { return [r.id, imgs]; }); })).then(function (list) {
+        var imgs = {}; list.forEach(function (x) { imgs[x[0]] = x[1]; });
+        return order.map(function (k) { return subMemoHtml(kind, groupsBy[k]) + groupsBy[k].map(function (r) { return activitySheet(r, imgs[r.id] || []); }).join(''); }).join('');
+      });
+    }, function () { showSubDocs(reports); });
   }
 
   /* ---------- เอกสารสอนแทน/สอนชดเชยที่บันทึกเก็บไว้ ---------- */
+  /* ตัวบันทึกของแต่ละชนิดเอกสาร: ref ใช้ผูกไฟล์ Word/Excel ฉบับจริงกับเอกสารที่บันทึกแล้ว */
+  function withRef(fn, kind, getId) { fn.ref = function () { var id = getId(); return id ? kind + ':' + id : ''; }; return fn; }
   function docSaver(rows, kind, id, title) {
-    return function (html) {
+    return withRef(function (html) {
       return api('subDocSave', S.token, { id: id || '', kind: kind, sub_ids: rows.map(function (r) { return r.id; }), title: title, html: html }).then(function (r) { id = r.id; return r; });
-    };
+    }, 'sub', function () { return id; });
+  }
+  /* รายงานการสอน (ปกติ/สอนแทน/สอนชดเชย) บันทึกฉบับที่แก้แทนการสร้างจากข้อมูลทุกครั้ง */
+  function teachSaver(reportIds, id, title, rebuild) {
+    var f = withRef(function (html) {
+      return api('teachDocSave', S.token, { report_ids: reportIds, title: title, html: html }).then(function (r) { id = r.id; return r; });
+    }, 'teach', function () { return id; });
+    f.rebuild = rebuild; f.reportIds = reportIds;
+    return f;
+  }
+  /* เปิดรายงานการสอน: ใช้ฉบับที่บันทึกไว้ถ้ามี ไม่มีจึงสร้างจากข้อมูลรายงาน */
+  function openTeachDoc(el, reportIds, title, view, build, rebuild) {
+    return api('teachDocGet', S.token, reportIds).then(function (d) {
+      if (d) {
+        docToolbar(el, cleanDocHtml(d.html), d.title || title, view, true, teachSaver(reportIds, d.id, d.title || title, rebuild));
+        document.getElementById('rdSaved').textContent = 'ฉบับที่บันทึกเมื่อ ' + savedAt(d);
+        return;
+      }
+      return build().then(function (html) { docToolbar(el, html, title, view, true, teachSaver(reportIds, '', title, rebuild)); });
+    });
   }
   function savedAt(d) { var t = d.updated_at || d.created_at || ''; return thDate(t) + ' ' + String(t).slice(11, 16) + ' น.'; }
   function savedDocsBox(box, rows, kind) {
@@ -609,7 +732,7 @@
     var letter = '<div class="page rp-page rp-parent-letter" data-pdf-width="760"><div class="rp-letter-head"><div>ที่ ' + esc(thNum(String(f.parentNo || '').trim() || 'ศธ 0633.18/............')) + '</div><img src="assets/krut.png" alt="ตราครุฑ"><div class="rp-letter-addr">' + esc(college) + (st.college_address ? '<br>' + esc(thNum(st.college_address)) : '') + '</div></div><p class="rp-center">' + esc(thLongDate(f.date)) + '</p>' +
       '<p><b class="rp-memo-label">เรื่อง</b> ขออนุญาตให้นักศึกษามาเรียนชดเชย</p><p><b>เรียน</b> ผู้ปกครองนาย/นางสาว......................................... นักศึกษา ' + esc(groupsText) + '</p>' +
       '<p class="rp-para">ด้วย ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ' + esc(college) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + '</p><p class="rp-para">ในการนี้ ' + esc(college) + ' จึงขอความอนุเคราะห์ผู้ปกครองอนุญาตให้นักศึกษามาเรียนชดเชย ' + esc(from === to ? 'ในวันที่ ' + when : 'ระหว่างวันที่ ' + when) + (f.place ? ' ณ ' + esc(thNum(f.place)) : '') + (f.phone ? ' ทั้งนี้ ผู้ปกครองสามารถสอบถามการมาเรียนของนักศึกษาได้ที่ครู' + esc(String(t.name || '').replace(/^(นางสาว|นาย|นาง)/, '')) + ' หมายเลขโทรศัพท์ ' + esc(thNum(f.phone)) : '') + '</p><p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและพิจารณาให้ความอนุเคราะห์ ขอขอบคุณมา ณ โอกาสนี้</p>' +
-      '<div class="rp-center" style="margin:14px 0 34px">ขอแสดงความนับถือ</div><div class="rp-center">( ' + esc(st.signer_director || rpDots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div><hr class="rp-dash" style="margin:16px 0">' +
+      '<div class="rp-center" style="margin:14px 0 34px">ขอแสดงความนับถือ</div><div class="rp-center">' + (window.Sig ? Sig.slot(st.signer_director) : '') + '( ' + esc(st.signer_director || rpDots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div><hr class="rp-dash" style="margin:16px 0">' +
       '<h3 class="rp-center">ใบตอบรับจากผู้ปกครอง</h3><p>ข้าพเจ้านาย/นาง/นางสาว................................................................ ผู้ปกครองนาย/นางสาว................................................................ นักศึกษาสาขางาน........................................... ระดับ..................... ชั้นปีที่.......... กลุ่ม.......... มีความเห็นสมควรว่า</p><p class="rp-center">☐ อนุญาต &nbsp;&nbsp;&nbsp;&nbsp; ☐ ไม่อนุญาตเนื่องจาก..........................................</p><div class="rp-center" style="margin-top:18px">ลงชื่อ' + rpDots + '<br>(' + rpDots + ')<br>ผู้ปกครองนักศึกษา</div></div>';
     var title = 'ขออนุญาตสอนชดเชย ' + (t.name || '') + ' ' + thLongDate(f.date);
     docToolbar(el, memo + letter, title, view, true, docSaver(rows, 'makeup_request', '', title));
@@ -879,9 +1002,9 @@
   }
 
   function visitDocSaver(teacherId, ids, id, title) {
-    return function (html) {
+    return withRef(function (html) {
       return api('visitDocSave', S.token, { id: id || '', semester_id: S.sem, teacher_id: teacherId, visit_ids: ids, title: title, html: html }).then(function (r) { id = r.id; return r; });
-    };
+    }, 'visit', function () { return id; });
   }
   function openVisitDoc(id, teacherId) {
     api('visitDocGet', S.token, id).then(function (d) {

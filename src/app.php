@@ -13,6 +13,7 @@ require_once __DIR__ . '/visit_docs.php';
 require_once __DIR__ . '/tab_import.php';
 require_once __DIR__ . '/api_extra.php';
 require_once __DIR__ . '/signatures.php';
+require_once __DIR__ . '/doc_files.php';
 require_once __DIR__ . '/backup.php';
 
 // เรียกจากเว็บได้เฉพาะรายการนี้เท่านั้น
@@ -27,7 +28,8 @@ const API_ALLOW = [
   'teachReportImageAdd', 'teachReportImages', 'teachReportImageDelete', 'teachReportSlots', 'teachReportSave', 'teachReportList', 'teachReportReview', 'teachReportDelete', 'teachReportSummary',
   'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet',
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
-  'signatureMap', 'signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary',
+  'signatureMap', 'signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary', 'signaturePlaceSave',
+  'teachDocGet', 'teachDocSave', 'teachDocReset', 'docFileGet', 'docFileDownload', 'docFileSave', 'docFileDelete',
   'issueList', 'issueSave', 'issueReply', 'issueDelete', 'backupList', 'backupCreate', 'backupDownload', 'backupDelete', 'backupUploadChunk', 'backupRestore',
 ];
 const LOGIN_MAX_FAILS = 5;
@@ -90,6 +92,7 @@ function handle_api(string $fn, string $base): void {
   if (json_last_error() !== JSON_ERROR_NONE && file_get_contents('php://input') !== '') { send_json(['error' => 'คำขอไม่ถูกต้อง']); return; }
   $args = (is_array($body) && isset($body['args']) && is_array($body['args'])) ? array_values($body['args']) : [];
   $GLOBALS['REQ_URL'] = page_url($base);
+  $GLOBALS['REQ_FN'] = $fn;
   $GLOBALS['REQ_MENUS'] = perm_request_menus($fn, $args);
 
   $loginKey = null;

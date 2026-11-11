@@ -132,6 +132,7 @@ function api_visitDocDelete($token = '', $id = '') {
     if (!$doc) throw new Exception('ไม่พบรายงาน');
     visit_doc_assert($me, $doc);
     db()->prepare('DELETE FROM `SupervisionDocs` WHERE `id` = ?')->execute([$doc['id']]);
+    db()->prepare('DELETE FROM `DocFiles` WHERE `ref` = ?')->execute(['visit:' . $doc['id']]);
     foreach (report_image_names($doc) as $n) @unlink(report_image_dir() . '/' . $n);
     unset(Tbl::$cache['SupervisionDocs']);
     log_action($me, 'ลบรายงานการนิเทศ', $doc['title']);

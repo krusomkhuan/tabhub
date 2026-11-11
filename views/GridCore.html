@@ -413,7 +413,7 @@ var Grid = (function () {
 
   /** ช่องลงนามท้ายตาราง */
   function signBlock(st, headName, omitHead, deptName) {
-    function one(name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
+    function one(name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name, 'timetable') : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
     return '<div class="signs">' + (omitHead ? '' : one(headName, esc(deptHeadTitle(deptName)))) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') +
       one(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + one(st.signer_director, 'ผู้อำนวยการ') + '</div>';
   }
@@ -579,5 +579,61 @@ var Grid = (function () {
 
   return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap, mergeItems: mergeItems,
     periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, deptHeadTitle: deptHeadTitle, teacherSheet: teacherSheet, studentSheet: studentSheet, roomSheet: roomSheet, shortTeacherNames: shortTeacherNames, displayControl: displayControl, bindDisplayControl: bindDisplayControl, displayMode: displayMode, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
+})();
+
+/* ===================== ลายเซ็นในเอกสาร =====================
+   เอกสารวาง Sig.slot(ชื่อ) ไว้หลังคำว่า "ลงชื่อ" แล้วระบบเติมรูปลายเซ็นของชื่อนั้นให้เอง (ไม่สนช่องว่างในชื่อ)
+   รูปวางทับเส้นจุดโดยไม่ดันข้อความ เอกสารที่บันทึกเก็บไว้เก็บเฉพาะช่องว่าง รูปจึงเป็นลายเซ็นล่าสุดเสมอ
+   อยู่ใน GridCore เพื่อใช้ทั้งหน้าระบบและหน้าเผยแพร่ (หน้าเผยแพร่แสดงลายเซ็นเฉพาะเครื่องที่เข้าระบบอยู่) */
+var Sig = (function () {
+  var map = null, places = {}, timer;
+  function key(name) { return String(name || '').replace(/\s+/g, '').replace(/ํา/g, 'ำ'); }
+  /* spot = จุดในเอกสารที่ผู้ดูแลระบบปรับตำแหน่งแยกได้ ไม่ระบุ = ตามหน้าที่เปิด (เมนูในระบบ หรือ public) */
+  function slot(name, spot) {
+    var k = key(name);
+    return k ? '<span class="sig-slot" data-sig="' + Grid.esc(k) + '"' + (spot ? ' data-spot="' + Grid.esc(spot) + '"' : '') + '></span>' : '';
+  }
+  function spotOf(s) { return s.getAttribute('data-spot') || (window.S && S.view) || 'public'; }
+  /* ตำแหน่งที่ใช้: ที่ผู้ดูแลปรับไว้สำหรับจุดนี้ ถ้าไม่มีใช้ที่เจ้าของตั้งไว้ */
+  function placeFor(s) {
+    var k = s.getAttribute('data-sig'), v = map && map[k], o = (places[spotOf(s)] || {})[k];
+    return { custom: !!o, place: o || (v && v.src ? { x: v.x, y: v.y, s: v.s } : null) };
+  }
+  /* ตำแหน่งที่เจ้าของตั้งไว้: เลื่อนเป็นหน่วย em จึงตามขนาดตัวอักษรของเอกสารแต่ละแบบ */
+  function place(img, p) {
+    var t = p && (p.x || p.y || (p.s && p.s !== 1)) ? 'translate(' + (+p.x || 0) + 'em,' + (+p.y || 0) + 'em) scale(' + (+p.s || 1) + ')' : '';
+    if (img.style.transform !== t) img.style.transform = t;
+  }
+  function fill(root) {
+    if (!map) return;
+    Array.prototype.forEach.call((root || document).querySelectorAll('.sig-slot[data-sig]'), function (s) {
+      var v = map[s.getAttribute('data-sig')], src = v && (v.src || v), img = s.querySelector('img');
+      if (src) {
+        if (!img) { img = document.createElement('img'); img.alt = ''; s.appendChild(img); }
+        if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+        place(img, placeFor(s).place);
+      } else if (img) img.remove();
+    });
+  }
+  /* token: ของผู้ที่เข้าระบบ ไม่มีหรือหมดอายุ = ไม่แสดงลายเซ็น (คนทั่วไปที่เปิดหน้าเผยแพร่) */
+  function load(token) {
+    token = token || (window.S && S.token) || '';
+    if (!token) return Promise.resolve();
+    return new Promise(function (res) {
+      google.script.run.withSuccessHandler(function (m) {
+        m = m || {};
+        map = m.sigs || {}; places = m.places || {}; fill(); res();
+      }).withFailureHandler(function () { res(); }).signatureMap(token);
+    });
+  }
+  function setPlaces(p) { places = p || {}; fill(); }
+  function watch() {
+    if (document.body._sig) return;
+    document.body._sig = new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(function () { fill(); }, 30); });
+    document.body._sig.observe(document.body, { childList: true, subtree: true });
+  }
+  /* ตอนบันทึกเอกสารเก็บไว้ ตัดรูปออกให้เหลือช่องว่าง */
+  function strip(root) { Array.prototype.forEach.call(root.querySelectorAll('.sig-slot img'), function (i) { i.remove(); }); }
+  return { key: key, slot: slot, fill: fill, load: load, watch: watch, strip: strip, place: place, spotOf: spotOf, placeFor: placeFor, setPlaces: setPlaces };
 })();
 </script>

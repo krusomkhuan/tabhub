@@ -65,7 +65,7 @@ function backup_create(string $kind, string $by): string {
   backup_require_writable();
   $tables = [];
   foreach (array_keys(SCHEMA) as $t) $tables[$t] = readTable($t);
-  $images = array_values(array_filter(backup_image_names(array_merge($tables['TeachReports'] ?? [], $tables['SupervisionVisits'] ?? [], $tables['SubDocs'] ?? [], $tables['SupervisionDocs'] ?? [])), fn($n) => is_file(report_image_dir() . '/' . $n)));
+  $images = array_values(array_filter(backup_image_names(array_merge($tables['TeachReports'] ?? [], $tables['SupervisionVisits'] ?? [], $tables['SubDocs'] ?? [], $tables['SupervisionDocs'] ?? [], $tables['TeachDocs'] ?? [])), fn($n) => is_file(report_image_dir() . '/' . $n)));
 
   $name = backup_new_name($kind);
   $tmp = backup_dir() . '/' . $name . '.tmp';
@@ -137,7 +137,7 @@ function backup_read(string $path, ?string $extractTo = null): array {
       if (array_key_exists('tables', $o)) { $legacy = true; $tables = $o['tables']; break; }
     } elseif ($i === 1) {
       $tables = $o['tables'] ?? null;
-      if (is_array($tables)) $wanted = array_flip(backup_image_names(array_merge(is_array($tables['TeachReports'] ?? null) ? $tables['TeachReports'] : [], is_array($tables['SupervisionVisits'] ?? null) ? $tables['SupervisionVisits'] : [], is_array($tables['SubDocs'] ?? null) ? $tables['SubDocs'] : [], is_array($tables['SupervisionDocs'] ?? null) ? $tables['SupervisionDocs'] : [])));
+      if (is_array($tables)) $wanted = array_flip(backup_image_names(array_merge(is_array($tables['TeachReports'] ?? null) ? $tables['TeachReports'] : [], is_array($tables['SupervisionVisits'] ?? null) ? $tables['SupervisionVisits'] : [], is_array($tables['SubDocs'] ?? null) ? $tables['SubDocs'] : [], is_array($tables['SupervisionDocs'] ?? null) ? $tables['SupervisionDocs'] : [], is_array($tables['TeachDocs'] ?? null) ? $tables['TeachDocs'] : [])));
     } elseif (!empty($o['end'])) {
       if ((int)($o['images'] ?? -1) !== $count) throw new Exception(BACKUP_BAD_FILE);
       $ended = true;
@@ -297,7 +297,7 @@ function api_backupList($token = '') {
   $s = readSettings();
   $files = array_map(fn($f) => $f + ['images' => backup_file_images(backup_dir() . '/' . $f['name'])], backup_files());
   $count = 0; $bytes = 0;
-  foreach (backup_image_names(array_merge(readTable('TeachReports'), readTable('SupervisionVisits'), readTable('SubDocs'), readTable('SupervisionDocs'))) as $n) {
+  foreach (backup_image_names(array_merge(readTable('TeachReports'), readTable('SupervisionVisits'), readTable('SubDocs'), readTable('SupervisionDocs'), readTable('TeachDocs'))) as $n) {
     $p = report_image_dir() . '/' . $n;
     if (is_file($p)) { $count++; $bytes += filesize($p); }
   }

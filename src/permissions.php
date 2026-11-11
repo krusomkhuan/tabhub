@@ -79,6 +79,7 @@ function perm_effective(array $user): array {
   foreach (array_keys(MENU_ACCESS) as $m) {
     if (in_array($m, $p['grant'], true) || (perm_is_default($m, $role) && !in_array($m, $p['deny'], true))) $out[] = $m;
   }
+  if ($role === 'executive') $out = array_values(array_diff($out, EXEC_HIDDEN_MENUS));
   return $out;
 }
 

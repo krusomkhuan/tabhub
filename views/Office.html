@@ -1,0 +1,508 @@
+<script>
+/* ===================== ไฟล์ Word / Excel ของเอกสาร =====================
+   ทำงานในเบราว์เซอร์ทั้งหมด ไม่ใช้ไลบรารีภายนอก
+   - toDocx(pages) / toXlsx(pages): สร้างไฟล์จากเอกสารที่แสดงอยู่บนหน้าจอ (อ่านรูปแบบจากที่เบราว์เซอร์จัดแล้ว)
+   - fromFile(file): อ่าน .docx/.xlsx กลับเป็น HTML ของเอกสาร (หน้า .rp-page) เพื่อแก้ต่อบนเว็บหรือดูตัวอย่าง
+   ลายเซ็นในไฟล์ Word ติดป้าย sig:<ชื่อ> ไว้ เมื่ออัปกลับจึงกลายเป็นช่องลายเซ็นของระบบตามเดิม */
+var Office = (function () {
+  var enc = new TextEncoder(), dec = new TextDecoder('utf-8');
+  var FONT = 'TH Sarabun New';
+  function x(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /* ---------- zip ---------- */
+  var CRC = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(b) { var c = 0xFFFFFFFF; for (var i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  /* files: [[ชื่อ, Uint8Array หรือข้อความ]] เก็บแบบไม่บีบอัด ซึ่ง Word/Excel เปิดได้ปกติ */
+  function zip(files) {
+    var parts = [], central = [], off = 0;
+    files.forEach(function (f) {
+      var name = enc.encode(f[0]), data = typeof f[1] === 'string' ? enc.encode(f[1]) : f[1], crc = crc32(data);
+      var h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint32(14, crc, true);
+      h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+      parts.push(new Uint8Array(h.buffer), name, data);
+      var c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint32(16, crc, true);
+      c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+      central.push(new Uint8Array(c.buffer), name);
+      off += 30 + name.length + data.length;
+    });
+    var size = central.reduce(function (n, p) { return n + p.length; }, 0), e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, size, true); e.setUint32(16, off, true);
+    return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]));
+  }
+  /* อ่าน zip: คืน {ชื่อไฟล์: Promise<Uint8Array>} ใช้ตัวคลาย deflate ของเบราว์เซอร์ */
+  function unzip(buf) {
+    var v = new DataView(buf), u8 = new Uint8Array(buf), end = -1;
+    for (var i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) if (v.getUint32(i, true) === 0x06054b50) { end = i; break; }
+    if (end < 0) throw new Error('zip');
+    var n = v.getUint16(end + 10, true), p = v.getUint32(end + 16, true), out = {};
+    for (var k = 0; k < n; k++) {
+      if (v.getUint32(p, true) !== 0x02014b50) throw new Error('zip');
+      var method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true), nl = v.getUint16(p + 28, true), el = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true), lo = v.getUint32(p + 42, true);
+      var name = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+      var start = lo + 30 + v.getUint16(lo + 26, true) + v.getUint16(lo + 28, true), data = u8.slice(start, start + csize);
+      out[name] = { method: method, data: data };
+      p += 46 + nl + el + cl;
+    }
+    return out;
+  }
+  function inflate(entry) {
+    if (!entry) return Promise.resolve(null);
+    if (entry.method === 0) return Promise.resolve(entry.data);
+    if (entry.method !== 8 || typeof DecompressionStream === 'undefined') return Promise.reject(new Error('inflate'));
+    var ds = new DecompressionStream('deflate-raw'), w = ds.writable.getWriter();
+    w.write(entry.data); w.close();
+    return new Response(ds.readable).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+  }
+  function text(entries, name) { return inflate(entries[name]).then(function (b) { return b ? dec.decode(b) : null; }); }
+  function xml(s) { return new DOMParser().parseFromString(s, 'application/xml'); }
+  function b64(u8) { var s = ''; for (var i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+  function unb64(s) { var bin = atob(s), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+
+  /* ---------- รูป: ได้ไบต์ PNG/JPEG จากรูปบนหน้าจอ ---------- */
+  function imageBytes(img) {
+    var src = img.currentSrc || img.src || '', m = src.match(/^data:image\/(png|jpeg);base64,(.+)$/);
+    if (m) return Promise.resolve({ ext: m[1] === 'png' ? 'png' : 'jpeg', bytes: unb64(m[2]) });
+    return new Promise(function (res) {
+      try {
+        var c = document.createElement('canvas'); c.width = img.naturalWidth || 1; c.height = img.naturalHeight || 1;
+        c.getContext('2d').drawImage(img, 0, 0);
+        var d = c.toDataURL('image/png').split(',')[1]; res({ ext: 'png', bytes: unb64(d) });
+      } catch (e) { res(null); }
+    });
+  }
+
+  /* ---------- HTML → Word ---------- */
+  function cs(el) { return getComputedStyle(el); }
+  function isBlock(el) {
+    var d = cs(el).display;
+    return el.tagName === 'TABLE' || el.tagName === 'BR' ? false : /^(block|flex|grid|list-item|table)$/.test(d);
+  }
+  function hasBlockChild(el) { return Array.prototype.some.call(el.children, function (c) { return isBlock(c) || c.tagName === 'TABLE'; }); }
+  /* ขนาดตัวอักษรบนเว็บ (ฟอนต์ Sarabun) ตัวใหญ่กว่า TH Sarabun New ที่ขนาดเดียวกัน จึงขยายให้ใกล้เคียงกัน */
+  function ptOf(style) {
+    var px = parseFloat(style.fontSize) || 16, th = /TH Sarabun|MemoSarabun|SarabunIT/i.test(style.fontFamily);
+    return Math.round(px * 0.75 * (th ? 1 : 1.4) * 2) / 2;
+  }
+  function DocxWriter(pages) {
+    this.pages = pages; this.media = []; this.relN = 1;
+    var p0 = pages[0], st = cs(p0);
+    var inner = p0.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
+    this.textTw = 11906 - 1701 - 1134; // A4 ขอบซ้าย 3 ซม. ขวา 2 ซม.
+    this.k = this.textTw / Math.max(200, inner); // px → twips
+  }
+  DocxWriter.prototype.tw = function (px) { return Math.round(px * this.k); };
+  DocxWriter.prototype.runProps = function (el) {
+    // บันทึกข้อความราชการบนเว็บใช้ TH SarabunIT๙ จึงใช้ฟอนต์เดียวกันใน Word ให้ตัดบรรทัดตรงกัน
+    var s = cs(el), f = /MemoSarabun|SarabunIT/i.test(s.fontFamily) ? 'TH SarabunIT๙' : FONT;
+    var r = '<w:rPr><w:rFonts w:ascii="' + f + '" w:hAnsi="' + f + '" w:cs="' + f + '" w:eastAsia="' + f + '"/>';
+    if (parseInt(s.fontWeight, 10) >= 600) r += '<w:b/><w:bCs/>';
+    if (s.fontStyle === 'italic') r += '<w:i/><w:iCs/>';
+    if (/underline/.test(s.textDecorationLine || s.textDecoration)) r += '<w:u w:val="single"/>';
+    var sz = Math.round(ptOf(s) * 2); r += '<w:sz w:val="' + sz + '"/><w:szCs w:val="' + sz + '"/>';
+    return r + '</w:rPr>';
+  };
+  DocxWriter.prototype.textRun = function (txt, el) {
+    if (!txt) return '';
+    return txt.split('\t').map(function (t, i) { return (i ? '<w:r>' + this.runProps(el) + '<w:tab/></w:r>' : '') + (t ? '<w:r>' + this.runProps(el) + '<w:t xml:space="preserve">' + x(t) + '</w:t></w:r>' : ''); }, this).join('');
+  };
+  DocxWriter.prototype.drawing = function (img, anchor) {
+    var me = this;
+    return imageBytes(img).then(function (b) {
+      if (!b) return '';
+      var id = me.relN++, rid = 'rImg' + id, name = 'image' + id + '.' + b.ext;
+      me.media.push({ name: name, bytes: b.bytes, rid: rid, ext: b.ext });
+      var r = img.getBoundingClientRect(), cx = Math.max(1, Math.round(me.tw(r.width) * 635)), cy = Math.max(1, Math.round(me.tw(r.height) * 635));
+      var key = img.parentNode && img.parentNode.getAttribute && img.parentNode.getAttribute('data-sig');
+      var pic = '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="' + id + '" name="' + name + '"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>';
+      var doc = '<wp:docPr id="' + id + '" name="' + name + '"' + (key ? ' descr="sig:' + x(key) + '"' : '') + '/>';
+      if (!anchor) return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' + cx + '" cy="' + cy + '"/>' + doc + '<wp:cNvGraphicFramePr/>' + pic + '</wp:inline></w:drawing></w:r>';
+      // ลายเซ็นลอยทับเส้นลงชื่อตามตำแหน่งบนหน้าจอ เทียบกับจุดเริ่มของช่องลายเซ็น
+      var s = anchor.getBoundingClientRect(), ox = Math.round(me.tw(r.left - s.left) * 635), oy = Math.round(me.tw(r.top - s.top) * 635);
+      return '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' +
+        '<wp:positionH relativeFrom="character"><wp:posOffset>' + ox + '</wp:posOffset></wp:positionH><wp:positionV relativeFrom="line"><wp:posOffset>' + oy + '</wp:posOffset></wp:positionV>' +
+        '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>' + doc + '<wp:cNvGraphicFramePr/>' + pic + '</wp:anchor></w:drawing></w:r>';
+    });
+  };
+  /* เนื้อหาแบบบรรทัดเดียวกันของบล็อก → runs */
+  DocxWriter.prototype.inline = function (node, out) {
+    var me = this;
+    Array.prototype.forEach.call(node.childNodes, function (n) {
+      if (n.nodeType === 3) { var t = n.nodeValue.replace(/[\r\n]+/g, ' ').replace(/ {2,}/g, ' '); if (t.trim() || t === ' ') out.push(Promise.resolve(me.textRun(t, n.parentNode))); return; }
+      if (n.nodeType !== 1 || cs(n).display === 'none') return;
+      if (n.tagName === 'BR') { out.push(Promise.resolve('<w:r><w:br/></w:r>')); return; }
+      if (n.tagName === 'IMG') { var slot = n.parentNode.classList && n.parentNode.classList.contains('sig-slot') ? n.parentNode : null; out.push(me.drawing(n, slot)); return; }
+      me.inline(n, out);
+    });
+  };
+  DocxWriter.prototype.pPr = function (el, extra) {
+    var s = cs(el), a = { center: 'center', right: 'right', end: 'right', justify: 'both' }[s.textAlign], p = '<w:pPr><w:spacing w:before="' + this.tw(parseFloat(s.marginTop) || 0) + '" w:after="' + this.tw(parseFloat(s.marginBottom) || 0) + '" w:line="240" w:lineRule="auto"/>';
+    var ind = this.tw(parseFloat(s.textIndent) || 0), left = this.tw((parseFloat(s.paddingLeft) || 0) + (parseFloat(s.marginLeft) || 0));
+    if (ind || left) p += '<w:ind w:left="' + Math.max(0, left) + '"' + (ind > 0 ? ' w:firstLine="' + ind + '"' : '') + '/>';
+    if (a) p += '<w:jc w:val="' + a + '"/>';
+    return p + (extra || '') + '</w:pPr>';
+  };
+  DocxWriter.prototype.para = function (el, runs) {
+    var me = this;
+    return Promise.all(runs).then(function (rs) { return '<w:p>' + me.pPr(el) + rs.join('') + '</w:p>'; });
+  };
+  /* บล็อก: แยกเป็นย่อหน้า ตาราง หรือแถวของกล่องที่วางเรียงกัน (ช่องลงชื่อหลายช่อง) */
+  DocxWriter.prototype.block = function (el) {
+    var me = this, s = cs(el);
+    if (s.display === 'none' || el.classList.contains('no-print') || el.hidden) return Promise.resolve('');
+    if (el.tagName === 'TABLE') return me.table(el);
+    var kids = Array.prototype.filter.call(el.children, function (c) { return cs(c).display !== 'none' && !c.hidden; });
+    if (/flex|grid/.test(s.display) && kids.length && s.flexDirection !== 'column' && kids.every(function (c) { return isBlock(c); })) return me.row(el, kids);
+    if (!hasBlockChild(el)) {
+      var runs = []; me.inline(el, runs);
+      // กล่องว่างที่มีความสูง (ช่องว่างเว้นบรรทัด) ใช้ย่อหน้าว่างแทน
+      return runs.length ? me.para(el, runs) : Promise.resolve(el.getBoundingClientRect().height > 8 ? '<w:p>' + me.pPr(el) + '</w:p>' : '');
+    }
+    var out = [], pending = [];
+    function flush() { if (pending.length) { out.push(me.para(el, pending)); pending = []; } }
+    Array.prototype.forEach.call(el.childNodes, function (n) {
+      if (n.nodeType === 1 && (isBlock(n) || n.tagName === 'TABLE')) { flush(); out.push(me.block(n)); }
+      else if (n.nodeType === 3) { var t = n.nodeValue.replace(/\s+/g, ' '); if (t.trim()) pending.push(Promise.resolve(me.textRun(t, el))); }
+      else if (n.nodeType === 1) { if (n.tagName === 'BR') pending.push(Promise.resolve('<w:r><w:br/></w:r>')); else if (n.tagName === 'IMG') pending.push(me.drawing(n, null)); else me.inline(n, pending); }
+    });
+    flush();
+    return Promise.all(out).then(function (a) { return a.join(''); });
+  };
+  /* กล่องเรียงแนวนอน → ตารางไม่มีเส้น ความกว้างตามตำแหน่งบนหน้าจอ */
+  DocxWriter.prototype.row = function (el, kids) {
+    var me = this, box = el.getBoundingClientRect(), cells = [], last = box.left;
+    kids.forEach(function (c, i) {
+      var r = c.getBoundingClientRect(), right = i < kids.length - 1 ? kids[i + 1].getBoundingClientRect().left : box.right;
+      if (i === 0 && r.left - box.left > 4) cells.push({ w: r.left - box.left, el: null });
+      cells.push({ w: right - r.left, el: c });
+    });
+    // ระยะจากขอบซ้ายของกล่องที่อยู่ข้างนอก (หน้า หรือช่องที่ซ้อนอยู่) เช่น ช่องลงชื่อที่ชิดขวาของหน้า
+    var ind = box.left - me.contentLeft, outer = me.contentLeft;
+    var bodies = cells.map(function (c) {
+      if (!c.el) return Promise.resolve('');
+      me.contentLeft = c.el.getBoundingClientRect().left; // เนื้อหาในช่องวัดจากขอบช่องเอง
+      var p = me.block(c.el); me.contentLeft = outer; return p;
+    });
+    return Promise.all(bodies).then(function (parts) {
+      return '<w:tbl><w:tblPr><w:tblW w:w="' + me.tw(box.width) + '" w:type="dxa"/>' + (ind > 2 ? '<w:tblInd w:w="' + me.tw(ind) + '" w:type="dxa"/>' : '') + '<w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>' +
+        '<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>' +
+        cells.map(function (c) { return '<w:gridCol w:w="' + me.tw(c.w) + '"/>'; }).join('') + '</w:tblGrid><w:tr>' +
+        cells.map(function (c, i) {
+          var b = parts[i] || ''; if (!/<\/w:p>$|<w:p\/>$/.test(b)) b += '<w:p/>';
+          // ข้อความสั้น (หัวข้อ ช่องลงชื่อ) บนเว็บอยู่บรรทัดเดียว ใน Word ก็ไม่ให้ตัดบรรทัด
+          var line = c.el && !c.el.querySelector('br') && (c.el.innerText || '').trim().length <= 60;
+          return '<w:tc><w:tcPr><w:tcW w:w="' + me.tw(c.w) + '" w:type="dxa"/>' + (line ? '<w:noWrap/>' : '') + '</w:tcPr>' + b + '</w:tc>';
+        }).join('') + '</w:tr></w:tbl>';
+    });
+  };
+  /* ตาราง HTML → ตาราง Word รวมช่องข้ามคอลัมน์ (gridSpan) และข้ามแถว (vMerge) */
+  DocxWriter.prototype.table = function (t) {
+    var me = this, grid = [], widths = [], rows = Array.prototype.slice.call(t.rows);
+    rows.forEach(function (tr, ri) {
+      grid[ri] = grid[ri] || [];
+      var ci = 0;
+      Array.prototype.forEach.call(tr.cells, function (td) {
+        while (grid[ri][ci]) ci++;
+        for (var a = 0; a < td.rowSpan; a++) for (var b = 0; b < td.colSpan; b++) { grid[ri + a] = grid[ri + a] || []; grid[ri + a][ci + b] = a === 0 && b === 0 ? td : { cont: td, first: b === 0 }; }
+        if (td.colSpan === 1 && !widths[ci]) widths[ci] = td.getBoundingClientRect().width;
+        ci += td.colSpan;
+      });
+    });
+    var ncol = grid.reduce(function (n, r) { return Math.max(n, r.length); }, 0), tw = t.getBoundingClientRect().width;
+    var known = widths.reduce(function (n, w) { return n + (w || 0); }, 0), unknown = 0;
+    for (var i = 0; i < ncol; i++) if (!widths[i]) unknown++;
+    for (i = 0; i < ncol; i++) if (!widths[i]) widths[i] = Math.max(20, (tw - known) / Math.max(1, unknown));
+    var border = cs(rows[0] && rows[0].cells[0] || t).borderTopStyle !== 'none';
+    var bdr = border ? '<w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders>' : '';
+    return Promise.all(grid.map(function (row) {
+      return Promise.all(row.map(function (c, ci) {
+        if (!c) return Promise.resolve('');
+        if (c.cont) {
+          if (!c.first || c.cont.rowSpan === 1) return Promise.resolve('');
+          return Promise.resolve('<w:tc><w:tcPr><w:tcW w:w="' + me.tw(widths[ci]) + '" w:type="dxa"/>' + (c.cont.colSpan > 1 ? '<w:gridSpan w:val="' + c.cont.colSpan + '"/>' : '') + '<w:vMerge/></w:tcPr><w:p/></w:tc>');
+        }
+        var w = 0; for (var k = 0; k < c.colSpan; k++) w += widths[ci + k] || 0;
+        var va = { middle: 'center', bottom: 'bottom' }[cs(c).verticalAlign], outer = me.contentLeft;
+        me.contentLeft = c.getBoundingClientRect().left + (parseFloat(cs(c).paddingLeft) || 0);
+        var started = me.block(c); me.contentLeft = outer;
+        return started.then(function (body) {
+          if (!/<\/w:p>$|<w:p\/>$/.test(body)) body += '<w:p>' + me.pPr(c) + '</w:p>'; // ช่องตารางต้องจบด้วยย่อหน้า
+          return '<w:tc><w:tcPr><w:tcW w:w="' + me.tw(w) + '" w:type="dxa"/>' + (c.colSpan > 1 ? '<w:gridSpan w:val="' + c.colSpan + '"/>' : '') + (c.rowSpan > 1 ? '<w:vMerge w:val="restart"/>' : '') + (va ? '<w:vAlign w:val="' + va + '"/>' : '') + '</w:tcPr>' + body + '</w:tc>';
+        });
+      })).then(function (cells) { return '<w:tr>' + cells.join('') + '</w:tr>'; });
+    })).then(function (trs) {
+      return '<w:tbl><w:tblPr><w:tblW w:w="' + me.tw(tw) + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>' + bdr + '<w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>' +
+        widths.slice(0, ncol).map(function (w) { return '<w:gridCol w:w="' + me.tw(w) + '"/>'; }).join('') + '</w:tblGrid>' + trs.join('') + '</w:tbl><w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>';
+    });
+  };
+  DocxWriter.prototype.build = function () {
+    var me = this;
+    // ทำทีละหน้า เพราะตำแหน่งขอบเนื้อหาของแต่ละหน้าใช้คำนวณระยะเยื้อง
+    var bodies = [], chain = Promise.resolve();
+    me.pages.forEach(function (pg) {
+      chain = chain.then(function () {
+        me.contentLeft = pg.getBoundingClientRect().left + (parseFloat(cs(pg).paddingLeft) || 0);
+        return me.block(pg).then(function (b) { bodies.push(b); });
+      });
+    });
+    return chain.then(function () {
+      var body = bodies.join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+      var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>' +
+        body + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1701" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>';
+      var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="' + FONT + '" w:hAnsi="' + FONT + '" w:cs="' + FONT + '" w:eastAsia="' + FONT + '"/><w:sz w:val="32"/><w:szCs w:val="32"/><w:lang w:val="th-TH" w:bidi="th-TH"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>';
+      var rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+        me.media.map(function (m) { return '<Relationship Id="' + m.rid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/' + m.name + '"/>'; }).join('') + '</Relationships>';
+      var types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>';
+      var root = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
+      return zip([['[Content_Types].xml', types], ['_rels/.rels', root], ['word/document.xml', docXml], ['word/styles.xml', styles], ['word/_rels/document.xml.rels', rels]]
+        .concat(me.media.map(function (m) { return ['word/media/' + m.name, m.bytes]; })));
+    });
+  };
+  function toDocx(pages) { return new DocxWriter(Array.prototype.slice.call(pages)).build(); }
+
+  /* ---------- HTML → Excel: ทุกหน้าต่อกันในชีตเดียว ตารางลงช่องตรงกัน ข้อความอื่นเป็นแถวที่รวมช่องเต็มความกว้าง ---------- */
+  function col(n) { var s = ''; n++; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function toXlsx(pages) {
+    pages = Array.prototype.slice.call(pages);
+    var rows = [], merges = [], xfs = ['0|0|0|0'], ncol = 1, colW = [];
+    function xf(bold, align, border, wrap) { var k = (bold ? 1 : 0) + '|' + align + '|' + (border ? 1 : 0) + '|' + (wrap ? 1 : 0), i = xfs.indexOf(k); if (i < 0) { xfs.push(k); i = xfs.length - 1; } return i; }
+    function alignOf(el) { var a = cs(el).textAlign; return a === 'center' ? 'center' : a === 'right' || a === 'end' ? 'right' : 'left'; }
+    function cellText(el) { return (el.innerText || el.textContent || '').replace(/ /g, ' ').replace(/\n{3,}/g, '\n\n').trim(); }
+    pages.forEach(function (pg) { pg.querySelectorAll('table').forEach(function (t) { if (t.closest('table') !== t) return; var n = 0; if (t.rows[0]) Array.prototype.forEach.call(t.rows[0].cells, function (c) { n += c.colSpan; }); if (n > ncol) { ncol = n; colW = []; var ci = 0; Array.prototype.forEach.call(t.rows[t.rows.length - 1].cells, function (c) { for (var k = 0; k < c.colSpan; k++) colW[ci++] = c.getBoundingClientRect().width / c.colSpan; }); } }); });
+    ncol = Math.max(ncol, 6);
+    var totalW = 0; for (var wi = 0; wi < ncol; wi++) totalW += colW[wi] || 90;
+    var heights = []; // ความสูงแถว: แถวที่รวมช่องไม่ขยายเอง จึงประมาณจากจำนวนบรรทัด
+    function lines(t, widthPx) { return t.split('\n').reduce(function (n, l) { return n + Math.max(1, Math.ceil(l.length * 11 / Math.max(60, widthPx))); }, 0); }
+    function textRow(el) {
+      // กล่องที่เรียงแนวนอน (หัวข้อ: ค่า) ให้อยู่บรรทัดเดียวกัน
+      var t = /flex|grid/.test(cs(el).display) && el.children.length ? Array.prototype.map.call(el.children, cellText).filter(Boolean).join('    ') : cellText(el);
+      if (!t) return;
+      var r = rows.length; rows.push([{ v: t, s: xf(parseInt(cs(el).fontWeight, 10) >= 600, alignOf(el), false, true) }]);
+      heights[r] = lines(t, totalW) * 25;
+      if (ncol > 1) merges.push('A' + (r + 1) + ':' + col(ncol - 1) + (r + 1));
+    }
+    function table(t) {
+      var base = rows.length, taken = {}, n = 0;
+      if (t.rows[0]) Array.prototype.forEach.call(t.rows[0].cells, function (c) { n += c.colSpan; });
+      // ตารางที่มีคอลัมน์น้อยกว่าแผ่นงาน กระจายแต่ละคอลัมน์ให้กว้างหลายช่อง
+      // คอลัมน์ที่ k ของตารางเริ่มที่ช่อง start[k] ของแผ่นงาน
+      var start = [];
+      for (var k = 0; k <= n; k++) start[k] = n >= ncol ? k : Math.round(k * ncol / Math.max(1, n));
+      Array.prototype.forEach.call(t.rows, function (tr, ri) {
+        var r = base + ri; rows[r] = rows[r] || [];
+        var ci = 0, rowLines = 1;
+        Array.prototype.forEach.call(tr.cells, function (td) {
+          while (taken[r + ':' + ci]) ci++; // ช่องที่ถูกรวมจากแถวบน (นับตามคอลัมน์ของตาราง)
+          var c0 = start[ci], c1 = start[Math.min(n, ci + td.colSpan)] - 1, txt = cellText(td), a, b;
+          rows[r][c0] = { v: txt, s: xf(td.tagName === 'TH' || parseInt(cs(td).fontWeight, 10) >= 600, alignOf(td), true, true) };
+          for (a = 0; a < td.rowSpan; a++) {
+            for (b = 0; b < td.colSpan; b++) taken[(r + a) + ':' + (ci + b)] = 1;
+            rows[r + a] = rows[r + a] || [];
+            for (b = c0; b <= c1; b++) if (a || b !== c0) rows[r + a][b] = { v: '', s: xf(false, 'left', true, false) };
+          }
+          if (td.rowSpan > 1 || c1 > c0) merges.push(col(c0) + (r + 1) + ':' + col(c1) + (r + td.rowSpan));
+          var w = 0; for (b = c0; b <= c1; b++) w += colW[b] || 90;
+          if (td.rowSpan === 1) rowLines = Math.max(rowLines, lines(txt, w));
+          ci += td.colSpan;
+        });
+        heights[r] = rowLines * 25;
+      });
+      rows.push([]);
+    }
+    function walk(el) {
+      if (cs(el).display === 'none' || el.classList.contains('no-print')) return;
+      if (el.tagName === 'TABLE') return table(el);
+      if (!el.querySelector('table') && (!hasBlockChild(el) || /flex|grid/.test(cs(el).display))) return textRow(el);
+      Array.prototype.forEach.call(el.children, walk);
+    }
+    pages.forEach(function (pg, i) { if (i) rows.push([]); walk(pg); });
+    var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><cols>' +
+      Array.from({ length: ncol }, function (_, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + Math.max(6, Math.min(60, Math.round((colW[i] || 90) / 6.5))) + '" customWidth="1"/>'; }).join('') + '</cols><sheetData>' +
+      rows.map(function (r, ri) {
+        return '<row r="' + (ri + 1) + '"' + (heights[ri] > 25 ? ' ht="' + heights[ri] + '" customHeight="1"' : '') + '>' + r.map(function (c, ci) { if (!c) return ''; var ref = col(ci) + (ri + 1); return c.v === '' ? '<c r="' + ref + '" s="' + c.s + '"/>' : '<c r="' + ref + '" s="' + c.s + '" t="inlineStr"><is><t xml:space="preserve">' + x(c.v) + '</t></is></c>'; }).join('') + '</row>';
+      }).join('') + '</sheetData>' + (merges.length ? '<mergeCells count="' + merges.length + '">' + merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>' : '') +
+      '<pageMargins left="0.7" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/></worksheet>';
+    var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="16"/><name val="' + FONT + '"/></font><font><b/><sz val="16"/><name val="' + FONT + '"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' +
+      xfs.map(function (k) { var p = k.split('|'); return '<xf numFmtId="0" fontId="' + p[0] + '" fillId="0" borderId="' + p[2] + '" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="' + (p[1] === '0' ? 'left' : p[1]) + '" vertical="center"' + (p[3] === '1' ? ' wrapText="1"' : '') + '/></xf>'; }).join('') + '</cellXfs></styleSheet>';
+    var wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="เอกสาร" sheetId="1" r:id="rId1"/></sheets></workbook>';
+    var wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+    var types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
+    var root = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+    return Promise.resolve(zip([['[Content_Types].xml', types], ['_rels/.rels', root], ['xl/workbook.xml', wb], ['xl/_rels/workbook.xml.rels', wbRels], ['xl/worksheets/sheet1.xml', sheet], ['xl/styles.xml', styles]]));
+  }
+
+  /* ---------- Word → HTML ---------- */
+  var W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  function kids(el, name) { return Array.prototype.filter.call(el.childNodes, function (n) { return n.localName === name; }); }
+  function kid(el, name) { return kids(el, name)[0] || null; }
+  function attr(el, name) { return el ? el.getAttributeNS(W, name) || el.getAttribute('w:' + name) : null; }
+  function e(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  /* รูปในไฟล์อาจใหญ่ ย่อให้ด้านยาวไม่เกิน 1280 และเป็น JPEG/PNG ที่ระบบรับได้ */
+  function shrinkData(bytes, ext) {
+    var type = ext === 'png' ? 'image/png' : 'image/jpeg', url = URL.createObjectURL(new Blob([bytes], { type: type }));
+    return new Promise(function (res) {
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        var g = c.getContext('2d'); if (ext !== 'png') { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
+        g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        var out = ext === 'png' && bytes.length < 300000 ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.8);
+        res(out);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); res(''); };
+      img.src = url;
+    });
+  }
+  function fromDocx(entries) {
+    return Promise.all([text(entries, 'word/document.xml'), text(entries, 'word/_rels/document.xml.rels')]).then(function (t) {
+      if (!t[0]) throw new Error('docx');
+      var doc = xml(t[0]), rels = {}, imgs = [];
+      if (t[1]) Array.prototype.forEach.call(xml(t[1]).getElementsByTagName('Relationship'), function (r) { rels[r.getAttribute('Id')] = r.getAttribute('Target'); });
+      function runHtml(r) {
+        var pr = kid(r, 'rPr'), st = [], h = '';
+        Array.prototype.forEach.call(r.childNodes, function (n) {
+          if (n.localName === 't') h += e(n.textContent);
+          else if (n.localName === 'tab') h += '&emsp;';
+          else if (n.localName === 'br') h += attr(n, 'type') === 'page' ? '\u0000PAGE\u0000' : '<br>';
+          else if (n.localName === 'drawing' || n.localName === 'pict') {
+            var dp = n.getElementsByTagNameNS('*', 'docPr')[0], descr = dp ? dp.getAttribute('descr') || '' : '';
+            if (/^sig:/.test(descr)) { h += '<span class="sig-slot" data-sig="' + e(descr.slice(4)).replace(/"/g, '') + '"></span>'; return; }
+            var blip = n.getElementsByTagNameNS('*', 'blip')[0], id = blip && (blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed') || blip.getAttribute('r:embed'));
+            var ext = n.getElementsByTagNameNS('*', 'extent')[0], cx = ext ? +ext.getAttribute('cx') : 0;
+            var target = id && rels[id], m = target && target.match(/\.(png|jpe?g)$/i);
+            if (!m) return;
+            var key = '\u0000IMG' + imgs.length + '\u0000';
+            imgs.push({ path: 'word/' + target.replace(/^\/?word\//, '').replace(/^\.\//, ''), ext: m[1].toLowerCase() === 'png' ? 'png' : 'jpeg', w: cx ? Math.round(cx / 9525) : 0 });
+            h += key;
+          }
+        });
+        if (!h) return '';
+        if (pr) {
+          if (kid(pr, 'b') && attr(kid(pr, 'b'), 'val') !== '0') h = '<b>' + h + '</b>';
+          if (kid(pr, 'i') && attr(kid(pr, 'i'), 'val') !== '0') h = '<i>' + h + '</i>';
+          if (kid(pr, 'u') && attr(kid(pr, 'u'), 'val') !== 'none') h = '<u>' + h + '</u>';
+          var sz = kid(pr, 'sz'); if (sz && +attr(sz, 'val') && Math.abs(+attr(sz, 'val') / 2 - 16) >= 2) st.push('font-size:' + (+attr(sz, 'val') / 2) + 'pt');
+        }
+        return st.length ? '<span style="' + st.join(';') + '">' + h + '</span>' : h;
+      }
+      function para(p) {
+        var pr = kid(p, 'pPr'), jc = pr && kid(pr, 'jc'), ind = pr && kid(pr, 'ind'), st = [];
+        var a = jc && { center: 'center', right: 'right', end: 'right', both: 'justify', distribute: 'justify' }[attr(jc, 'val')];
+        if (a) st.push('text-align:' + a);
+        if (ind && +attr(ind, 'firstLine')) st.push('text-indent:' + Math.round(+attr(ind, 'firstLine') / 20) + 'pt');
+        if (ind && +attr(ind, 'left')) st.push('padding-left:' + Math.round(+attr(ind, 'left') / 20) + 'pt');
+        var h = '';
+        Array.prototype.forEach.call(p.childNodes, function (n) {
+          if (n.localName === 'r') h += runHtml(n);
+          else if (n.localName === 'hyperlink' || n.localName === 'ins' || n.localName === 'smartTag') kids(n, 'r').forEach(function (r) { h += runHtml(r); });
+        });
+        if (pr && kid(pr, 'pageBreakBefore')) h = '\u0000PAGE\u0000' + h;
+        return '<div' + (st.length ? ' style="' + st.join(';') + '"' : '') + '>' + (h || '<br>') + '</div>';
+      }
+      function table(t) {
+        var trs = kids(t, 'tr'), grid = [], tbl = kid(t, 'tblPr'), borders = tbl && kid(tbl, 'tblBorders'), noBorder = borders && ['top', 'insideV'].every(function (k) { var b = kid(borders, k); return b && /nil|none/.test(attr(b, 'val')); });
+        trs.forEach(function (tr, ri) {
+          var ci = 0; grid[ri] = [];
+          kids(tr, 'tc').forEach(function (tc) {
+            var pr = kid(tc, 'tcPr'), span = pr && kid(pr, 'gridSpan') ? +attr(kid(pr, 'gridSpan'), 'val') || 1 : 1, vm = pr && kid(pr, 'vMerge');
+            grid[ri].push({ tc: tc, ci: ci, span: span, merge: vm ? (attr(vm, 'val') === 'restart' ? 'start' : 'cont') : '', rows: 1 });
+            ci += span;
+          });
+        });
+        // หาความสูงของช่องรวมข้ามแถว
+        grid.forEach(function (row, ri) { row.forEach(function (c) { if (c.merge !== 'start') return; for (var r = ri + 1; r < grid.length; r++) { var d = grid[r].filter(function (x) { return x.ci === c.ci; })[0]; if (d && d.merge === 'cont') c.rows++; else break; } }); });
+        return '<table class="' + (noBorder ? 'rp-plain' : 'rp-table') + '"><tbody>' + grid.map(function (row) {
+          return '<tr>' + row.filter(function (c) { return c.merge !== 'cont'; }).map(function (c) {
+            var body = blocks(c.tc);
+            return '<td' + (c.span > 1 ? ' colspan="' + c.span + '"' : '') + (c.rows > 1 ? ' rowspan="' + c.rows + '"' : '') + '>' + body + '</td>';
+          }).join('') + '</tr>';
+        }).join('') + '</tbody></table>';
+      }
+      function blocks(el) {
+        var h = '';
+        Array.prototype.forEach.call(el.childNodes, function (n) {
+          if (n.localName === 'p') h += para(n);
+          else if (n.localName === 'tbl') h += table(n);
+          else if (n.localName === 'sdt') { var c = kid(n, 'sdtContent'); if (c) h += blocks(c); }
+        });
+        return h;
+      }
+      var body = doc.getElementsByTagNameNS(W, 'body')[0] || doc.documentElement;
+      var html = blocks(body);
+      return Promise.all(imgs.map(function (im) {
+        return inflate(entries[im.path]).then(function (b) { return b ? shrinkData(b, im.ext) : ''; }).catch(function () { return ''; });
+      })).then(function (srcs) {
+        html = html.replace(/\u0000IMG(\d+)\u0000/g, function (_, i) { var s = srcs[+i]; return s ? '<img src="' + s + '" alt=""' + (imgs[+i].w ? ' style="width:' + Math.min(680, imgs[+i].w) + 'px;max-width:100%"' : '') + '>' : ''; });
+        return html.split('\u0000PAGE\u0000').map(function (p) { return '<div class="rp-page rp-imported">' + p + '</div>'; }).join('');
+      });
+    });
+  }
+
+  /* ---------- Excel → HTML: ชีตแรกเป็นตาราง ช่องรวมคงไว้ ---------- */
+  function fromXlsx(entries) {
+    return Promise.all([text(entries, 'xl/workbook.xml'), text(entries, 'xl/_rels/workbook.xml.rels'), text(entries, 'xl/sharedStrings.xml'), text(entries, 'xl/styles.xml')]).then(function (t) {
+      var wb = xml(t[0]), rels = {}, shared = [], boldXf = {};
+      Array.prototype.forEach.call(xml(t[1]).getElementsByTagName('Relationship'), function (r) { rels[r.getAttribute('Id')] = r.getAttribute('Target'); });
+      if (t[2]) Array.prototype.forEach.call(xml(t[2]).getElementsByTagName('si'), function (si) { shared.push(Array.prototype.map.call(si.getElementsByTagName('t'), function (n) { return n.textContent; }).join('')); });
+      if (t[3]) {
+        var s = xml(t[3]), fonts = Array.prototype.map.call((s.getElementsByTagName('fonts')[0] || s).getElementsByTagName('font'), function (f) { return !!f.getElementsByTagName('b').length; });
+        var cx = s.getElementsByTagName('cellXfs')[0];
+        if (cx) Array.prototype.forEach.call(cx.getElementsByTagName('xf'), function (f, i) { boldXf[i] = { bold: fonts[+f.getAttribute('fontId')], align: (f.getElementsByTagName('alignment')[0] || { getAttribute: function () { return ''; } }).getAttribute('horizontal') }; });
+      }
+      var sheet = wb.getElementsByTagName('sheet')[0], rid = sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') || sheet.getAttribute('r:id');
+      var path = 'xl/' + String(rels[rid] || 'worksheets/sheet1.xml').replace(/^\/?xl\//, '');
+      return text(entries, path).then(function (sx) {
+        var sh = xml(sx), cells = {}, maxR = 0, maxC = 0, merged = {}, cover = {};
+        function rc(ref) { var m = ref.match(/^([A-Z]+)(\d+)$/), c = 0; for (var i = 0; i < m[1].length; i++) c = c * 26 + m[1].charCodeAt(i) - 64; return [+m[2] - 1, c - 1]; }
+        Array.prototype.forEach.call(sh.getElementsByTagName('c'), function (c) {
+          var p = rc(c.getAttribute('r')), type = c.getAttribute('t'), v = c.getElementsByTagName('v')[0], val = '';
+          if (type === 's') val = shared[+(v && v.textContent)] || '';
+          else if (type === 'inlineStr') val = Array.prototype.map.call(c.getElementsByTagName('t'), function (n) { return n.textContent; }).join('');
+          else val = v ? v.textContent : '';
+          cells[p[0] + ':' + p[1]] = { v: val, s: boldXf[+c.getAttribute('s')] || {} };
+          if (val !== '') { maxR = Math.max(maxR, p[0]); maxC = Math.max(maxC, p[1]); }
+        });
+        Array.prototype.forEach.call(sh.getElementsByTagName('mergeCell'), function (m) {
+          var a = m.getAttribute('ref').split(':'), s = rc(a[0]), f = rc(a[1] || a[0]);
+          merged[s[0] + ':' + s[1]] = [f[0] - s[0] + 1, f[1] - s[1] + 1];
+          for (var r = s[0]; r <= f[0]; r++) for (var c = s[1]; c <= f[1]; c++) if (r !== s[0] || c !== s[1]) cover[r + ':' + c] = 1;
+          maxC = Math.max(maxC, f[1]);
+        });
+        var h = '<table class="rp-table"><tbody>';
+        for (var r = 0; r <= maxR; r++) {
+          h += '<tr>';
+          for (var c = 0; c <= maxC; c++) {
+            if (cover[r + ':' + c]) continue;
+            var cell = cells[r + ':' + c] || { v: '', s: {} }, mg = merged[r + ':' + c], st = cell.s.align ? ' style="text-align:' + (cell.s.align === 'centerContinuous' ? 'center' : cell.s.align) + '"' : '';
+            var v = e(cell.v).replace(/\n/g, '<br>');
+            h += '<td' + (mg && mg[0] > 1 ? ' rowspan="' + mg[0] + '"' : '') + (mg && mg[1] > 1 ? ' colspan="' + mg[1] + '"' : '') + st + '>' + (cell.s.bold && v ? '<b>' + v + '</b>' : v) + '</td>';
+          }
+          h += '</tr>';
+        }
+        return '<div class="rp-page rp-imported">' + h + '</tbody></table></div>';
+      });
+    });
+  }
+
+  function fromFile(file) {
+    return file.arrayBuffer().then(function (buf) {
+      var entries = unzip(buf);
+      if (entries['word/document.xml']) return { ext: 'docx', html: fromDocx(entries) };
+      if (entries['xl/workbook.xml']) return { ext: 'xlsx', html: fromXlsx(entries) };
+      throw new Error('type');
+    }).then(function (r) { return r.html.then(function (h) { return { ext: r.ext, html: h }; }); });
+  }
+
+  function save(blob, name) {
+    var a = document.createElement('a'), url = URL.createObjectURL(blob);
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+  function safeName(s) { return String(s || 'เอกสาร').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'เอกสาร'; }
+
+  return { toDocx: toDocx, toXlsx: toXlsx, fromFile: fromFile, save: save, safeName: safeName, b64: b64, unb64: unb64 };
+})();
+</script>
