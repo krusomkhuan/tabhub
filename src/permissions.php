@@ -7,6 +7,7 @@
 const MENU_ACCESS = [
   'dashboard' => ['dept', []],
   'mine' => ['teacher', []],
+  'signature' => ['teacher', ['signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary']],
   'schedule' => ['dept', ['placeSession', 'removeSession', 'toggleLock', 'runAutoSchedule', 'clearSchedule']],
   'plans' => ['dept', ['copyPlans']],
   'plancheck' => ['teacher', []],

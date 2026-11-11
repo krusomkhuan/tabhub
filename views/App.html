@@ -108,7 +108,7 @@ function start() {
     S.me = b.me; S.settings = b.settings; S.days = b.days; S.D = b.data; S.url = b.url;
     S.sem = b.sem; S.plans = b.plans; S.sessions = b.sessions; buildIndex();
     if (S.me.role === 'dept' && !S.sel.dept) S.sel.dept = S.me.department_id;
-    renderShell();
+    renderShell(); Sig.load();
     if (b.backup_warning) setTimeout(function () { toast(b.backup_warning, 1); }, 600);
     if (hoursTeacher) { S.sel.hoursTeacher = hoursTeacher; return go('hours'); }
     go(S.me.role === 'teacher' ? 'mine' : 'dashboard');
@@ -139,6 +139,7 @@ var NAV = [
   { sec: 'หลัก' },
   { id: 'dashboard', label: 'ภาพรวม', role: 'dept' },
   { id: 'mine', label: 'ตารางสอนของฉัน', role: 'teacher' },
+  { id: 'signature', label: 'ลายเซ็นของฉัน', role: 'teacher' },
   { id: 'schedule', label: 'จัดตารางเรียน', role: 'dept' },
   { id: 'plans', label: 'แผนการเรียน', role: 'dept' },
   { id: 'plancheck', label: 'ตรวจสอบแผนการเรียน', role: 'teacher' },
@@ -169,7 +170,7 @@ var NAV = [
   { id: 'issues', label: 'แจ้งปัญหาการใช้งาน', role: 'teacher' }
 ];
 
-var NAV_ICON = { dashboard: '🏠', mine: '🗓', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
+var NAV_ICON = { dashboard: '🏠', mine: '🗓', signature: '✍️', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
   'ot-claims': '💰', 'ot-subs': '🔁', 'ot-summary': '🧾', 'ot-teachers': '🎚', 'ot-holidays': '🏖', users: '👤', settings: '⚙', import: '⤵',
   't-OtSchemes': '📋', 't-OtPerHead': '🙋', 't-OtRounds': '📆', 't-OtBlocked': '⛔', 't-Semesters': '📅', 't-Departments': '🏫', 't-Majors': '🎓',
   't-Teachers': '🧑‍🏫', 't-Buildings': '🏢', 't-Rooms': '🚪', 't-Courses': '📘', 't-Groups': '👩‍🎓', 't-Windows': '⏳', 't-PlcSlots': '🤝' };
@@ -190,18 +191,20 @@ function renderShell() {
     '<select id="semSel" class="sem">' + semOpts + '</select><button type="button" class="theme-btn" onclick="Theme.toggle()" aria-label="สลับโหมดกลางคืน" title="สลับโหมดกลางคืน"></button>' +
     (menuOk('plancheck') ? '<button type="button" class="bell-btn" id="bellBtn" aria-label="การแจ้งเตือนแผนการเรียน">🔔<span class="bell-n" id="bellN"></span></button>' : '') +
     '<div class="user" id="userBtn"><span class="av">' + (S.me.avatar ? '<img src="' + esc(S.me.avatar) + '" alt="">' : esc(initials)) + '</span><span class="un"><b>' + esc(S.me.name) + '</b><small>' + roleTh + '</small></span>' +
-    '<div class="umenu" id="umenu"><a href="javascript:void 0" id="profBtn">👤 แก้ไขโปรไฟล์</a><a href="javascript:void 0" id="pwBtn">🔑 เปลี่ยนรหัสผ่าน</a><a href="javascript:void 0" id="outBtn">⎋ ออกจากระบบ</a></div></div></div>' +
+    '<div class="umenu" id="umenu"><a href="javascript:void 0" id="profBtn">👤 แก้ไขโปรไฟล์</a><a href="javascript:void 0" id="sigBtn">✍️ ลายเซ็นของฉัน</a><a href="javascript:void 0" id="pwBtn">🔑 เปลี่ยนรหัสผ่าน</a><a href="javascript:void 0" id="outBtn">⎋ ออกจากระบบ</a></div></div></div>' +
     '<div class="content" id="content"></div></div></div>';
   $('#semSel').onchange = function () { S.sem = this.value; store('tt_sem', S.sem); loadSchedule().then(function () { go(S.view); }); };
   $('#outBtn').onclick = function () { api('logout', S.token); store('tt_token', null); S.token = null; S.sel = { mode: 'group' }; renderLogin(); };
   $('#pwBtn').onclick = changePw;
   $('#profBtn').onclick = editProfile;
+  $('#sigBtn').onclick = function () { $('#umenu').classList.remove('open'); go('signature'); };
   if ($('#bellBtn')) $('#bellBtn').onclick = function () { go('plancheck'); };
   $('#userBtn').onclick = function (e) { if (e.target.closest('#umenu')) return; $('#umenu').classList.toggle('open'); };
   $('#mb').onclick = function () { $('#side').classList.toggle('open'); $('#sideBg').classList.toggle('open'); };
   $('#sideBg').onclick = function () { $('#side').classList.remove('open'); this.classList.remove('open'); };
   TableFilter.watch($('#content'));
   TeacherSearch.watch();
+  Sig.watch();
 }
 
 function go(v) {
@@ -383,6 +386,184 @@ function avatarFromFile(file) {
     img.src = url;
   });
 }
+/* ===================== ลายเซ็นในเอกสาร =====================
+   เอกสารวาง Sig.slot(ชื่อ) ไว้หลังคำว่า "ลงชื่อ" แล้วระบบเติมรูปลายเซ็นของชื่อนั้นให้เอง (ไม่สนช่องว่างในชื่อ)
+   รูปวางทับเส้นจุดโดยไม่ดันข้อความ เอกสารที่บันทึกเก็บไว้เก็บเฉพาะช่องว่าง รูปจึงเป็นลายเซ็นล่าสุดเสมอ */
+var Sig = (function () {
+  var map = null, timer;
+  function key(name) { return String(name || '').replace(/\s+/g, '').replace(/ํา/g, 'ำ'); }
+  function slot(name) { var k = key(name); return k ? '<span class="sig-slot" data-sig="' + esc(k) + '"></span>' : ''; }
+  function fill(root) {
+    if (!map) return;
+    Array.prototype.forEach.call((root || document).querySelectorAll('.sig-slot[data-sig]'), function (s) {
+      var src = map[s.getAttribute('data-sig')], img = s.querySelector('img');
+      if (src) {
+        if (!img) { img = document.createElement('img'); img.alt = ''; s.appendChild(img); }
+        if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+      } else if (img) img.remove();
+    });
+  }
+  function load() {
+    if (!S.token) return Promise.resolve();
+    return api('signatureMap', S.token).then(function (m) { map = m || {}; fill(); }).catch(function () {});
+  }
+  function watch() {
+    if (document.body._sig) return;
+    document.body._sig = new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(function () { fill(); }, 30); });
+    document.body._sig.observe(document.body, { childList: true, subtree: true });
+  }
+  /* ตอนบันทึกเอกสารเก็บไว้ ตัดรูปออกให้เหลือช่องว่าง */
+  function strip(root) { Array.prototype.forEach.call(root.querySelectorAll('.sig-slot img'), function (i) { i.remove(); }); }
+  return { key: key, slot: slot, fill: fill, load: load, watch: watch, strip: strip };
+})();
+
+/* ทำรูปลายเซ็น: ลบพื้นหลังสว่าง (รูปถ่าย/สแกน) ตัดขอบว่าง ย่อให้ไม่เกิน 600x200 แล้วส่งออกเป็น PNG พื้นใส */
+function signatureImage(source, removeBg, strength) {
+  var w = source.naturalWidth || source.width, h = source.naturalHeight || source.height, k = Math.min(1, 1600 / Math.max(w, h));
+  var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  var x = c.getContext('2d'); x.drawImage(source, 0, 0, c.width, c.height);
+  var d = x.getImageData(0, 0, c.width, c.height), p = d.data, n = p.length / 4, i;
+  if (removeBg) {
+    // ความสว่างของกระดาษ = ค่าที่พิกเซลส่วนใหญ่ (60%) มืดกว่าหรือเท่า เพราะรูปลายเซ็นเป็นพื้นกระดาษเกือบทั้งภาพ
+    var hist = new Array(256).fill(0), lum = new Uint8Array(n);
+    for (i = 0; i < n; i++) { lum[i] = Math.round(p[i * 4] * 0.299 + p[i * 4 + 1] * 0.587 + p[i * 4 + 2] * 0.114); hist[lum[i]]++; }
+    var acc = 0, bg = 255;
+    for (var v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * 0.6) { bg = v; break; } }
+    var thr = bg * (0.55 + (strength || 30) / 200);
+    for (i = 0; i < n; i++) {
+      var a = Math.max(0, Math.min(255, (thr - lum[i]) * 255 / Math.max(12, thr * 0.35)));
+      p[i * 4 + 3] = Math.round(a * p[i * 4 + 3] / 255);
+    }
+  }
+  var x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+  for (i = 0; i < n; i++) if (p[i * 4 + 3] > 24) { var px = i % c.width, py = (i - px) / c.width; if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
+  if (x1 < 0) return '';
+  x.putImageData(d, 0, 0);
+  var pad = 6; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(c.width - 1, x1 + pad); y1 = Math.min(c.height - 1, y1 + pad);
+  var cw = x1 - x0 + 1, ch = y1 - y0 + 1, s = Math.min(600 / cw, 200 / ch, 2), out, o = document.createElement('canvas');
+  do {
+    o.width = Math.max(1, Math.round(cw * s)); o.height = Math.max(1, Math.round(ch * s));
+    var ox = o.getContext('2d'); ox.clearRect(0, 0, o.width, o.height); ox.drawImage(c, x0, y0, cw, ch, 0, 0, o.width, o.height);
+    out = o.toDataURL('image/png'); s *= 0.8;
+  } while (out.length * 0.75 > 38000 && o.width > 120);
+  return out;
+}
+
+/* หน้าต่างทำลายเซ็น: วาดบนหน้าจอ อัปโหลดไฟล์ หรือถ่ายรูปลายเซ็นบนกระดาษ
+   image = ลายเซ็นเดิม (ตอนแก้ไข), name = ชื่อที่แสดงในตัวอย่าง, done(dataURL) เรียกเมื่อกดบันทึก */
+function signatureEditor(title, image, name, done) {
+  var picked = null, photo = null; /* picked: null = ยังไม่เปลี่ยน, data URL = ลายเซ็นใหม่ */
+  var m = modal('<h3>✍️ ' + esc(title) + '</h3>' +
+    '<div class="sig-tabs"><button type="button" class="btn sm" data-sgt="draw">✏️ วาดบนหน้าจอ</button><button type="button" class="btn sm" data-sgt="file">📁 อัปโหลดรูป</button><button type="button" class="btn sm" data-sgt="cam">📷 ถ่ายรูปลายเซ็น</button></div>' +
+    '<div data-sgp="draw"><canvas class="sig-pad" id="sgPad" width="600" height="200"></canvas><div class="row small" style="gap:8px;margin-top:6px">' +
+    '<label class="row" style="gap:4px">สีหมึก <select id="sgInk" style="width:auto"><option value="#1a3a9c">น้ำเงิน</option><option value="#111111">ดำ</option></select></label>' +
+    '<label class="row" style="gap:4px">ความหนา <input type="range" id="sgW" min="2" max="8" value="4" style="width:90px"></label><span class="grow"></span><button type="button" class="btn sm" id="sgClr">ล้าง</button></div>' +
+    '<div class="small muted">ใช้นิ้ว ปากกาสไตลัส หรือเมาส์เซ็นในกรอบ</div></div>' +
+    '<div data-sgp="file" hidden><label class="btn sm" for="sgF">📁 เลือกไฟล์รูปลายเซ็น</label><input type="file" id="sgF" accept="image/png,image/jpeg" hidden>' +
+    '<div class="small muted" style="margin-top:6px">ใช้ไฟล์ PNG พื้นใส หรือรูปสแกนลายเซ็นบนกระดาษขาว จะมีชื่อและตำแหน่งในรูปด้วยก็ได้ ระบบตัดขอบว่างให้เอง</div></div>' +
+    '<div data-sgp="cam" hidden><label class="btn sm" for="sgC">📷 ถ่ายรูป / เลือกจากคลังภาพ</label><input type="file" id="sgC" accept="image/*" capture="environment" hidden>' +
+    '<div class="small muted" style="margin-top:6px">เซ็นด้วยปากกาสีเข้มบนกระดาษขาว ถ่ายในที่สว่าง ไม่ให้มีเงา และให้ลายเซ็นเต็มภาพ ระบบลบพื้นกระดาษออกให้</div></div>' +
+    '<div id="sgOpt" class="row small" style="gap:12px;margin-top:8px" hidden><label class="row" style="gap:4px"><input type="checkbox" id="sgBg" style="width:auto"> ลบพื้นหลังสีขาว</label>' +
+    '<label class="row" style="gap:4px">ความเข้มเส้น <input type="range" id="sgS" min="0" max="60" value="30" style="width:110px"></label></div>' +
+    '<div class="small muted" style="margin-top:12px">ตัวอย่างในเอกสาร</div><div class="sig-sample" id="sgSample"></div>' +
+    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="sgSave">บันทึก</button></div>');
+  var pad = $('#sgPad', m), ctx = pad.getContext('2d'), last = null;
+  function show() {
+    var src = picked || image;
+    $('#sgSample', m).innerHTML = 'ลงชื่อ<span class="sig-slot">' + (src ? '<img src="' + esc(src) + '" alt="">' : '') + '</span>.................................<br>( ' + esc(name) + ' )' +
+      (src ? '' : '<div class="small muted">ยังไม่มีลายเซ็น</div>');
+  }
+  function tab(t) {
+    $$('[data-sgt]', m).forEach(function (b) { b.classList.toggle('pri', b.dataset.sgt === t); });
+    $$('[data-sgp]', m).forEach(function (p) { p.hidden = p.dataset.sgp !== t; });
+    $('#sgOpt', m).hidden = t === 'draw' || !photo;
+  }
+  $$('[data-sgt]', m).forEach(function (b) { b.onclick = function () { tab(b.dataset.sgt); }; });
+  /* วาด: เก็บเป็นพื้นใสตั้งแต่ต้น จึงไม่ต้องลบพื้นหลัง */
+  function pos(e) { var r = pad.getBoundingClientRect(); return [(e.clientX - r.left) * pad.width / r.width, (e.clientY - r.top) * pad.height / r.height]; }
+  pad.addEventListener('pointerdown', function (e) { e.preventDefault(); pad.setPointerCapture(e.pointerId); last = pos(e); ctx.beginPath(); ctx.arc(last[0], last[1], $('#sgW', m).value / 2, 0, 7); ctx.fillStyle = $('#sgInk', m).value; ctx.fill(); });
+  pad.addEventListener('pointermove', function (e) {
+    if (!last) return; var p = pos(e);
+    ctx.strokeStyle = $('#sgInk', m).value; ctx.lineWidth = $('#sgW', m).value; ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p;
+  });
+  function endStroke() { if (!last) return; last = null; photo = null; picked = signatureImage(pad, false) || null; show(); }
+  pad.addEventListener('pointerup', endStroke); pad.addEventListener('pointercancel', endStroke);
+  $('#sgClr', m).onclick = function () { ctx.clearRect(0, 0, pad.width, pad.height); picked = null; show(); };
+  /* รูป: ทำใหม่ทุกครั้งที่ปรับตัวเลือก */
+  function redo() {
+    if (!photo) return;
+    var out = signatureImage(photo, $('#sgBg', m).checked, Number($('#sgS', m).value));
+    if (!out) { toast('ไม่พบลายเซ็นในรูป ลองเพิ่มความเข้มเส้น หรือถ่ายใหม่ให้ชัดขึ้น', 1); return; }
+    picked = out; show();
+  }
+  function openFile(f, isPhoto) {
+    if (!f) return;
+    var url = URL.createObjectURL(f), img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url); photo = img;
+      // PNG พื้นใสใช้ได้เลย รูปถ่ายและไฟล์ JPG ต้องลบพื้นกระดาษ
+      $('#sgBg', m).checked = isPhoto || f.type !== 'image/png';
+      $('#sgOpt', m).hidden = false; redo();
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); toast('เปิดไฟล์รูปนี้ไม่ได้ กรุณาใช้รูป JPG หรือ PNG', 1); };
+    img.src = url;
+  }
+  $('#sgF', m).onchange = function () { var f = this.files[0]; this.value = ''; openFile(f, false); };
+  $('#sgC', m).onchange = function () { var f = this.files[0]; this.value = ''; openFile(f, true); };
+  $('#sgBg', m).onchange = redo; $('#sgS', m).oninput = redo;
+  $('#sgSave', m).onclick = function () {
+    if (!picked) { if (image) closeModal(); else toast('กรุณาวาดหรือเลือกรูปลายเซ็นก่อน', 1); return; }
+    var btn = this; btn.disabled = true;
+    // หลังบันทึกอาจเปิดหน้าต่างรายการขึ้นมาแทนแล้ว ปิดเฉพาะเมื่อหน้าต่างนี้ยังเปิดอยู่
+    Promise.resolve(done(picked)).then(function () { if (m.isConnected) closeModal(); }).catch(function () { btn.disabled = false; });
+  };
+  tab('draw'); show();
+}
+
+function sigWhen(s) {
+  var d = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  return d ? Number(d[3]) + '/' + Number(d[2]) + '/' + (Number(d[1]) + 543) + ' ' + d[4] + ':' + d[5] + ' น.' : '';
+}
+
+/* รายการลายเซ็นของเจ้าของหนึ่งคน: ใช้ทั้งหน้า "ลายเซ็นของฉัน" และหน้าต่างลายเซ็นผู้ลงนามในหน้าตั้งค่า
+   target '' = ของตัวเอง, 's:signer_xxx' = ผู้ลงนามที่ผู้ดูแลระบบอัปให้ */
+function signatureList(el, target) {
+  function render(g) {
+    var full = g.items.length >= g.max;
+    var who = g.names.map(function (n) { return '<b>' + esc(n) + '</b>'; }).join(' หรือ ');
+    el.innerHTML = '<div class="sig-head"><div><h3 style="margin:0">' + (target ? 'ลายเซ็นของ ' + esc(g.name) : 'ลายเซ็นของท่าน') + '</h3><div class="small muted">ใช้ลงนามเอกสารในระบบ · มี ' + g.items.length + ' จาก ' + g.max + ' ลายเซ็น</div></div>' +
+      '<button class="btn pri" id="sgAdd"' + (full ? ' disabled title="ลบลายเซ็นที่ไม่ใช้ก่อน"' : '') + '>＋ เพิ่มลายเซ็น</button></div>' +
+      (g.items.length ? '<div class="sig-list">' + g.items.map(function (it, i) {
+        return '<div class="sig-item"><div class="sig-thumb"><img src="' + esc(it.image) + '" alt="ลายเซ็นที่ ' + (i + 1) + '"></div>' +
+          '<div class="sig-info"><div><b>ลายเซ็นที่ ' + (i + 1) + '</b>' + (it.is_primary ? ' <span class="sig-badge">ลายเซ็นหลัก</span>' : '') + '</div><div class="small muted">แก้ไขล่าสุด ' + esc(sigWhen(it.updated_at)) + '</div></div>' +
+          '<div class="sig-acts">' + (it.is_primary ? '' : '<button class="btn sm" data-sgp-main="' + esc(it.id) + '">⭐ ใช้เป็นหลัก</button>') +
+          '<button class="btn sm" data-sg-edit="' + i + '">✏️ แก้ไข</button><button class="btn sm" data-sg-copy="' + i + '"' + (full ? ' disabled' : '') + '>📄 คัดลอก</button><button class="btn sm bad" data-sg-del="' + esc(it.id) + '">🗑 ลบ</button></div></div>';
+      }).join('') + '</div>' : '<div class="sig-empty">ยังไม่มีลายเซ็น กด <b>＋ เพิ่มลายเซ็น</b> เพื่อวาด อัปโหลดรูป หรือถ่ายรูปลายเซ็น</div>') +
+      '<p class="small muted" style="margin-top:10px">⭐ <b>ลายเซ็นหลัก</b> จะขึ้นเหนือเส้น "ลงชื่อ" ในเอกสารทุกฉบับที่มีชื่อ ' + who + ' โดยอัตโนมัติเมื่อเปิดหรือพิมพ์เอกสาร ลายเซ็นอื่นเก็บไว้สลับใช้ได้ เช่น แบบมีชื่อและตำแหน่งในรูป</p>';
+    // หน้าต่างแก้ไขปิดหน้าต่างรายการของผู้ลงนามไปแล้ว จึงเปิดรายการใหม่
+    function after(r) { Sig.load(); if (target && !el.isConnected) editSignature(target); else render(r); }
+    function call(fn, a, b) { return api(fn, S.token, target || '', a, b).then(after); }
+    var label = target ? 'ลายเซ็นของ ' + g.name : 'ลายเซ็น';
+    $('#sgAdd', el).onclick = function () { signatureEditor('เพิ่ม' + label, '', g.name, function (d) { return call('signatureSave', '', d.split(',')[1]).then(function () { toast('เพิ่มลายเซ็นแล้ว'); }); }); };
+    $$('[data-sg-edit]', el).forEach(function (b) {
+      var it = g.items[b.dataset.sgEdit];
+      b.onclick = function () { signatureEditor('แก้ไขลายเซ็นที่ ' + (Number(b.dataset.sgEdit) + 1), it.image, g.name, function (d) { return call('signatureSave', it.id, d.split(',')[1]).then(function () { toast('บันทึกลายเซ็นแล้ว'); }); }); };
+    });
+    $$('[data-sg-copy]', el).forEach(function (b) { b.onclick = function () { call('signatureSave', '', g.items[b.dataset.sgCopy].image.split(',')[1]).then(function () { toast('คัดลอกลายเซ็นแล้ว แก้ไขอันใหม่ได้เลย'); }); }; });
+    $$('[data-sgp-main]', el).forEach(function (b) { b.onclick = function () { call('signaturePrimary', b.dataset.sgpMain).then(function () { toast('ตั้งเป็นลายเซ็นหลักแล้ว'); }); }; });
+    $$('[data-sg-del]', el).forEach(function (b) { b.onclick = function () { if (confirm('ลบลายเซ็นนี้?')) call('signatureDelete', b.dataset.sgDel).then(function () { toast('ลบลายเซ็นแล้ว'); }); }; });
+  }
+  el.innerHTML = '<div class="muted">กำลังโหลด…</div>';
+  api('signatureList', S.token, target || '').then(render);
+}
+VIEWS.signature = function (el) { el.innerHTML = '<div class="card" id="sgBox"></div>'; signatureList($('#sgBox', el), ''); };
+/* ผู้ลงนามที่ไม่มีบัญชี: ผู้ดูแลระบบจัดการลายเซ็นจากหน้าตั้งค่า */
+function editSignature(target) {
+  var m = modal('<div id="sgBox"></div><div class="actions"><button class="btn" onclick="closeModal()">ปิด</button></div>', true);
+  signatureList($('#sgBox', m), target);
+}
+
 function editProfile() {
   $('#umenu').classList.remove('open');
   api('profileGet', S.token).then(function (u) {
@@ -1804,6 +1985,8 @@ VIEWS.settings = function (el) {
   var lk = {}; S.D.LockedSlots.forEach(function (l) { lk[l.day + '-' + l.period] = l; });
   var times = Grid.periodTimes(s);
   function f(k, label, type) { return '<label class="f">' + label + '</label><input data-s="' + k + '" type="' + (type || 'text') + '" value="' + esc(s[k] || '') + '">'; }
+  // ผู้ลงนาม: มีปุ่มอัปลายเซ็นให้คนที่ไม่มีบัญชีในระบบ
+  function fs(k, label) { return '<label class="f">' + label + '</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input data-s="' + k + '" value="' + esc(s[k] || '') + '" class="grow"><button type="button" class="btn sm" data-sigkey="' + k + '" title="อัปหรือวาดลายเซ็นของผู้ลงนามคนนี้" style="white-space:nowrap">✍️ ลายเซ็น</button></div>'; }
   var lockGrid = '<div class="tablewrap"><table class="data" style="font-size:13px"><tr><th>คาบ</th><th>เวลา</th>' + days.map(function (d) { return '<th>' + esc(S.days[d]) + '</th>'; }).join('') + '<th>ป้ายกำกับ</th></tr>';
   for (var p = 1; p <= n; p++) {
     var label = '';
@@ -1816,9 +1999,10 @@ VIEWS.settings = function (el) {
   el.innerHTML = '<div class="card"><h3>ข้อมูลวิทยาลัย</h3>' + f('college_name', 'ชื่อวิทยาลัย (ภาษาไทย)') + f('college_name_en', 'ชื่อวิทยาลัย (ภาษาอังกฤษ)') +
     f('site_url', 'URL ของระบบ (เช่น https://timetable.example.ac.th/tabhub/)') +
     '<p class="small muted">ใช้สร้างลิงก์หน้าเผยแพร่และลิงก์ที่ส่งให้ครูและนักเรียน เว้นว่างไว้ให้ระบบใช้ที่อยู่ที่เปิดอยู่ตอนนั้น ตอนนี้คือ ' + esc(S.url) + ' การติดตั้งเว็บแอปบนมือถือแบบเต็มรูปแบบต้องใช้ https://</p>' +
-    '<h3 style="margin-top:20px">ผู้ลงนามในรายงาน</h3>' + f('signer_curriculum', 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + f('signer_deputy', 'รองผู้อำนวยการฝ่ายวิชาการ') +
-    f('signer_finance', 'หัวหน้างานการเงิน (ผู้รับรองใบเบิก)') + f('signer_admin_deputy', 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร (ผู้รับรองใบเบิก)') + f('signer_dvt', 'หัวหน้างานอาชีวศึกษาระบบทวิภาคี (รายงานการนิเทศ)') + f('signer_director', 'ผู้อำนวยการวิทยาลัย') +
+    '<h3 style="margin-top:20px">ผู้ลงนามในรายงาน</h3>' + fs('signer_curriculum', 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + fs('signer_deputy', 'รองผู้อำนวยการฝ่ายวิชาการ') +
+    fs('signer_finance', 'หัวหน้างานการเงิน (ผู้รับรองใบเบิก)') + fs('signer_admin_deputy', 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร (ผู้รับรองใบเบิก)') + fs('signer_dvt', 'หัวหน้างานอาชีวศึกษาระบบทวิภาคี (รายงานการนิเทศ)') + fs('signer_director', 'ผู้อำนวยการวิทยาลัย') +
     '<p class="small muted">หัวหน้าแผนกวิชา: ระบบดึงจากครูที่ติ๊ก "หัวหน้าแผนก" ในเมนูครูผู้สอน</p>' +
+    '<p class="small muted">ลายเซ็น: ครูและผู้ที่มีบัญชีอัปเองได้ที่เมนูชื่อผู้ใช้มุมขวาบน &gt; ✍️ ลายเซ็นของฉัน ส่วนปุ่ม ✍️ ลายเซ็น ด้านบนใช้กับผู้ลงนามที่ไม่มีบัญชี ถ้าเจ้าตัวอัปเองแล้ว ระบบใช้ลายเซ็นของเจ้าตัว และเมื่อเปลี่ยนชื่อผู้ลงนาม ลายเซ็นของคนเดิมจะไม่ขึ้นใต้ชื่อคนใหม่</p>' +
     f('college_address', 'ที่อยู่วิทยาลัย (ใช้ในหนังสือถึงผู้ปกครอง)') +
     '<label class="f">ผู้ติดต่อเรื่องข้อมูลส่วนบุคคล (แสดงในหน้า PDPA)</label><textarea data-s="pdpa_contact" rows="2" placeholder="ชื่อผู้รับผิดชอบ โทรศัพท์ อีเมล">' + esc(s.pdpa_contact || '') + '</textarea>' +
     '<div class="actions"><button class="btn pri" id="setSaveInfo">บันทึกการตั้งค่า</button></div></div>' +
@@ -1832,13 +2016,21 @@ VIEWS.settings = function (el) {
     '<div class="actions"><button class="btn pri" id="setSave">บันทึกการตั้งค่า</button></div></div>' +
     '<div class="card"><h3>ชั่วโมงที่ล็อก (ไม่ให้จัดวิชา)</h3><p class="small muted">เช่น คาบกิจกรรม โฮมรูม ลูกเสือ — ระบบจะไม่วางวิชาลงช่องที่ติ๊ก</p>' + lockGrid +
     '<div class="actions"><button class="btn pri" id="lockSave">บันทึกชั่วโมงที่ล็อก</button></div></div>';
+  $$('[data-sigkey]', el).forEach(function (b) {
+    b.onclick = function () {
+      var k = b.dataset.sigkey, v = $('[data-s="' + k + '"]', el).value.trim();
+      if (!v) return toast('กรุณากรอกชื่อผู้ลงนามก่อน', 1);
+      if (v !== String(s[k] || '').trim()) return toast('กดบันทึกการตั้งค่าก่อน แล้วจึงอัปลายเซ็น', 1);
+      editSignature('s:' + k);
+    };
+  });
   $('#setSave').onclick = $('#setSaveInfo').onclick = function () {
     var o = {};
     $$('[data-s]', el).forEach(function (i) { o[i.dataset.s] = i.value; });
     o.days = $$('[data-day]', el).filter(function (c) { return c.checked; }).map(function (c) { return c.dataset.day; }).join(',');
     o.public_enabled = $('#pubOn').checked ? 'true' : 'false';
     if (o.periods_per_day !== s.periods_per_day || o.period_start !== s.period_start || o.period_minutes !== s.period_minutes) o.period_times = '';
-    api('saveSettings', S.token, o).then(function (ns) { S.settings = ns; if (ns.site_url) S.url = ns.site_url; toast('บันทึกแล้ว'); VIEWS.settings(el); });
+    api('saveSettings', S.token, o).then(function (ns) { S.settings = ns; if (ns.site_url) S.url = ns.site_url; toast('บันทึกแล้ว'); Sig.load(); VIEWS.settings(el); });
   };
   $('#lockSave').onclick = function () {
     var rows = $$('[data-lock]', el).filter(function (c) { return c.checked; }).map(function (c) {

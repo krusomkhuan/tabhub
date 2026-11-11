@@ -51,6 +51,8 @@ const SCHEMA = [
   // ---- รายงานการนิเทศนักศึกษาฝึกอาชีพ (แบบรายงานรายสัปดาห์) ที่บันทึกเก็บไว้ รวมหลายรายวิชาในฉบับเดียว ----
   'SupervisionDocs' => ['id', 'semester_id', 'teacher_id', 'visit_ids', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
   // ---- เอกสารสอนแทน/สอนชดเชยที่บันทึกเก็บไว้ (kind = makeup_request | sub_report) ----
+  // ---- ลายเซ็นสำหรับพิมพ์ในเอกสาร (ดู signatures.php) ----
+  'Signatures'   => ['id', 'owner', 'name', 'image', 'is_primary', 'updated_by', 'updated_at'],
   'SubDocs'      => ['id', 'kind', 'sub_ids', 'round_id', 'original_teacher_id', 'teacher_id', 'title', 'html', 'images', 'created_by', 'created_at', 'updated_by', 'updated_at'],
 ];
 

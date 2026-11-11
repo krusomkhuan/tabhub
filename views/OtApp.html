@@ -132,7 +132,7 @@ function claimPrintHtml(d, sch, evaluated) {
   var marks = levels.map(function (l) { return '<td>' + (sums[l].taught || sums[l].hours || sums[l].perhead ? '✓' : '') + '</td>'; }).join('');
   var signature = function (name, role, title) {
     var person = otSignatureName(name);
-    return '<td><div>' + title + '</div><div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + '................................................</div><div>(' + esc(person.name || '................................................') + ')</div><div>' + role + '</div><div>วันที่........เดือน................พ.ศ............</div></td>';
+    return '<td><div>' + title + '</div><div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + (window.Sig ? Sig.slot(name) : '') + '................................................</div><div>(' + esc(person.name || '................................................') + ')</div><div>' + role + '</div><div>วันที่........เดือน................พ.ศ............</div></td>';
   };
   var blank = '<tr>' + new Array(cols + 1).join('<td>&nbsp;</td>') + '</tr>';
   var widths = '<col style="width:3%"><col style="width:14%"><col style="width:6%">' + new Array(levels.length * 5 + 1).join('<col style="width:5%">') + '<col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:8%">';
@@ -452,7 +452,7 @@ VIEWS['ot-summary'] = function (el) {
   $('#smD').onchange = function () { OT.summaryDept = this.value; VIEWS['ot-summary'](el); };
   api('otDeptSummary', S.token, OT.round, dept).then(function (r) {
     var round = IDX.OtRounds[OT.round], s = S.settings;
-    function sign(name, role) { var person = otSignatureName(name); return '<div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + '.................................<br>(' + esc(person.name || '.................................') + ')<br>' + role + '</div>'; }
+    function sign(name, role) { var person = otSignatureName(name); return '<div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(person.name || '.................................') + ')<br>' + role + '</div>'; }
     var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(dept) && String(t.is_dept_head) === 'true'; })[0];
     $('#smOut').className = '';
     $('#smOut').innerHTML = '<div class="page"><h2>ใบสรุปเสนอเบิกค่าสอนเกินภาระงาน</h2><div class="sub">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(dept))) + ' · ' + esc(round.name) + ' ภาคเรียนที่ ' + esc(semLabel(round.semester_id)) + ' (' + thDate(round.start_date) + ' – ' + thDate(round.end_date) + ')</div>' +

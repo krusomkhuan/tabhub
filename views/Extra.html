@@ -97,15 +97,15 @@
     var f = function (v, cls) { return '<span class="rp-f' + (cls ? ' ' + cls : '') + '">' + esc(thNum(v)) + '</span>'; };
     var numbered = function (text) { return '<ol class="rp-list">' + String(text || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(String).map(function (x, i) { return '<li><span>' + thNum(i + 1) + '.</span>' + esc(thNum(x)) + '</li>'; }).join('') + '</ol>'; };
     var dots = '.............................................';
-    var opinion = function (title, lines, name, role) { return '<td><b>' + title + '</b><div>เรียน ผู้อำนวยการ' + esc(college) + '</div>' + lines.map(function (l) { return '<div class="rp-ind">- ' + l + '</div>'; }).join('') + '<div class="rp-sig">ลงชื่อ' + dots + '<br>( ' + esc(name || dots) + ' )<br>' + esc(role) + '</div></td>'; };
-    var sign = function (name, role, suffix) { return '<div>ลงชื่อ' + dots + (suffix || '') + '<br>( ' + esc(name || dots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
+    var opinion = function (title, lines, name, role) { return '<td><b>' + title + '</b><div>เรียน ผู้อำนวยการ' + esc(college) + '</div>' + lines.map(function (l) { return '<div class="rp-ind">- ' + l + '</div>'; }).join('') + '<div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + dots + '<br>( ' + esc(name || dots) + ' )<br>' + esc(role) + '</div></td>'; };
+    var sign = function (name, role, suffix) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + dots + (suffix || '') + '<br>( ' + esc(name || dots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
     var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('รายงานการสอนออนไลน์', r.memo_no, r.memo_date || r.date) +
       '<p class="rp-para">' + esc(thNum(r.memo_reason || memoTemplate(r.date))) + '</p>' +
       '<p class="rp-para">ในการนี้ ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' แผนกวิชา' + esc(dept) + ' ได้ดำเนินการจัดการเรียนการสอนออนไลน์ ในช่วงเวลาดังกล่าวเสร็จสิ้นเป็นที่เรียบร้อยแล้ว จึงขออนุญาตรายงานผลการจัดการเรียนการสอนดังกล่าว ดังรายละเอียดที่แนบมาพร้อมนี้</p>' +
       '<p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและพิจารณา</p><div class="rp-sign-one">' + sign(t.name, 'ตำแหน่ง ' + rank, 'ครูผู้สอน') + '</div>' +
       '<table class="rp-opinions"><tr>' + opinion('ความเห็นของหัวหน้าแผนกวิชา', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], head.name, Grid.deptHeadTitle(dept)) + opinion('ความเห็นของหัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</tr><tr>' +
       opinion('ความเห็นของรองผู้อำนวยการฝ่ายวิชาการ', ['เพื่อโปรดทราบ', 'เพื่อโปรดพิจารณาอนุญาต'], st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') +
-      '<td><b>ความเห็นของผู้อำนวยการ</b><div class="rp-check"><span>(   ) ทราบ</span><span>(   ) อนุญาต</span><span>(   ) ไม่อนุญาต</span><span>(   ) อื่น ๆ ..............</span></div><div class="rp-sig">ลงชื่อ' + dots + '<br>( ' + esc(st.signer_director || dots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div></td></tr></table></div>';
+      '<td><b>ความเห็นของผู้อำนวยการ</b><div class="rp-check"><span>(   ) ทราบ</span><span>(   ) อนุญาต</span><span>(   ) ไม่อนุญาต</span><span>(   ) อื่น ๆ ..............</span></div><div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(st.signer_director) : '') + dots + '<br>( ' + esc(st.signer_director || dots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div></td></tr></table></div>';
     var detailHead = '<h2 class="rp-title">รายงานการสอนออนไลน์</h2><div class="rp-line">ชื่อวิชา' + f(c.name, 'grow') + 'รหัสวิชา' + f(c.code) + '</div><div class="rp-line">ระดับชั้น' + f(levels) + 'กลุ่มชั้นเรียน/ห้อง' + '<span class="rp-f grow">' + esc(gids.map(groupCode).join(' , ')) + '</span>' + 'สาขาวิชา' + f(majors, 'grow') + '</div>' +
       '<div class="rp-line">วัน' + f(dayName, 'grow') + 'ที่' + f(d.day) + 'เดือน' + f(d.month, 'grow') + 'พ.ศ.' + f(d.year) + 'เวลา' + '<span class="rp-f">' + clock(from[0]) + ' - ' + clock(to[1]) + '</span>น.</div><hr class="rp-dash">';
     var pics = images.length ? '<div class="rp-pics rp-pics-' + Math.min(images.length, 4) + '">' + images.map(function (x) { return '<img src="' + x.url + '" alt="รูปประกอบการเรียนการสอน">'; }).join('') + '</div>' : '<p class="rp-empty">ไม่มีรูปประกอบ</p>';
@@ -136,7 +136,7 @@
   var shortDate = function (date) { var p = String(date || '').slice(0, 10).split('-'); return p[0] ? thNum(Number(p[2]) + ' ' + TH_MONTHS_SHORT[Number(p[1]) - 1] + ' ' + String(Number(p[0]) + 543).slice(-2)) : ''; };
   var timeRange = function (start, len) { var t = Grid.periodTimes(S.settings), a = t[Number(start) - 1] || ['', ''], b = t[Number(start) + Number(len) - 2] || a; return thNum(String(a[0]).replace(':', '.') + '-' + String(b[1]).replace(':', '.')); };
   var rpDots = '.............................................';
-  var rpSign = function (name, role, suffix) { return '<div>ลงชื่อ' + rpDots + (suffix || '') + '<br>( ' + esc(name || rpDots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
+  var rpSign = function (name, role, suffix) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + rpDots + (suffix || '') + '<br>( ' + esc(name || rpDots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
   var deptHead = function (t) { return S.D.Teachers.filter(function (x) { return String(x.department_id) === String(t.department_id) && String(x.is_dept_head) === 'true'; })[0] || {}; };
   /* unit: หน่วยงานเจ้าของเรื่องต่อท้ายส่วนราชการ ตามแบบบันทึกข้อความงานสารบรรณ เช่น แผนกวิชา */
   var rpMemoHead = function (subject, no, date, unit) {
@@ -146,7 +146,7 @@
   };
   /* ช่องเสนอตามสายงาน: หัวหน้าแผนกและงานหลักสูตรทางซ้าย รองฯ และผู้อำนวยการทางขวา */
   var rpApproval = function (t, want) {
-    var st = S.settings, dept = deptName(t.department_id), line = '<b>เรียน</b> ผู้อำนวยการฯ ' + want, sig = function (name, role) { return '<div class="rp-sig">ลงชื่อ' + rpDots + '<br>( ' + esc(name || rpDots) + ' )<br>' + esc(role) + '</div>'; };
+    var st = S.settings, dept = deptName(t.department_id), line = '<b>เรียน</b> ผู้อำนวยการฯ ' + want, sig = function (name, role) { return '<div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + rpDots + '<br>( ' + esc(name || rpDots) + ' )<br>' + esc(role) + '</div>'; };
     return '<table class="rp-opinions"><tr><td>' + line + sig(deptHead(t).name, Grid.deptHeadTitle(dept)) + '<div class="rp-gap">' + line + '</div>' + sig(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</td><td>' + line + sig(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '<div class="rp-check rp-gap"><span>(   ) อนุมัติ</span><span>(   ) ไม่อนุมัติ</span></div>' + sig(st.signer_director, 'ผู้อำนวยการ' + st.college_name) + '</td></tr></table>';
   };
   var splitClass = function (code) { var m = String(code).match(/^(.*?)\s*([0-9๐-๙]+\/[0-9๐-๙]+)$/); return m ? [m[1], m[2]] : [code, '']; };
@@ -202,7 +202,7 @@
   /* เอกสารที่บันทึกเก็บไว้: รับเฉพาะแท็กและแอตทริบิวต์ของเอกสาร ตัดสคริปต์และลิงก์ภายนอกทิ้งทั้งตอนบันทึกและตอนเปิด */
   var DOC_TAGS = { DIV: 1, P: 1, B: 1, STRONG: 1, I: 1, U: 1, BR: 1, SPAN: 1, TABLE: 1, COLGROUP: 1, COL: 1, THEAD: 1, TBODY: 1, TR: 1, TH: 1, TD: 1, H1: 1, H2: 1, H3: 1, H4: 1, HR: 1, IMG: 1, SMALL: 1, UL: 1, OL: 1, LI: 1 };
   var DOC_DROP = /^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|LINK|META|BASE|FORM|INPUT|TEXTAREA|BUTTON|SELECT|SVG|MATH|TEMPLATE|NOSCRIPT|AUDIO|VIDEO|SOURCE|FRAME|FRAMESET)$/;
-  var DOC_ATTRS = { 'class': 1, colspan: 1, rowspan: 1, alt: 1, style: 1, src: 1, 'data-lookup': 1, 'data-field': 1, 'data-selected-id': 1, 'data-pdf-width': 1, 'data-editor-columns': 1, 'data-doc-img': 1 };
+  var DOC_ATTRS = { 'class': 1, colspan: 1, rowspan: 1, alt: 1, style: 1, src: 1, 'data-lookup': 1, 'data-field': 1, 'data-selected-id': 1, 'data-pdf-width': 1, 'data-editor-columns': 1, 'data-doc-img': 1, 'data-sig': 1 };
   function cleanDocHtml(html) {
     var tpl = document.createElement('template'); tpl.innerHTML = String(html || '');
     (function walk(parent) {
@@ -215,12 +215,14 @@
         Array.prototype.slice.call(node.attributes).forEach(function (a) {
           var name = a.name.toLowerCase(), v = a.value;
           var ok = DOC_ATTRS[name] && (name !== 'src' || (node.tagName === 'IMG' && (/^assets\/[\w.-]+$/.test(v) || /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(v)))) &&
-            (name !== 'style' || /^[a-z0-9\s:;.%#,-]*$/i.test(v)) && (name !== 'class' || /^[\w\s-]*$/.test(v)) && (name !== 'data-doc-img' || /^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/.test(v));
+            (name !== 'style' || /^[a-z0-9\s:;.%#,-]*$/i.test(v)) && (name !== 'class' || /^[\w\s-]*$/.test(v)) && (name !== 'data-doc-img' || /^[a-z0-9]+-[a-f0-9]{12}\.(jpg|png)$/.test(v)) && (name !== 'data-sig' || /^[^<>"'&\s]{1,120}$/.test(v));
           if (!ok) node.removeAttribute(a.name);
         });
         node.classList.remove('rp-selected-row');
       });
     })(tpl.content);
+    // รูปลายเซ็นเติมใหม่ทุกครั้งที่เปิด จึงเป็นลายเซ็นล่าสุดและไม่บันทึกติดไปกับเอกสาร
+    Array.prototype.forEach.call(tpl.content.querySelectorAll('.sig-slot img'), function (i) { i.remove(); });
     return tpl.innerHTML;
   }
 
@@ -848,7 +850,7 @@
     var head = S.D.Teachers.filter(function (x) { return String(x.department_id) === String(dept) && String(x.is_dept_head) === 'true'; })[0] || {};
     var box = function (on) { return on ? '☑' : '☐'; };
     var text = function (v) { return v ? esc(thNum(v)).replace(/\n/g, '<br>') : blank; };
-    var sign = function (name, role) { return '<div class="vr-sign">ลงชื่อ .................................<br>(' + esc(name || '.................................') + ')' + (role ? '<br>' + role : '') + '</div>'; };
+    var sign = function (name, role) { return '<div class="vr-sign">ลงชื่อ ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')' + (role ? '<br>' + role : '') + '</div>'; };
     var html = '<div class="page rp-page vr-page" data-pdf-width="760"><div class="rp-center"><b>' + esc(st.college_name || '') + '</b><br><b>แบบรายงานการนิเทศนักศึกษาฝึกอาชีพในสถานประกอบการ (รายสัปดาห์)</b><br><b>ภาคเรียนที่ ' + esc(thNum(semLabel(S.sem))) + '</b><br>ครูนิเทศก์ ชื่อ ' + esc(t.name || blank) + ' แผนกวิชา' + esc(deptName(dept).replace(/^แผนก(วิชา)?\s*/, '') || blank) + '</div>';
     list.forEach(function (v) {
       var c = courseOf(v.course_id), d = dateParts(v.visit_date), sites = visitSites(v);
@@ -862,7 +864,7 @@
         '<p class="vr-label"><b>สำหรับครูนิเทศ</b><br>ปัญหาที่พบ/วิธีแก้ปัญหา</p><p class="rp-text">' + text(v.suggestions) + '</p></div>';
     });
     // ชื่อในวงเล็บอยู่กึ่งกลางใต้เส้นลงชื่อ ไม่รวมคำว่า "ลงชื่อ" และตำแหน่ง
-    html += '<div class="rp-sign-one"><div class="vr-tsign"><span>ลงชื่อ</span><span class="vr-tsign-name">.................................<br>(' + esc(t.name || '.................................') + ')</span><span>ครูนิเทศก์ประจำวิชา</span></div></div>' +
+    html += '<div class="rp-sign-one"><div class="vr-tsign"><span>ลงชื่อ</span><span class="vr-tsign-name">' + (window.Sig ? Sig.slot(t.name) : '') + '.................................<br>(' + esc(t.name || '.................................') + ')</span><span>ครูนิเทศก์ประจำวิชา</span></div></div>' +
       '<table class="rp-table vr-approve"><tbody><tr><th class="rp-left">' + esc(Grid.deptHeadTitle(deptName(dept))) + '</th><th class="rp-left">หัวหน้างานอาชีวศึกษาระบบทวิภาคี</th></tr>' +
       '<tr><td class="rp-left">☐ ทราบ<br>☐ อื่น ๆ ' + blank + sign(head.name) + '</td><td class="rp-left">☐ เสนอรองฝ่ายวิชาการ<br>☐ อื่น ๆ ' + blank + sign(st.signer_dvt) + '</td></tr>' +
       '<tr><th class="rp-left">รองผู้อำนวยการฝ่ายวิชาการ</th><th class="rp-left">ผู้อำนวยการสถานศึกษา</th></tr>' +
@@ -1103,7 +1105,7 @@
         if (r.noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่มีวันเปิดภาคเรียนและรอบการเบิกของภาคเรียนนี้ — กำหนดวันเปิด-ปิดที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
         var s = S.settings, sem = r.semester, lv = CV_LEVELS[r.level];
         var head = S.D.Teachers.filter(function (t) { return String(t.department_id) === String(CV.dept) && String(t.is_dept_head) === 'true'; })[0];
-        var sign = function (name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
+        var sign = function (name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
         var num = function (v) { return '<td class="text-end">' + (v ? money(v) : '') + '</td>'; };
         var last = r.weeks[r.weeks.length - 1];
         $j('#cvOut').removeClass('muted').html('<div class="page"><h2 class="text-center">งบหน้าการเบิกค่าสอนเกินภาระงาน ระดับ ' + lv + '</h2><div class="sub text-center">' + esc(s.college_name) + ' · แผนกวิชา' + esc(deptName(CV.dept)) + '<br>ภาคเรียนที่ ' + esc(semLabel(S.sem)) + ' จำนวน ' + r.weeks.length + ' สัปดาห์ (' + thDate(r.weeks[0].from) + ' – ' + thDate(last.to) + ')</div>' +

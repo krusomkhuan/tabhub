@@ -405,6 +405,23 @@
   .plan-sum { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
   .user .av { overflow: hidden; } .user .av img, .pf-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .pf-av { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  /* ลายเซ็น: ช่องกว้าง 0 วางหลังคำว่า "ลงชื่อ" รูปลอยทับเส้นจุด จึงไม่ดันข้อความหรือเพิ่มความสูงหน้า */
+  .sig-slot { position: relative; display: inline-block; width: 0; height: 1em; vertical-align: baseline; }
+  .sig-slot img { position: absolute; left: 6px; bottom: -0.15em; height: 3.1em; max-width: 11em; object-fit: contain; object-position: left bottom; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sig-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .sig-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .sig-item { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 16px; border-top: 1px solid var(--line); }
+  .sig-item:first-child { border-top: 0; }
+  .sig-thumb { display: flex; align-items: center; justify-content: center; width: 240px; max-width: 100%; height: 100px; padding: 8px; border: 1px solid var(--line); border-radius: 10px;
+    background: #fff repeating-conic-gradient(#f1f3f6 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+  .sig-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .sig-info { flex: 1; min-width: 160px; line-height: 1.7; }
+  .sig-badge { display: inline-block; padding: 1px 10px; font-size: 12px; font-weight: 600; color: var(--pri); background: var(--pri-soft, #e8edff); border-radius: 999px; }
+  .sig-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sig-empty { padding: 28px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; }
+  .sig-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .sig-pad { display: block; width: 100%; aspect-ratio: 3 / 1; touch-action: none; cursor: crosshair; background: #fff; border: 1px dashed var(--line); border-radius: 8px; }
+  .sig-sample { padding: 34px 12px 10px; text-align: center; line-height: 1.6; color: #000; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
   .pf-pic { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; overflow: hidden; font-size: 24px; font-weight: 700; color: #fff; background: var(--pri); border-radius: 50%; }
   @media (max-width: 480px) { .top #title { display: none; } .top .sem { flex: 1; min-width: 0; } }
   .row select { max-width: 100%; }

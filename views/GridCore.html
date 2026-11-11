@@ -413,7 +413,7 @@ var Grid = (function () {
 
   /** ช่องลงนามท้ายตาราง */
   function signBlock(st, headName, omitHead, deptName) {
-    function one(name, role) { return '<div>ลงชื่อ.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
+    function one(name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; }
     return '<div class="signs">' + (omitHead ? '' : one(headName, esc(deptHeadTitle(deptName)))) + one(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') +
       one(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + one(st.signer_director, 'ผู้อำนวยการ') + '</div>';
   }
