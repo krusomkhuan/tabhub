@@ -542,7 +542,7 @@ function signatureList(el, target) {
       }).join('') + '</div>' : '<div class="sig-empty">ยังไม่มีลายเซ็น กด <b>＋ เพิ่มลายเซ็น</b> เพื่อวาด อัปโหลดรูป หรือถ่ายรูปลายเซ็น</div>') +
       '<p class="small muted" style="margin-top:10px">⭐ <b>ลายเซ็นหลัก</b> จะขึ้นเหนือเส้น "ลงชื่อ" ในเอกสารทุกฉบับที่มีชื่อ ' + who + ' โดยอัตโนมัติเมื่อเปิดหรือพิมพ์เอกสาร ลายเซ็นอื่นเก็บไว้สลับใช้ได้ เช่น แบบมีชื่อและตำแหน่งในรูป</p>';
     // หน้าต่างแก้ไขปิดหน้าต่างรายการของผู้ลงนามไปแล้ว จึงเปิดรายการใหม่
-    function after(r) { Sig.load(); if (target && !el.isConnected) editSignature(target); else render(r); }
+    function after(r) { Sig.load(); if (target && !el.isConnected) editSignature(target, el._onClose); else render(r); }
     function call(fn, a, b) { return api(fn, S.token, target || '', a, b).then(after); }
     var label = target ? 'ลายเซ็นของ ' + g.name : 'ลายเซ็น';
     $('#sgAdd', el).onclick = function () { signatureEditor('เพิ่ม' + label, '', g.name, function (d) { return call('signatureSave', '', d.split(',')[1]).then(function () { toast('เพิ่มลายเซ็นแล้ว'); }); }); };
@@ -558,10 +558,13 @@ function signatureList(el, target) {
   api('signatureList', S.token, target || '').then(render);
 }
 VIEWS.signature = function (el) { el.innerHTML = '<div class="card" id="sgBox"></div>'; signatureList($('#sgBox', el), ''); };
-/* ผู้ลงนามที่ไม่มีบัญชี: ผู้ดูแลระบบจัดการลายเซ็นจากหน้าตั้งค่า */
-function editSignature(target) {
-  var m = modal('<div id="sgBox"></div><div class="actions"><button class="btn" onclick="closeModal()">ปิด</button></div>', true);
-  signatureList($('#sgBox', m), target);
+/* ผู้ดูแลระบบจัดการลายเซ็นของผู้อื่น: ผู้ใช้ (u:รหัส จากหน้าผู้ใช้งาน) และผู้ลงนามที่ไม่มีบัญชี (s:คีย์ จากหน้าตั้งค่า)
+   onClose เรียกเมื่อกดปิด เช่น ให้หน้าผู้ใช้งานอัปเดตจำนวนลายเซ็น */
+function editSignature(target, onClose) {
+  var m = modal('<div id="sgBox"></div><div class="actions"><button class="btn" id="sgClose">ปิด</button></div>', true);
+  $('#sgClose', m).onclick = function () { closeModal(); if (onClose) onClose(); };
+  var box = $('#sgBox', m); box._onClose = onClose;
+  signatureList(box, target);
 }
 
 function editProfile() {
@@ -1893,10 +1896,10 @@ VIEWS.users = function (el) {
     var roleTh = ROLE_LABELS;
     el.innerHTML = '<div class="card"><h3>ขอบเขตสิทธิ์การใช้งาน</h3>' + ['curriculum', 'dept', 'teacher'].map(function (role) { return '<p class="small"><b>' + esc(ROLE_LABELS[role]) + '</b> — ' + esc(ROLE_SCOPES[role]) + '</p>'; }).join('') + '<p class="small muted">เลือกแก้ไขบัญชีเพื่อกำหนดสิทธิ์ วิชาการแผนกต้องระบุแผนก และครูผู้สอนต้องผูกกับรายชื่อครู ผู้ดูแลระบบเท่านั้นที่เพิ่มหรือถอนเมนูรายบุคคลได้ การเปลี่ยนสิทธิ์มีผลในการทำรายการครั้งถัดไป และเมนูจะอัปเดตเมื่อผู้ใช้โหลดหน้าใหม่</p></div><div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
       '<button class="btn sm" id="uBulk">สร้างบัญชีครูทุกคน</button><button class="btn pri sm" id="uAdd">+ เพิ่มผู้ใช้</button></div>' +
-      '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>บทบาท</th><th>สิทธิ์เมนู</th><th>แผนก</th><th>ผูกกับครู</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
+      '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>บทบาท</th><th>สิทธิ์เมนู</th><th>แผนก</th><th>ผูกกับครู</th><th>ลายเซ็น</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
       sortBy(users, function (u) { return u.role + u.name; }).map(function (u) {
         return '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.name) + '</td><td>' + esc(roleTh[u.role] || u.role) + '</td><td>' + userPermTag(u) + '</td><td>' + esc(deptName(u.department_id)) + '</td><td>' + esc(nm('Teachers', u.teacher_id)) +
-          '</td><td>' + (String(u.active) === 'false' ? '<span class="tag bad">ปิด</span>' : !u.has_password ? '<span class="tag warn">ยังไม่ตั้งรหัสผ่าน</span>' : '<span class="tag ok">ใช้งาน</span>') + '</td><td style="white-space:nowrap"><button class="btn sm" data-u="' + esc(u.id) + '">แก้ไข</button> <button class="btn sm bad" data-du="' + esc(u.id) + '">ลบ</button></td></tr>';
+          '</td><td style="white-space:nowrap"><button class="btn sm" data-sgu="' + esc(u.id) + '" title="เพิ่มหรือแก้ไขลายเซ็นของผู้ใช้นี้">✍️ ' + (u.signatures ? u.signatures : 'เพิ่ม') + '</button></td><td>' + (String(u.active) === 'false' ? '<span class="tag bad">ปิด</span>' : !u.has_password ? '<span class="tag warn">ยังไม่ตั้งรหัสผ่าน</span>' : '<span class="tag ok">ใช้งาน</span>') + '</td><td style="white-space:nowrap"><button class="btn sm" data-u="' + esc(u.id) + '">แก้ไข</button> <button class="btn sm bad" data-du="' + esc(u.id) + '">ลบ</button></td></tr>';
       }).join('') + '</tbody></table></div></div>';
     $('#uAdd').onclick = function () { userModal({ role: 'dept', active: true }); };
     $('#uBulk').onclick = function () {
@@ -1905,7 +1908,8 @@ VIEWS.users = function (el) {
       api('bulkCreateTeacherUsers', S.token, pw).then(function (n) { toast('สร้าง ' + n + ' บัญชี'); VIEWS.users(el); });
     };
     $$('[data-u]', el).forEach(function (b) { b.onclick = function () { userModal(users.filter(function (u) { return u.id === b.dataset.u; })[0]); }; });
-    $$('[data-du]', el).forEach(function (b) { b.onclick = function () { if (confirm('ลบบัญชีนี้?')) api('deleteUser', S.token, b.dataset.du).then(function () { VIEWS.users(el); }); }; });
+    $$('[data-sgu]', el).forEach(function (b) { b.onclick = function () { editSignature('u:' + b.dataset.sgu, function () { VIEWS.users(el); }); }; });
+    $$('[data-du]', el).forEach(function (b) { b.onclick = function () { if (confirm('ลบบัญชีนี้? ลายเซ็นของบัญชีนี้จะถูกลบด้วย')) api('deleteUser', S.token, b.dataset.du).then(function () { VIEWS.users(el); }); }; });
   });
 };
 

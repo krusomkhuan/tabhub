@@ -25,21 +25,27 @@ function sig_user_names(array $u, array $teachers): array {
   return array_values(array_unique(array_filter($names)));
 }
 
-/** owner ที่ผู้ใช้แก้ได้: ของตัวเอง หรือผู้ลงนามในหน้าตั้งค่า (ผู้ดูแลระบบ) */
+/** owner ที่ผู้ใช้แก้ได้: ของตัวเอง ส่วนผู้ดูแลระบบแก้ของผู้ใช้ทุกคน (u:<รหัส>) และผู้ลงนามในหน้าตั้งค่า (s:<คีย์>) */
 function sig_owner(array $me, $target): string {
   $target = str($target);
-  if ($target === '') return 'u:' . $me['id'];
-  if (strpos($target, 's:') === 0 && in_array(substr($target, 2), SIGNATURE_SETTING_KEYS, true)) {
-    if ($me['role'] !== 'admin') throw new Exception('เฉพาะผู้ดูแลระบบอัปลายเซ็นให้ผู้ลงนามได้');
-    return $target;
-  }
+  if ($target === '' || $target === 'u:' . $me['id']) return 'u:' . $me['id'];
+  if ($me['role'] !== 'admin') throw new Exception('เฉพาะผู้ดูแลระบบจัดการลายเซ็นของผู้อื่นได้');
+  if (strpos($target, 's:') === 0 && in_array(substr($target, 2), SIGNATURE_SETTING_KEYS, true)) return $target;
+  if (strpos($target, 'u:') === 0 && isset(idx_table('users')[substr($target, 2)])) return $target;
   throw new Exception('ไม่พบผู้ลงนาม');
 }
 
 /** ชื่อเจ้าของลายเซ็นตอนนี้ เก็บไว้กับลายเซ็นของผู้ลงนาม เพื่อตรวจว่ายังเป็นคนเดิม */
 function sig_owner_name(string $owner, array $me): string {
   if (strpos($owner, 's:') === 0) return trim((string)(readSettings()[substr($owner, 2)] ?? ''));
-  return trim((string)$me['name']);
+  return trim((string)(idx_table('users')[substr($owner, 2)]['name'] ?? $me['name']));
+}
+
+/** จำนวนลายเซ็นของผู้ใช้แต่ละคน สำหรับหน้าจัดการผู้ใช้ */
+function sig_count_by_user(): array {
+  $n = [];
+  foreach (readTable('Signatures') as $r) if (strpos((string)$r['owner'], 'u:') === 0 && sig_valid_uri($r['image']) !== '') $n[substr($r['owner'], 2)] = ($n[substr($r['owner'], 2)] ?? 0) + 1;
+  return $n;
 }
 
 /** ลายเซ็นของ owner เรียงตามลำดับที่เพิ่ม ลายเซ็นของผู้ลงนามคนก่อนไม่นับ */
@@ -88,7 +94,7 @@ function api_signatureList($token = '', $target = '') {
   $primary = sig_primary($rows);
   $names = [$name];
   if (strpos($owner, 'u:') === 0) {
-    $u = idx_table('users')[$me['id']] ?? null;
+    $u = idx_table('users')[substr($owner, 2)] ?? null;
     if ($u) $names = sig_user_names($u, idx_table('Teachers'));
   }
   return [

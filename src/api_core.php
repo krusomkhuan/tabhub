@@ -156,7 +156,9 @@ function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
 
 function api_listUsers($token = '') {
   auth_user($token, 'admin');
+  $sigs = sig_count_by_user();
   return array_map(fn($u) => [
+    'signatures' => $sigs[$u['id']] ?? 0,
     'id' => $u['id'], 'username' => $u['username'], 'name' => $u['name'], 'role' => $u['role'], 'department_id' => $u['department_id'],
     'teacher_id' => $u['teacher_id'], 'email' => $u['email'], 'active' => $u['active'], 'has_password' => $u['pass_hash'] !== '', 'menu_perms' => perm_parse($u['menu_perms'] ?? ''),
   ], readTable('users'));
@@ -221,6 +223,8 @@ function api_deleteUser($token = '', $id = '') {
     $users = array_values(array_filter(readTable('users'), fn($x) => $x['id'] !== $id));
     assert_active_admin($users);
     writeTable('users', $users);
+    // ลายเซ็นของบัญชีที่ลบไม่ต้องเก็บไว้
+    writeTable('Signatures', array_values(array_filter(readTable('Signatures'), fn($r) => (string)$r['owner'] !== 'u:' . $id)));
     log_action($me, 'deleteUser', $id);
     return true;
   });
