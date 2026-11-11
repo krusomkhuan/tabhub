@@ -1284,7 +1284,7 @@ VIEWS.plans = function (el) {
       var c = courseOf(p.course_id);
       return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn" title="รหัสเรียนร่วม ' + esc(p.joint_key) + '">เรียนร่วม</span>' : '') + '</td><td class="small">' + esc(teacherNames(p.teacher_ids)) +
         '</td><td>' + esc(roomName(p.room_id)) + '</td><td>' + Sched.planPeriods(p, C) + '</td><td>' + esc(Sched.splitBlocks(p, C).join('+')) + '</td><td>' + hourTypeCell(p) + '</td><td style="white-space:nowrap">' +
-        (editable ? '<button class="btn sm" data-ep="' + esc(p.id) + '">แก้ไข</button> <button class="btn sm bad" data-dp="' + esc(p.id) + '">ลบ</button>' : canEditPlan(p) ? '<button class="btn sm" data-ep="' + esc(p.id) + '" title="ครูในแผนกของคุณสอนวิชานี้">แก้ไข</button>' : '') + '</td></tr>';
+        (editable ? '<button class="btn sm" data-ep="' + esc(p.id) + '">แก้ไข</button>' : canEditPlan(p) ? '<button class="btn sm" data-ep="' + esc(p.id) + '" title="ครูในแผนกของคุณสอนวิชานี้">แก้ไข</button>' : '') + '</td></tr>';
     }).join('') || '<tr><td colspan="8" class="muted">ยังไม่มีวิชา</td></tr>') + '</tbody></table></div>' +
     (!plans.some(canEditPlan) && plans.some(myOutsidePlan) ? '<p class="small muted" style="margin:8px 0 0">คุณตั้งคาบใน/คาบนอกได้เฉพาะวิชาที่คุณสอนในกลุ่มนี้ วิชาเรียนร่วมเปลี่ยนพร้อมกันทุกกลุ่ม ส่วนข้อมูลอื่นของแผนให้วิชาการแผนกเป็นผู้แก้</p>' : '') +
     (!editable && plans.some(canEditPlan) ? '<p class="small muted" style="margin:8px 0 0">กลุ่มนี้เป็นของแผนกอื่น คุณแก้ได้เฉพาะวิชาที่ครูในแผนกของคุณสอน (ครู ห้อง จำนวนคาบ การแบ่งคาบ คาบใน/นอก และหมายเหตุ) ส่วนการเพิ่ม–ลบวิชาและจัดตารางให้แผนกเจ้าของกลุ่มเป็นผู้ทำ</p>' : '') + '</div>';
@@ -1297,12 +1297,6 @@ VIEWS.plans = function (el) {
     };
   });
   $$('[data-ep]', box).forEach(function (b) { b.onclick = function () { planModal(IDX.Plans[b.dataset.ep]); }; });
-  $$('[data-dp]', box).forEach(function (b) {
-    b.onclick = function () {
-      if (!confirm('ลบวิชานี้ออกจากแผน? (คาบที่ลงตารางแล้วจะถูกลบด้วย)')) return;
-      api('deleteRow', S.token, 'Plans', b.dataset.dp).then(loadSchedule).then(function () { VIEWS.plans(el); });
-    };
-  });
 };
 
 function courseDatalist() {
@@ -1346,8 +1340,13 @@ function planModal(p) {
     '<label class="f">หมายเหตุ</label><input id="pmNote" value="' + esc(p.note) + '">' +
     (siblings.length ? '<label class="row small" style="margin-top:10px;gap:6px"><input type="checkbox" id="pmAll" style="width:auto" checked> ใช้ครู ห้อง จำนวนคาบ การแบ่งคาบ และคาบใน/นอกเดียวกันกับกลุ่มที่เรียนร่วมทั้งหมด (' + esc(siblings.map(function (x) { return groupCode(x.group_id); }).join(', ')) + ')</label>' : '') +
     (ownGroup ? '' : '<p class="small muted">กลุ่มนี้เป็นของแผนก' + esc(deptName((IDX.Groups[p.group_id] || {}).department_id)) + ' แก้รายวิชาและรหัสเรียนร่วมไม่ได้ และต้องมีครูในแผนกของคุณเป็นผู้สอนอย่างน้อย 1 คน</p>') +
-    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pmSave">บันทึก</button></div>');
+    // ลบวิชาอยู่ในหน้าต่างแก้ไขเท่านั้น (ไม่มีปุ่มลบในแถว) เฉพาะกลุ่มที่ผู้ใช้จัดได้
+    '<div class="actions">' + (p.id && ownGroup ? '<button class="btn bad" id="pmDel" style="margin-right:auto">ลบวิชานี้ออกจากแผน</button>' : '') + '<button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pmSave">บันทึก</button></div>');
   if (!ownGroup) { $('#pmC', m).disabled = true; $('#pmJ', m).disabled = true; }
+  if ($('#pmDel', m)) $('#pmDel', m).onclick = function () {
+    if (!confirm('ลบ ' + (c ? c.code + ' ' + c.name : 'วิชานี้') + ' ออกจากแผนของ ' + groupCode(p.group_id) + '?\nคาบที่ลงตารางแล้วจะถูกลบด้วย และกู้คืนไม่ได้')) return;
+    api('deleteRow', S.token, 'Plans', p.id).then(loadSchedule).then(function () { closeModal(); VIEWS.plans($('#content')); toast('ลบวิชาออกจากแผนแล้ว'); });
+  };
   $('#pmSave', m).onclick = function () {
     var course = courseFromText($('#pmC').value);
     if (!course) return toast('ไม่พบรายวิชานี้ — เพิ่มที่เมนู รายวิชา ก่อน', 1);
