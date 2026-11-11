@@ -393,13 +393,19 @@ var Sig = (function () {
   var map = null, timer;
   function key(name) { return String(name || '').replace(/\s+/g, '').replace(/ํา/g, 'ำ'); }
   function slot(name) { var k = key(name); return k ? '<span class="sig-slot" data-sig="' + esc(k) + '"></span>' : ''; }
+  /* ตำแหน่งที่เจ้าของตั้งไว้: เลื่อนเป็นหน่วย em จึงตามขนาดตัวอักษรของเอกสารแต่ละแบบ */
+  function place(img, p) {
+    var t = p && (p.x || p.y || (p.s && p.s !== 1)) ? 'translate(' + (+p.x || 0) + 'em,' + (+p.y || 0) + 'em) scale(' + (+p.s || 1) + ')' : '';
+    if (img.style.transform !== t) img.style.transform = t;
+  }
   function fill(root) {
     if (!map) return;
     Array.prototype.forEach.call((root || document).querySelectorAll('.sig-slot[data-sig]'), function (s) {
-      var src = map[s.getAttribute('data-sig')], img = s.querySelector('img');
+      var v = map[s.getAttribute('data-sig')], src = v && (v.src || v), img = s.querySelector('img');
       if (src) {
         if (!img) { img = document.createElement('img'); img.alt = ''; s.appendChild(img); }
         if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+        place(img, v);
       } else if (img) img.remove();
     });
   }
@@ -414,7 +420,7 @@ var Sig = (function () {
   }
   /* ตอนบันทึกเอกสารเก็บไว้ ตัดรูปออกให้เหลือช่องว่าง */
   function strip(root) { Array.prototype.forEach.call(root.querySelectorAll('.sig-slot img'), function (i) { i.remove(); }); }
-  return { key: key, slot: slot, fill: fill, load: load, watch: watch, strip: strip };
+  return { key: key, slot: slot, fill: fill, load: load, watch: watch, strip: strip, place: place };
 })();
 
 /* ทำรูปลายเซ็น: ลบพื้นหลังสว่าง (รูปถ่าย/สแกน) ตัดขอบว่าง ย่อให้ไม่เกิน 600x200 แล้วส่งออกเป็น PNG พื้นใส */
@@ -450,9 +456,13 @@ function signatureImage(source, removeBg, strength) {
 }
 
 /* หน้าต่างทำลายเซ็น: วาดบนหน้าจอ อัปโหลดไฟล์ หรือถ่ายรูปลายเซ็นบนกระดาษ
-   image = ลายเซ็นเดิม (ตอนแก้ไข), name = ชื่อที่แสดงในตัวอย่าง, done(dataURL) เรียกเมื่อกดบันทึก */
-function signatureEditor(title, image, name, done) {
+   image = ลายเซ็นเดิม (ตอนแก้ไข), name = ชื่อที่แสดงในตัวอย่าง, at = ตำแหน่งเดิม {x, y, s}
+   done(dataURL, {x, y, s}) เรียกเมื่อกดบันทึก */
+var SIG_LIMIT = { x: [-6, 12], y: [-3, 3], s: [0.5, 2] }; /* ต้องตรงกับ sig_place() ฝั่งเซิร์ฟเวอร์ */
+function signatureEditor(title, image, name, at, done) {
   var picked = null, photo = null; /* picked: null = ยังไม่เปลี่ยน, data URL = ลายเซ็นใหม่ */
+  var pl = { x: +(at && at.x) || 0, y: +(at && at.y) || 0, s: +(at && at.s) || 1 }, moved = false;
+  function clamp(k, v) { return Math.round(Math.max(SIG_LIMIT[k][0], Math.min(SIG_LIMIT[k][1], v)) * 100) / 100; }
   var m = modal('<h3>✍️ ' + esc(title) + '</h3>' +
     '<div class="sig-tabs"><button type="button" class="btn sm" data-sgt="draw">✏️ วาดบนหน้าจอ</button><button type="button" class="btn sm" data-sgt="file">📁 อัปโหลดรูป</button><button type="button" class="btn sm" data-sgt="cam">📷 ถ่ายรูปลายเซ็น</button></div>' +
     '<div data-sgp="draw"><canvas class="sig-pad" id="sgPad" width="600" height="200"></canvas><div class="row small" style="gap:8px;margin-top:6px">' +
@@ -465,13 +475,33 @@ function signatureEditor(title, image, name, done) {
     '<div class="small muted" style="margin-top:6px">เซ็นด้วยปากกาสีเข้มบนกระดาษขาว ถ่ายในที่สว่าง ไม่ให้มีเงา และให้ลายเซ็นเต็มภาพ ระบบลบพื้นกระดาษออกให้</div></div>' +
     '<div id="sgOpt" class="row small" style="gap:12px;margin-top:8px" hidden><label class="row" style="gap:4px"><input type="checkbox" id="sgBg" style="width:auto"> ลบพื้นหลังสีขาว</label>' +
     '<label class="row" style="gap:4px">ความเข้มเส้น <input type="range" id="sgS" min="0" max="60" value="30" style="width:110px"></label></div>' +
-    '<div class="small muted" style="margin-top:12px">ตัวอย่างในเอกสาร</div><div class="sig-sample" id="sgSample"></div>' +
+    '<div class="small muted" style="margin-top:12px">ตัวอย่างในเอกสาร — ลากลายเซ็นเพื่อขยับตำแหน่ง</div><div class="sig-sample" id="sgSample"></div>' +
+    '<div class="row small" style="gap:8px;margin-top:6px"><label class="row" style="gap:4px">ขนาด <input type="range" id="sgZ" min="50" max="200" step="5" style="width:130px"> <span id="sgZv"></span></label>' +
+    '<span class="grow"></span><button type="button" class="btn sm" id="sgReset">↺ ตำแหน่งเดิม</button></div>' +
     '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="sgSave">บันทึก</button></div>');
   var pad = $('#sgPad', m), ctx = pad.getContext('2d'), last = null;
   function show() {
     var src = picked || image;
-    $('#sgSample', m).innerHTML = 'ลงชื่อ<span class="sig-slot">' + (src ? '<img src="' + esc(src) + '" alt="">' : '') + '</span>.................................<br>( ' + esc(name) + ' )' +
+    $('#sgSample', m).innerHTML = 'ลงชื่อ<span class="sig-slot">' + (src ? '<img src="' + esc(src) + '" alt="" title="ลากเพื่อขยับ">' : '') + '</span>.................................<br>( ' + esc(name) + ' )' +
       (src ? '' : '<div class="small muted">ยังไม่มีลายเซ็น</div>');
+    var img = $('#sgSample img', m);
+    if (img) { Sig.place(img, pl); drag(img); }
+    $('#sgZ', m).value = Math.round(pl.s * 100); $('#sgZv', m).textContent = Math.round(pl.s * 100) + '%';
+  }
+  /* ลากลายเซ็นในตัวอย่าง: แปลงระยะที่ลากเป็นหน่วย em ของตัวอักษรในตัวอย่าง */
+  function drag(img) {
+    var start = null;
+    img.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); img.setPointerCapture(e.pointerId);
+      start = { cx: e.clientX, cy: e.clientY, x: pl.x, y: pl.y, em: parseFloat(getComputedStyle(img).fontSize) || 16 };
+    });
+    img.addEventListener('pointermove', function (e) {
+      if (!start) return;
+      pl.x = clamp('x', start.x + (e.clientX - start.cx) / start.em); pl.y = clamp('y', start.y + (e.clientY - start.cy) / start.em);
+      moved = true; Sig.place(img, pl);
+    });
+    function end() { start = null; }
+    img.addEventListener('pointerup', end); img.addEventListener('pointercancel', end);
   }
   function tab(t) {
     $$('[data-sgt]', m).forEach(function (b) { b.classList.toggle('pri', b.dataset.sgt === t); });
@@ -512,11 +542,15 @@ function signatureEditor(title, image, name, done) {
   $('#sgF', m).onchange = function () { var f = this.files[0]; this.value = ''; openFile(f, false); };
   $('#sgC', m).onchange = function () { var f = this.files[0]; this.value = ''; openFile(f, true); };
   $('#sgBg', m).onchange = redo; $('#sgS', m).oninput = redo;
+  $('#sgZ', m).oninput = function () { pl.s = clamp('s', this.value / 100); moved = true; $('#sgZv', m).textContent = this.value + '%'; var img = $('#sgSample img', m); if (img) Sig.place(img, pl); };
+  $('#sgReset', m).onclick = function () { pl = { x: 0, y: 0, s: 1 }; moved = true; show(); };
   $('#sgSave', m).onclick = function () {
-    if (!picked) { if (image) closeModal(); else toast('กรุณาวาดหรือเลือกรูปลายเซ็นก่อน', 1); return; }
+    var src = picked || image;
+    if (!src) { toast('กรุณาวาดหรือเลือกรูปลายเซ็นก่อน', 1); return; }
+    if (!picked && !moved) { closeModal(); return; }
     var btn = this; btn.disabled = true;
     // หลังบันทึกอาจเปิดหน้าต่างรายการขึ้นมาแทนแล้ว ปิดเฉพาะเมื่อหน้าต่างนี้ยังเปิดอยู่
-    Promise.resolve(done(picked)).then(function () { if (m.isConnected) closeModal(); }).catch(function () { btn.disabled = false; });
+    Promise.resolve(done(src, pl)).then(function () { if (m.isConnected) closeModal(); }).catch(function () { btn.disabled = false; });
   };
   tab('draw'); show();
 }
@@ -543,14 +577,14 @@ function signatureList(el, target) {
       '<p class="small muted" style="margin-top:10px">⭐ <b>ลายเซ็นหลัก</b> จะขึ้นเหนือเส้น "ลงชื่อ" ในเอกสารทุกฉบับที่มีชื่อ ' + who + ' โดยอัตโนมัติเมื่อเปิดหรือพิมพ์เอกสาร ลายเซ็นอื่นเก็บไว้สลับใช้ได้ เช่น แบบมีชื่อและตำแหน่งในรูป</p>';
     // หน้าต่างแก้ไขปิดหน้าต่างรายการของผู้ลงนามไปแล้ว จึงเปิดรายการใหม่
     function after(r) { Sig.load(); if (target && !el.isConnected) editSignature(target, el._onClose); else render(r); }
-    function call(fn, a, b) { return api(fn, S.token, target || '', a, b).then(after); }
+    function call(fn, a, b, c) { return api(fn, S.token, target || '', a, b, c).then(after); }
     var label = target ? 'ลายเซ็นของ ' + g.name : 'ลายเซ็น';
-    $('#sgAdd', el).onclick = function () { signatureEditor('เพิ่ม' + label, '', g.name, function (d) { return call('signatureSave', '', d.split(',')[1]).then(function () { toast('เพิ่มลายเซ็นแล้ว'); }); }); };
+    $('#sgAdd', el).onclick = function () { signatureEditor('เพิ่ม' + label, '', g.name, null, function (d, p) { return call('signatureSave', '', d.split(',')[1], p).then(function () { toast('เพิ่มลายเซ็นแล้ว'); }); }); };
     $$('[data-sg-edit]', el).forEach(function (b) {
       var it = g.items[b.dataset.sgEdit];
-      b.onclick = function () { signatureEditor('แก้ไขลายเซ็นที่ ' + (Number(b.dataset.sgEdit) + 1), it.image, g.name, function (d) { return call('signatureSave', it.id, d.split(',')[1]).then(function () { toast('บันทึกลายเซ็นแล้ว'); }); }); };
+      b.onclick = function () { signatureEditor('แก้ไขลายเซ็นที่ ' + (Number(b.dataset.sgEdit) + 1), it.image, g.name, it.place, function (d, p) { return call('signatureSave', it.id, d.split(',')[1], p).then(function () { toast('บันทึกลายเซ็นแล้ว'); }); }); };
     });
-    $$('[data-sg-copy]', el).forEach(function (b) { b.onclick = function () { call('signatureSave', '', g.items[b.dataset.sgCopy].image.split(',')[1]).then(function () { toast('คัดลอกลายเซ็นแล้ว แก้ไขอันใหม่ได้เลย'); }); }; });
+    $$('[data-sg-copy]', el).forEach(function (b) { b.onclick = function () { var it = g.items[b.dataset.sgCopy]; call('signatureSave', '', it.image.split(',')[1], it.place).then(function () { toast('คัดลอกลายเซ็นแล้ว แก้ไขอันใหม่ได้เลย'); }); }; });
     $$('[data-sgp-main]', el).forEach(function (b) { b.onclick = function () { call('signaturePrimary', b.dataset.sgpMain).then(function () { toast('ตั้งเป็นลายเซ็นหลักแล้ว'); }); }; });
     $$('[data-sg-del]', el).forEach(function (b) { b.onclick = function () { if (confirm('ลบลายเซ็นนี้?')) call('signatureDelete', b.dataset.sgDel).then(function () { toast('ลบลายเซ็นแล้ว'); }); }; });
   }

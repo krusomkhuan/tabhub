@@ -421,7 +421,9 @@
   .sig-empty { padding: 28px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; }
   .sig-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
   .sig-pad { display: block; width: 100%; aspect-ratio: 3 / 1; touch-action: none; cursor: crosshair; background: #fff; border: 1px dashed var(--line); border-radius: 8px; }
-  .sig-sample { padding: 34px 12px 10px; text-align: center; line-height: 1.6; color: #000; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+  .sig-slot img { transform-origin: left bottom; }
+  .sig-sample .sig-slot img { pointer-events: auto; cursor: move; touch-action: none; outline: 1px dashed rgba(36, 87, 214, .45); outline-offset: 2px; }
+  .sig-sample { overflow: hidden; padding: 48px 12px 24px; text-align: center; line-height: 1.6; color: #000; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
   .pf-pic { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; overflow: hidden; font-size: 24px; font-weight: 700; color: #fff; background: var(--pri); border-radius: 50%; }
   @media (max-width: 480px) { .top #title { display: none; } .top .sem { flex: 1; min-width: 0; } }
   .row select { max-width: 100%; }
