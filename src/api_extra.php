@@ -665,14 +665,16 @@ function api_windowDelete($token = '', $id = '') {
 
 // ======================= งบหน้าแผนกวิชา =======================
 /** งบหน้าค่าสอนเกินภาระงาน: นับเฉพาะใบเบิกที่ล็อกแล้ว แยกยอดรายสัปดาห์ */
-/** งบหน้าทำทั้งภาคเรียนแยกตามระดับ: ปวช. 18 สัปดาห์ ปวส. 15 สัปดาห์ นับจากวันเปิดภาคเรียน */
+/** งบหน้าทำทั้งภาคเรียนแยกตามระดับ นับจากวันเปิดภาคเรียน ไม่ขึ้นกับช่วงของรอบการเบิก
+ *  ค่าเริ่มต้น ปวช. 18 สัปดาห์ ปวส. 15 สัปดาห์ และเลือก 15 หรือ 18 สัปดาห์เองได้ทุกระดับ */
 const OT_COVER_WEEKS = ['vc' => 18, 'vs' => 15];
+const OT_COVER_WEEK_CHOICES = [15, 18];
 
-function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 'vc') {
+function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 'vc', $weeks = '') {
   $me = auth_user($token, 'dept');
   if ($me['role'] === 'dept' && str($deptId) !== (string)$me['department_id']) throw new Exception('ดูงบหน้าได้เฉพาะแผนกตัวเอง');
-  $count = OT_COVER_WEEKS[str($level)] ?? null;
-  if (!$count) throw new Exception('ระดับไม่ถูกต้อง');
+  if (!isset(OT_COVER_WEEKS[str($level)])) throw new Exception('ระดับไม่ถูกต้อง');
+  $count = in_array((int)$weeks, OT_COVER_WEEK_CHOICES, true) ? (int)$weeks : OT_COVER_WEEKS[str($level)];
   $sem = idx_table('Semesters')[str($semesterId)] ?? null;
   if (!$sem) throw new Exception('ไม่พบภาคเรียน');
   $rounds = array_values(array_filter(readTable('OtRounds'), fn($r) => (string)$r['semester_id'] === str($semesterId)));
@@ -681,7 +683,7 @@ function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 
   $start = substr((string)($sem['start_date'] ?? ''), 0, 10);
   $startSet = $start !== '';
   if (!$startSet) $start = $rounds ? substr((string)$rounds[0]['start_date'], 0, 10) : '';
-  if ($start === '') return ['semester' => $sem, 'level' => str($level), 'noDates' => true, 'weeks' => [], 'rows' => [], 'notLocked' => []];
+  if ($start === '') return ['semester' => $sem, 'level' => str($level), 'week_count' => $count, 'noDates' => true, 'weeks' => [], 'rows' => [], 'notLocked' => []];
   $until = ot_parse($start)->modify('+' . (($count + 1) * 7) . ' days');
   $weeks = array_slice(ot_weeks_of(['start_date' => $start, 'end_date' => ot_ymd($until)]), 0, $count);
   $weekOf = [];
@@ -714,7 +716,7 @@ function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 
   unset($x);
   $total = array_sum(array_column($rows, 'amount'));
   return [
-    'semester' => $sem, 'level' => str($level), 'startSet' => $startSet, 'start' => $start, 'noRounds' => !$rounds,
+    'semester' => $sem, 'level' => str($level), 'week_count' => $count, 'startSet' => $startSet, 'start' => $start, 'noRounds' => !$rounds,
     'weeks' => array_map(fn($w) => ['index' => $w['index'], 'from' => $w['dates'][0], 'to' => $w['dates'][count($w['dates']) - 1]], $weeks),
     'rows' => $rows, 'totals' => ['hours' => array_sum(array_column($rows, 'hours')), 'amount' => $total], 'weekTotals' => (object)$weekTotals,
     'totalText' => ot_baht_text($total), 'notLocked' => array_keys($notLocked), 'outside' => $outside,
@@ -755,7 +757,10 @@ function api_issueReply($token = '', $id = '', $status = '', $reply = '') {
     $rows = readTable('IssueReports');
     $i = find_row($rows, str($id));
     if ($i === null) throw new Exception('ไม่พบเรื่องที่แจ้ง');
-    $rows[$i] = array_merge($rows[$i], ['status' => $status, 'reply' => clean_text($reply, 5000), 'replied_by' => $me['name'], 'updated_at' => now_dt()]);
+    $reply = clean_text($reply, 5000);
+    // ผู้ดูแลตอบใหม่แต่ยังไม่ได้เปลี่ยนสถานะ (ยังเป็น "รอดำเนินการ") ให้เป็น "กำลังดำเนินการ" ให้ผู้แจ้งรู้ว่ามีคนรับเรื่องแล้ว
+    if ($status === 'open' && $reply !== '' && $reply !== (string)($rows[$i]['reply'] ?? '')) $status = 'doing';
+    $rows[$i] = array_merge($rows[$i], ['status' => $status, 'reply' => $reply, 'replied_by' => $me['name'], 'updated_at' => now_dt()]);
     writeTable('IssueReports', $rows);
     log_action($me, 'ตอบเรื่องแจ้งปัญหา', str($id));
     return true;

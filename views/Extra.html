@@ -1217,16 +1217,19 @@
   };
 
   /* ---------- งบหน้าแผนกวิชา ---------- */
-  var CV = { dept: '', level: 'vc' };
+  var CV = { dept: '', level: 'vc', weeks: 18 };
+  var CV_DEFAULT_WEEKS = { vc: 18, vs: 15 };
   var CV_LEVELS = { vc: 'ปวช.', vs: 'ปวส.' };
   VIEWS['ot-cover'] = function (el) {
     if (!CV.dept) CV.dept = S.me.department_id || (S.D.Departments[0] || {}).id;
-    var levelOpts = Object.keys(CV_LEVELS).map(function (k) { return '<option value="' + k + '"' + (k === CV.level ? ' selected' : '') + '>ระดับ ' + CV_LEVELS[k] + ' (' + (k === 'vc' ? 18 : 15) + ' สัปดาห์)</option>'; }).join('');
-    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' + deptSelect('cvD', CV.dept) + '<select id="cvL" class="form-select form-select-sm w-auto">' + levelOpts + '</select><span class="grow"></span><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
+    var levelOpts = Object.keys(CV_LEVELS).map(function (k) { return '<option value="' + k + '"' + (k === CV.level ? ' selected' : '') + '>ระดับ ' + CV_LEVELS[k] + '</option>'; }).join('');
+    // จำนวนสัปดาห์เลือกได้ 15 หรือ 18 ไม่ขึ้นกับระดับหรือรอบการเบิก (เปลี่ยนระดับแล้วตั้งค่าเริ่มต้นของระดับนั้นให้)
+    var weekOpts = [18, 15].map(function (n) { return '<option value="' + n + '"' + (Number(CV.weeks) === n ? ' selected' : '') + '>' + n + ' สัปดาห์</option>'; }).join('');
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' + deptSelect('cvD', CV.dept) + '<select id="cvL" class="form-select form-select-sm w-auto">' + levelOpts + '</select><select id="cvW" class="form-select form-select-sm w-auto" title="จำนวนสัปดาห์ของงบหน้า">' + weekOpts + '</select><span class="grow"></span><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
     function load() {
-      CV.dept = val('#cvD'); CV.level = val('#cvL');
-      api('otCoverSheet', S.token, S.sem, CV.dept, CV.level).then(function (r) {
-        if (r.noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่มีวันเปิดภาคเรียนและรอบการเบิกของภาคเรียนนี้ — กำหนดวันเปิด-ปิดที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
+      CV.dept = val('#cvD'); CV.level = val('#cvL'); CV.weeks = Number(val('#cvW')) || CV_DEFAULT_WEEKS[CV.level];
+      api('otCoverSheet', S.token, S.sem, CV.dept, CV.level, CV.weeks).then(function (r) {
+        if (r.noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่ได้ตั้งวันเปิดภาคเรียนของภาคเรียนนี้ — งบหน้านับสัปดาห์จากวันเปิดภาคเรียน กำหนดได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
         var s = S.settings, sem = r.semester, lv = CV_LEVELS[r.level];
         var head = Grid.deptHead(S.D.Teachers, CV.dept);
         var sign = function (name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
@@ -1247,7 +1250,8 @@
           '<div class="signs">' + sign(s.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_director, 'ผู้อำนวยการวิทยาลัย<br>ผู้อนุมัติ') + '</div></div>');
       });
     }
-    $j('#cvD,#cvL').on('change', load);
+    $j('#cvD,#cvW').on('change', load);
+    $j('#cvL').on('change', function () { $j('#cvW').val(String(CV_DEFAULT_WEEKS[val('#cvL')])); load(); });
     load();
   };
 

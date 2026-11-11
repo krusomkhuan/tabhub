@@ -394,7 +394,7 @@ function scope_rows(array $me, string $name, array $rows): array {
 // ======================= ข้อมูลพื้นฐาน =======================
 function api_bootstrap($token = '', $semesterId = '') {
   $me = auth_user($token);
-  // สำรองอัตโนมัติตอนเปิดหน้าเว็บ (วันละครั้ง) ไม่พึ่งการทำงานหลังส่งคำตอบ ซึ่งโฮสติ้งบางแห่งหยุดสคริปต์
+  // สำรองอัตโนมัติตอนเปิดหน้าเว็บ (ทุกวันอาทิตย์) ไม่พึ่งการทำงานหลังส่งคำตอบ ซึ่งโฮสติ้งบางแห่งหยุดสคริปต์
   backup_auto_run('page_load');
   arabic_digits_once();
   award_bonus_hours_once();
@@ -411,7 +411,7 @@ function api_bootstrap($token = '', $semesterId = '') {
     'plans' => array_values(array_filter(readTable('Plans'), fn($p) => (string)$p['semester_id'] === (string)$sem)),
     'sessions' => sem_sessions($sem),
     'me' => $me + ['avatar' => user_avatar($me['id'])], 'settings' => $s, 'days' => DAY_NAMES, 'url' => $GLOBALS['REQ_URL'] ?? '',
-    'backup_warning' => $me['role'] === 'admin' ? backup_warning() : '',
+    'backup_warning' => $me['role'] === 'admin' ? (backup_warning() ?: backup_offsite_reminder()) : '',
     'data' => $data,
   ];
 }

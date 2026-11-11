@@ -1475,7 +1475,7 @@ function mineHourTypes(el) {
 
 VIEWS.deptview = function (el) {
   var d = S.sel.dv || (S.sel.dv = S.me.department_id || (S.D.Departments[0] || {}).id);
-  var teachers = sortBy(S.D.Teachers.filter(function (t) { return String(t.department_id) === String(d); }), function (t) { return t.name; });
+  var teachers = sortBy(S.D.Teachers.filter(function (t) { return Grid.inDept(t, d); }), function (t) { return t.name; });
   el.innerHTML = '<div class="card no-print"><div class="row"><select id="dvD" style="width:auto">' + deptOptions(d, '— เลือกแผนก —') + '</select><button class="btn pri" onclick="window.print()">🖨 พิมพ์</button></div></div>' +
     teachers.map(function (t) {
       var ss = S.sessions.filter(function (s) { return Sched.ids(s.teacher_ids).indexOf(String(t.id)) >= 0; });
@@ -1503,11 +1503,12 @@ function teacherCards(teachers, card) {
   var depts = sortBy(S.D.Departments, function (d) { return d.sort || d.name; }).concat([{ id: '', name: 'ไม่ระบุแผนก' }]);
   var icon = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.500 2 7.500 6"/></svg>';
   return depts.map(function (d) {
-    var list = teachers.filter(function (t) { return String(t.department_id || '') === String(d.id); }).map(function (t) { return { t: t, name: teacherBareName(t.name) }; })
+    var list = teachers.filter(function (t) { return Grid.inDept(t, d.id); }).map(function (t) { return { t: t, name: teacherBareName(t.name) }; })
       .sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     if (!list.length) return '';
     return '<h3 class="hours-dept">' + esc(d.name) + '</h3><div class="hours-grid">' + list.map(function (x) {
-      var isHead = String(x.t.is_dept_head) === 'true', isAcademic = String(x.t.is_dept_academic) === 'true';
+      var own = String(x.t.department_id || '') === String(d.id);
+      var isHead = own ? String(x.t.is_dept_head) === 'true' : true, isAcademic = own && String(x.t.is_dept_academic) === 'true';
       var role = [isHead ? 'หัวหน้าแผนกวิชา' : '', isAcademic ? 'วิชาการแผนกวิชา' : ''].filter(Boolean).join(' และ');
       return card(x.t, '<span class="hours-ic' + (role ? ' head' : '') + '">' + icon + '</span>', role);
     }).join('') + '</div>';
@@ -1603,7 +1604,7 @@ VIEWS.issues = function (el) {
     $('#isC').textContent = 'แสดง ' + show.length + ' จากทั้งหมด ' + rows.length + ' รายการ';
     $('#isB').innerHTML = show.map(function (r) {
       var s = STATUS[r.status] || STATUS.open;
-      return '<tr class="is-row" data-id="' + esc(r.id) + '"><td><b>' + esc(r.title) + '</b>' + (r.category ? '<div class="small muted">' + esc(r.category) + '</div>' : '') + '</td><td>' + esc(r.reporter_name) + '</td><td style="white-space:nowrap">' + esc(thDate(r.created_at)) + '</td><td><span class="tag ' + s[1] + '">' + s[0] + '</span></td></tr>';
+      return '<tr class="is-row" data-id="' + esc(r.id) + '"><td><b>' + esc(r.title) + '</b>' + (r.category ? '<div class="small muted">' + esc(r.category) + '</div>' : '') + '</td><td>' + esc(r.reporter_name) + '</td><td style="white-space:nowrap">' + esc(thDate(r.created_at)) + '</td><td><span class="tag ' + s[1] + '">' + s[0] + '</span>' + (r.reply ? '<div class="small muted">💬 ตอบแล้ว</div>' : '') + '</td></tr>';
     }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center">' + (rows.length ? 'ไม่พบตามเงื่อนไข' : 'ยังไม่เคยแจ้งปัญหา กด "แจ้งปัญหาใหม่" ด้านบนหากพบปัญหาการใช้งาน') + '</td></tr>';
     $$('.is-row', el).forEach(function (tr) { tr.onclick = function () { open(rows.filter(function (x) { return String(x.id) === tr.dataset.id; })[0]); }; });
   }
@@ -1613,7 +1614,11 @@ VIEWS.issues = function (el) {
       (admin ? '<label class="f">สถานะ</label><select id="irS"><option value="open">รอดำเนินการ</option><option value="doing">กำลังดำเนินการ</option><option value="done">แก้ไขแล้ว</option></select><label class="f">คำตอบถึงผู้แจ้ง</label><textarea id="irR" rows="3">' + esc(r.reply) + '</textarea>'
         : (r.reply ? '<div class="card" style="margin:0"><b>คำตอบจากผู้ดูแลระบบ</b><p style="white-space:pre-wrap;margin:4px 0 0">' + esc(r.reply) + '</p></div>' : '<p class="small muted">ยังไม่มีคำตอบ</p>')) +
       '<div class="actions"><button class="btn" onclick="closeModal()">ปิด</button>' + (admin || r.status === 'open' ? '<button class="btn bad" id="irD">ลบ</button>' : '') + (admin ? '<button class="btn pri" id="irG">บันทึก</button>' : '') + '</div>');
-    if (admin) { $('#irS', m).value = r.status; $('#irG', m).onclick = function () { api('issueReply', S.token, r.id, $('#irS', m).value, $('#irR', m).value).then(function () { closeModal(); toast('บันทึกแล้ว'); load(); }); }; }
+    if (admin) {
+      $('#irS', m).value = r.status;
+      // พิมพ์คำตอบแล้ว สถานะยังเป็น "รอดำเนินการ" เปลี่ยนเป็น "กำลังดำเนินการ" ให้เอง (เลือกเป็น "แก้ไขแล้ว" ได้)
+      $('#irR', m).oninput = function () { if ($('#irS', m).value === 'open' && this.value.trim() && this.value !== (r.reply || '')) $('#irS', m).value = 'doing'; };
+      $('#irG', m).onclick = function () { api('issueReply', S.token, r.id, $('#irS', m).value, $('#irR', m).value).then(function () { closeModal(); toast('บันทึกแล้ว'); load(); }); }; }
     if ($('#irD', m)) $('#irD', m).onclick = function () { if (confirm('ลบเรื่องนี้?')) api('issueDelete', S.token, r.id).then(function () { closeModal(); load(); }); };
   }
   $('#isQ').oninput = draw; $('#isS').onchange = draw;
@@ -1633,11 +1638,13 @@ function backupStatusHtml(d) {
   else if (s.state === 'error') lines.push('<b>ครั้งล่าสุดไม่สำเร็จ</b> เมื่อ ' + esc(s.at) + ': ' + esc(s.error || ''));
   else if (s.state === 'running') lines.push('<b>เริ่มสำรองเมื่อ ' + esc(s.at) + ' แต่ไม่จบ</b> — โฮสติ้งอาจหยุดสคริปต์ก่อนเสร็จ หรือหน่วยความจำ/เวลาไม่พอ ดูรายละเอียดใน PHP error log');
   else lines.push('ยังไม่มีบันทึกผลการสำรองอัตโนมัติ');
+  var dl = d.last_download || {};
+  lines.push('ดาวน์โหลดเก็บไว้นอกเครื่องล่าสุด: ' + (dl.at ? esc(dl.at) + (dl.by ? ' โดย ' + esc(dl.by) : '') : 'ยังไม่เคย') + ' · ควรดาวน์โหลดอย่างน้อยทุก ' + (d.offsite_days || 30) + ' วัน');
   var bad = (d.dirs || []).filter(function (x) { return !x.writable; });
   var dirs = bad.length ? '<div class="alert alert-danger" style="margin-top:10px"><b>PHP เขียนโฟลเดอร์เหล่านี้ไม่ได้</b> ระบบจึงสำรองข้อมูลหรือเก็บรูปไม่ได้<ul style="margin:6px 0">' +
     bad.map(function (x) { return '<li><code>' + esc(x.dir) + '</code> — ' + esc(x.use) + (x.exists ? ' · Permission ' + esc(x.perms) + ' · Owner ' + esc(x.owner) + ' · Group ' + esc(x.group) : ' (ยังไม่มีโฟลเดอร์)') + '</li>'; }).join('') +
     '</ul>PHP ทำงานด้วยบัญชี <b>' + esc(bad[0].php_user || '-') + '</b> — แก้ใน File Manager หรือ FTP ของโฮสติ้ง: ถ้า Owner ตรงกับบัญชีของ PHP ตั้ง Permission เป็น 755 ถ้า Owner ไม่ตรงแต่ Group ตรง ให้ตั้ง 775 ถ้าไม่ตรงทั้งคู่ ให้เปลี่ยน Owner เป็นบัญชีของ PHP หรือแจ้งผู้ดูแลโฮสติ้ง ตั้งให้ทุกโฟลเดอร์ในรายการ แล้วเปิดหน้านี้ใหม่</div>' : '';
-  return dirs + '<div class="' + (d.warning ? 'alert alert-warning' : 'small muted') + '" style="margin-top:10px">' + (d.warning ? '<b>⚠ ' + esc(d.warning) + '</b><br>' : '') + lines.join('<br>') + '</div>';
+  return dirs + '<div class="' + (d.warning || d.offsite ? 'alert alert-warning' : 'small muted') + '" style="margin-top:10px">' + (d.warning ? '<b>⚠ ' + esc(d.warning) + '</b><br>' : '') + (d.offsite ? '<b>📥 ' + esc(d.offsite) + '</b><br>' : '') + lines.join('<br>') + '</div>';
 }
 
 VIEWS.backup = function (el) {
@@ -1661,9 +1668,9 @@ VIEWS.backup = function (el) {
   api('backupList', S.token).then(function (d) {
     el.innerHTML = '<div class="card"><h3>สำรองข้อมูล</h3><p class="small muted">เก็บทุกตารางในระบบ รวมถึงบัญชีผู้ใช้และรหัสผ่านที่เข้ารหัสแล้ว และรูปประกอบรายงานการสอน (ตอนนี้มี ' + d.image_count + ' รูป รวม ' + size(d.image_bytes) + ') ไฟล์ที่ดาวน์โหลดมีข้อมูลส่วนบุคคลและรูปนักเรียน ควรเก็บในที่ปลอดภัย และควรคัดลอกออกจากเครื่องนี้เป็นระยะ</p>' +
       '<div class="row"><button class="btn pri" id="bkNew">💾 สำรองข้อมูลตอนนี้</button><label class="btn" for="bkFile">⤴ อัปโหลดไฟล์สำรอง</label><input type="file" id="bkFile" accept=".gz" hidden></div>' +
-      '<div class="row bk-auto"><label class="row small" style="gap:6px"><input type="checkbox" id="bkAuto" style="width:auto"' + (d.auto ? ' checked' : '') + '> สำรองอัตโนมัติวันละครั้ง</label>' +
+      '<div class="row bk-auto"><label class="row small" style="gap:6px"><input type="checkbox" id="bkAuto" style="width:auto"' + (d.auto ? ' checked' : '') + '> สำรองอัตโนมัติทุกวันอาทิตย์</label>' +
       '<label class="row small" style="gap:6px">เก็บไว้ <input type="number" id="bkKeep" min="1" max="365" value="' + d.keep + '" style="width:80px"> ไฟล์ล่าสุด</label><button class="btn sm" id="bkSave">บันทึก</button></div>' +
-      '<p class="small muted" style="margin:6px 0 0">ระบบสำรองอัตโนมัติเมื่อมีคนเปิดหน้าเว็บในวันนั้น ถ้าไม่มีคนใช้งานจะยังไม่สำรอง ทุกไฟล์เก็บรูปทั้งหมดซ้ำกัน ถ้ารูปมากขึ้นและพื้นที่เครื่องน้อย ให้ลดจำนวนไฟล์ที่เก็บ</p>' + backupStatusHtml(d) + '</div>' +
+      '<p class="small muted" style="margin:6px 0 0">ระบบสำรองอัตโนมัติทุกวันอาทิตย์เมื่อมีคนเปิดหน้าเว็บ ถ้าวันอาทิตย์ไม่มีคนใช้งาน จะสำรองเมื่อมีคนเข้าครั้งแรกหลังจากนั้น ทุกไฟล์เก็บรูปทั้งหมดซ้ำกัน ถ้ารูปมากขึ้นและพื้นที่เครื่องน้อย ให้ลดจำนวนไฟล์ที่เก็บ</p>' + backupStatusHtml(d) + '</div>' +
       '<div class="card"><h3>ไฟล์สำรอง (' + d.files.length + ')</h3><div class="tablewrap"><table class="data"><thead><tr><th>วันเวลา</th><th>ประเภท</th><th style="text-align:right">รูป</th><th style="text-align:right">ขนาด</th><th></th></tr></thead><tbody>' +
       (d.files.map(function (f, i) {
         return '<tr><td style="white-space:nowrap">' + esc(f.time) + '</td><td>' + esc(f.kind_label) + '</td><td style="text-align:right;white-space:nowrap">' + (f.images === null ? '<span class="muted">ไม่รวมรูป</span>' : f.images) + '</td><td style="text-align:right;white-space:nowrap">' + size(f.size) + '</td><td style="white-space:nowrap;text-align:right">' +
@@ -1696,7 +1703,7 @@ VIEWS.backup = function (el) {
       send(0, '');
     };
     $$('[data-bk-dl]', el).forEach(function (b) {
-      b.onclick = function () { api('backupDownload', S.token, d.files[b.dataset.bkDl].name).then(function (u) { var a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }); };
+      b.onclick = function () { api('backupDownload', S.token, d.files[b.dataset.bkDl].name).then(function (u) { var a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { VIEWS.backup(el); }, 800); }); };
     });
     $$('[data-bk-rs]', el).forEach(function (b) { b.onclick = function () { restore(d.files[b.dataset.bkRs]); }; });
     $$('[data-bk-del]', el).forEach(function (b) {

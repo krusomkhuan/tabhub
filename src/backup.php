@@ -221,14 +221,24 @@ function backup_clean_temp(): void {
 
 // ======================= สำรองอัตโนมัติ =======================
 const BACKUP_STATUS_KEY = 'backup:auto_status';
+/** สำรองอัตโนมัติสัปดาห์ละครั้ง ทุกวันอาทิตย์ */
+const BACKUP_AUTO_INTERVAL = 7 * 86400;
 
-/** ถึงรอบสำรองเมื่อไฟล์อัตโนมัติล่าสุดเก่ากว่า 1 วัน (นับจากเวลาในชื่อไฟล์ ไม่ใช้เวลาแก้ไขไฟล์ที่เปลี่ยนได้เมื่อคัดลอก) */
+/** เวลา 00:00 ของวันอาทิตย์ล่าสุด (วันนี้ถ้าวันนี้เป็นวันอาทิตย์) ตามเวลาไทย */
+function backup_last_sunday(?int $now = null): int {
+  $now = $now ?? time();
+  return strtotime('today', $now) - (int)date('w', $now) * 86400;
+}
+
+/** ถึงรอบสำรองเมื่อยังไม่มีไฟล์อัตโนมัติตั้งแต่ 00:00 ของวันอาทิตย์ล่าสุด
+ *  ระบบสำรองเมื่อมีคนเปิดหน้าเว็บ ถ้าวันอาทิตย์ไม่มีคนเข้า จะสำรองเมื่อมีคนเข้าครั้งแรกหลังจากนั้น
+ *  (นับจากเวลาในชื่อไฟล์ ไม่ใช้เวลาแก้ไขไฟล์ที่เปลี่ยนได้เมื่อคัดลอก) */
 function backup_auto_due(): bool {
   clearstatcache();
   foreach (backup_files() as $f) {
     if ($f['kind'] !== 'auto') continue;
     $t = strtotime($f['time']);
-    return $t === false || $t <= time() - 86400;
+    return $t === false || $t < backup_last_sunday();
   }
   return true;
 }
@@ -244,7 +254,7 @@ function backup_status_put(array $s): void {
 }
 
 /**
- * สำรองอัตโนมัติวันละครั้ง ทำงานเมื่อมีผู้ใช้เข้าระบบ ถ้าล้มเหลวต้องไม่กระทบคำขอของผู้ใช้
+ * สำรองอัตโนมัติทุกวันอาทิตย์ ทำงานเมื่อมีผู้ใช้เข้าระบบ ถ้าล้มเหลวต้องไม่กระทบคำขอของผู้ใช้
  * mode = page_load: สำรองระหว่างโหลดหน้าเว็บ ใช้ได้กับทุกโฮสติ้ง
  * mode = after_response: ส่งคำตอบก่อนแล้วค่อยสำรอง โฮสติ้งบางแห่งหยุดสคริปต์หลังส่งคำตอบ จึงเป็นทางสำรองเท่านั้น
  * ใช้ล็อกของฐานข้อมูลกันหลายคำขอสำรองพร้อมกัน เพราะ flock ใช้ไม่ได้บนดิสก์ของโฮสติ้งบางแบบ
@@ -278,7 +288,7 @@ function backup_auto_run(string $mode): bool {
 /** เรียกหลังส่งคำตอบของทุกคำขอ */
 function backup_auto_tick(): void { backup_auto_run('after_response'); }
 
-/** ข้อความเตือนผู้ดูแลเมื่อไม่มีไฟล์สำรองอัตโนมัติใน 2 วัน หรือครั้งล่าสุดล้มเหลว */
+/** ข้อความเตือนผู้ดูแลเมื่อไม่มีไฟล์สำรองอัตโนมัติเกินรอบไป 1 วัน (8 วัน) หรือครั้งล่าสุดล้มเหลว */
 function backup_warning(): string {
   try {
     if ((readSettings()['backup_auto'] ?? 'true') === 'false') return '';
@@ -286,9 +296,29 @@ function backup_warning(): string {
     foreach (backup_files() as $f) if ($f['kind'] === 'auto') { $last = $f['time']; break; }
     $s = backup_status();
     if (($s['state'] ?? '') === 'error') return 'สำรองข้อมูลอัตโนมัติไม่สำเร็จ: ' . ($s['error'] ?? '') . ' — ดูที่เมนูสำรองข้อมูล';
-    if ($last === '' || strtotime($last) < time() - 2 * 86400) return 'ไม่มีไฟล์สำรองอัตโนมัติใน 2 วันที่ผ่านมา' . ($last ? ' (ล่าสุด ' . $last . ')' : '') . ' — กรุณาสำรองข้อมูลที่เมนูสำรองข้อมูล';
+    if ($last === '' || strtotime($last) < time() - BACKUP_AUTO_INTERVAL - 86400) return 'ไม่มีไฟล์สำรองอัตโนมัติใน 8 วันที่ผ่านมา' . ($last ? ' (ล่าสุด ' . $last . ')' : '') . ' — กรุณาสำรองข้อมูลที่เมนูสำรองข้อมูล';
   } catch (Throwable $e) { return 'ตรวจสถานะสำรองข้อมูลไม่สำเร็จ: ' . $e->getMessage(); }
   return '';
+}
+
+/* ===== เตือนให้ดาวน์โหลดไฟล์สำรองเก็บไว้นอกเครื่องแม่ข่าย =====
+   ไฟล์สำรองในเครื่องแม่ข่ายหายไปพร้อมเครื่องได้ จึงเตือนผู้ดูแลเมื่อไม่ได้ดาวน์โหลดเกิน 30 วัน */
+const BACKUP_OFFSITE_KEY = 'backup:last_download';
+const BACKUP_OFFSITE_DAYS = 30;
+function backup_last_download(): array {
+  try { $r = kvGet(BACKUP_OFFSITE_KEY); } catch (Throwable $_) { return []; }
+  $o = $r ? json_decode($r, true) : null;
+  return is_array($o) ? $o : [];
+}
+function backup_offsite_reminder(): string {
+  try {
+    $files = backup_files();
+    if (!$files) return '';
+    $at = (string)(backup_last_download()['at'] ?? '');
+    if ($at !== '' && strtotime($at) >= time() - BACKUP_OFFSITE_DAYS * 86400) return '';
+    return ($at === '' ? 'ยังไม่เคยดาวน์โหลดไฟล์สำรองเก็บไว้' : 'ไม่ได้ดาวน์โหลดไฟล์สำรองมาเกิน ' . BACKUP_OFFSITE_DAYS . ' วัน (ล่าสุด ' . $at . ')')
+      . ' — กรุณาดาวน์โหลดไฟล์สำรองล่าสุดที่เมนูสำรองข้อมูล แล้วเก็บไว้ในที่ปลอดภัยนอกเครื่องแม่ข่าย เช่น Google Drive หรือฮาร์ดดิสก์สำรอง';
+  } catch (Throwable $_) { return ''; }
 }
 
 // ======================= API (เฉพาะผู้ดูแลระบบ) =======================
@@ -302,7 +332,7 @@ function api_backupList($token = '') {
     if (is_file($p)) { $count++; $bytes += filesize($p); }
   }
   return ['files' => $files, 'auto' => ($s['backup_auto'] ?? 'true') !== 'false', 'keep' => (int)($s['backup_keep'] ?? BACKUP_KEEP_DEFAULT) ?: BACKUP_KEEP_DEFAULT, 'image_count' => $count, 'image_bytes' => $bytes,
-    'auto_status' => backup_status(), 'warning' => backup_warning(), 'now' => date('Y-m-d H:i:s'), 'dirs' => data_dirs_writable()];
+    'auto_status' => backup_status(), 'warning' => backup_warning(), 'offsite' => backup_offsite_reminder(), 'last_download' => backup_last_download(), 'offsite_days' => BACKUP_OFFSITE_DAYS, 'now' => date('Y-m-d H:i:s'), 'dirs' => data_dirs_writable()];
 }
 
 /** โฟลเดอร์ที่ระบบต้องเขียนได้ ใช้ตรวจ Permission บนโฮสติ้งจากหน้าสำรองข้อมูล */
@@ -343,7 +373,9 @@ function api_backupDownload($token = '', $name = '') {
   @set_time_limit(0);
   $p = backup_path(str($name));
   log_action($me, 'ดาวน์โหลดไฟล์สำรอง', basename($p));
-  return save_download_file($p, basename($p));
+  $url = save_download_file($p, basename($p));
+  try { kvPut(BACKUP_OFFSITE_KEY, json_encode(['at' => date('Y-m-d H:i:s'), 'name' => basename($p), 'by' => $me['name']], JSON_UNESCAPED_UNICODE)); } catch (Throwable $_) {}
+  return $url;
 }
 
 function api_backupDelete($token = '', $name = '') {

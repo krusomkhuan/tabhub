@@ -55,7 +55,7 @@
     dsel.onchange = function () { P.dept = this.value; P.id = ''; ui(); };
     var items;
     if (P.type === 'group') items = sortTh(D.groups.filter(function (g) { return !P.dept || String(g.department_id) === String(P.dept); }), function (g) { return g.code; }).map(function (g) { return [g.id, g.code, (IX.departments[g.department_id] || {}).name || 'ไม่ระบุแผนก']; });
-    else if (P.type === 'teacher') items = sortTh(D.teachers.filter(function (t) { return !P.dept || String(t.department_id) === String(P.dept); }), function (t) { return t.name; }).map(function (t) { return [t.id, t.name, (IX.departments[t.department_id] || {}).name || 'ไม่ระบุแผนก']; });
+    else if (P.type === 'teacher') items = sortTh(D.teachers.filter(function (t) { return !P.dept || Grid.inDept(t, P.dept); }), function (t) { return t.name; }).map(function (t) { return [t.id, t.name, (IX.departments[t.department_id] || {}).name || 'ไม่ระบุแผนก']; });
     else items = sortTh(D.rooms, function (r) { return (IX.buildings[r.building_id] || {}).name + r.name; }).map(function (r) { return [r.id, r.name + ' · ' + ((IX.buildings[r.building_id] || {}).name || ''), (IX.buildings[r.building_id] || {}).name || 'ไม่ระบุอาคาร', r.name]; });
     var isel = document.getElementById('pItem');
     isel.innerHTML = '<option value="">— เลือกรายการ —</option>' + items.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(P.id) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('');

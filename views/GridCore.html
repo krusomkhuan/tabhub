@@ -409,12 +409,15 @@ var Grid = (function () {
   /** ตำแหน่งหัวหน้าแผนกพร้อมชื่อแผนก เช่น หัวหน้าแผนกวิชาการตลาด (ชื่อแผนกที่ขึ้นต้นด้วย "แผนกวิชา" อยู่แล้วไม่ซ้ำคำ) */
   /* หัวหน้าแผนกวิชาของแผนก deptId: ครูที่สังกัดแผนกนั้นและติ๊กหัวหน้าแผนกก่อน
      ถ้าไม่มี ใช้ครูที่ระบุแผนกนี้ใน head_dept_ids (หัวหน้าแผนกวิชาเพิ่มเติม เป็นหัวหน้าได้หลายแผนก) */
+  function headsExtra(t, deptId) { return String(t.head_dept_ids || '').split(',').map(function (x) { return x.trim(); }).indexOf(String(deptId)) >= 0; }
   function deptHead(teachers, deptId) {
     deptId = String(deptId || ''); if (!deptId) return null;
     var list = teachers || [];
     return list.filter(function (t) { return String(t.department_id) === deptId && String(t.is_dept_head) === 'true'; })[0] ||
-      list.filter(function (t) { return String(t.head_dept_ids || '').split(',').map(function (x) { return x.trim(); }).indexOf(deptId) >= 0; })[0] || null;
+      list.filter(function (t) { return headsExtra(t, deptId); })[0] || null;
   }
+  /* ครูอยู่ในรายชื่อของแผนก deptId: แผนกที่สังกัด หรือแผนกที่เป็นหัวหน้าแผนกวิชาเพิ่มเติม (ใช้กับรายชื่อที่แสดงแยกแผนก) */
+  function inDept(t, deptId) { return String(t.department_id || '') === String(deptId || '') || (!!deptId && headsExtra(t, deptId)); }
   function deptHeadTitle(deptName) {
     return 'หัวหน้าแผนกวิชา' + String(deptName || '').trim().replace(/^แผนก(วิชา)?\s*/, '');
   }
@@ -586,7 +589,7 @@ var Grid = (function () {
   }
 
   return { render: render, esc: esc, colorFor: colorFor, periodTimes: periodTimes, courseList: courseList, lockedMap: lockedMap, mergeItems: mergeItems,
-    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, deptHead: deptHead, deptHeadTitle: deptHeadTitle, teacherSheet: teacherSheet, studentSheet: studentSheet, roomSheet: roomSheet, shortTeacherNames: shortTeacherNames, displayControl: displayControl, bindDisplayControl: bindDisplayControl, displayMode: displayMode, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
+    periodNo: periodNo, periodRange: periodRange, periodFromNo: periodFromNo, periodOptions: periodOptions, flagTime: flagTime, sessionColor: sessionColor, signBlock: signBlock, deptHead: deptHead, inDept: inDept, deptHeadTitle: deptHeadTitle, teacherSheet: teacherSheet, studentSheet: studentSheet, roomSheet: roomSheet, shortTeacherNames: shortTeacherNames, displayControl: displayControl, bindDisplayControl: bindDisplayControl, displayMode: displayMode, plcFor: plcFor, buildPdf: buildPdf, sharePdf: sharePdf, bindShareButton: bindShareButton };
 })();
 
 /* ===================== ลายเซ็นในเอกสาร =====================
