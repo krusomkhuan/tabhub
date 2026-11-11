@@ -201,9 +201,9 @@ function normalize_person_name(string $name): string {
   return preg_replace('/(?:(?:นาย|ครู)[ \t]*)?ป[ฏฎ]ิภา[นณ][ \t]+พานทอง/u', 'นายปฏิภาณ พานทอง', $name) ?? $name;
 }
 
-function thai_digits(string $s): string { return strtr($s, ['0' => '๐', '1' => '๑', '2' => '๒', '3' => '๓', '4' => '๔', '5' => '๕', '6' => '๖', '7' => '๗', '8' => '๘', '9' => '๙']); }
+/** ระบบใช้เลขอารบิคทั้งหมด: แปลงเลขไทย ๐-๙ เป็น 0-9 */
+function arabic_digits(string $s): string { return strtr($s, ['๐' => '0', '๑' => '1', '๒' => '2', '๓' => '3', '๔' => '4', '๕' => '5', '๖' => '6', '๗' => '7', '๘' => '8', '๙' => '9']); }
 
-/** แปลงรหัส/ชื่อกลุ่มเรียนที่มีอยู่เดิมเป็นเลขไทยครั้งเดียว (บันทึกครั้งต่อไปแปลงเองใน normalize_row_names) */
 /** สิทธิ์เพิ่มชั่วโมงเบิก (ข้อ 5.6) เก็บเป็นจำนวนชั่วโมง 1–3 ค่าเดิมที่เป็นติ๊ก (true) นับเป็น 1 ชม. */
 function award_hours($v): int {
   $v = trim((string)$v);
@@ -224,14 +224,22 @@ function award_bonus_hours_once(): void {
   });
 }
 
-function groups_thai_digits_once(): void {
-  if ((readSettings()['groups_thai_digits'] ?? '') === '1') return;
+/** แปลงเลขไทยที่บันทึกไว้เดิม (เช่น กลุ่มเรียน ช.คอม.๒/๑) เป็นเลขอารบิคในฐานข้อมูลครั้งเดียว
+ *  (readTable แปลงตอนอ่านอยู่แล้ว ส่วนนี้ให้ข้อมูลในฐานข้อมูลตรงกันด้วย) */
+function arabic_digits_once(): void {
+  if ((readSettings()['arabic_digits'] ?? '') === '1') return;
   with_lock(function () {
-    $rows = readTable('Groups');
-    $changed = false;
-    foreach ($rows as $r) foreach (['code', 'name', 'year_level'] as $c) if (thai_digits((string)$r[$c]) !== (string)$r[$c]) $changed = true;
-    if ($changed) writeTable('Groups', $rows);
-    saveSetting('groups_thai_digits', '1');
+    foreach (SCHEMA as $t => $cols) {
+      assert_table($t);
+      foreach ($cols as $c) {
+        $expr = q($c);
+        for ($i = 0; $i < 10; $i++) $expr = 'REPLACE(' . $expr . ", '" . mb_chr(0x0E50 + $i, 'UTF-8') . "', '" . $i . "')";
+        // เลขไทย ๐-๙ คือไบต์ E0 B9 90-99
+        db()->exec('UPDATE ' . q($t) . ' SET ' . q($c) . ' = ' . $expr . ' WHERE HEX(' . q($c) . ") REGEXP 'E0B99[0-9]'");
+      }
+      unset(Tbl::$cache[$t]);
+    }
+    saveSetting('arabic_digits', '1');
   });
 }
 
@@ -240,8 +248,8 @@ function normalize_row_names(string $table, array $row): array {
   if (($table === 'Teachers' || $table === 'users') && isset($row['name'])) {
     $row['name'] = normalize_person_name((string)$row['name']);
   }
-  // กลุ่มเรียนใช้เลขไทยเสมอ เช่น ช.คอม.๒/๑ ไม่ว่าจะเพิ่มเอง นำเข้า หรือดึงจาก TAB
-  if ($table === 'Groups') foreach (['code', 'name', 'year_level'] as $c) if (isset($row[$c])) $row[$c] = thai_digits((string)$row[$c]);
+  // ระบบใช้เลขอารบิคทั้งหมด เช่น ช.คอม.2/1 ไม่ว่าจะพิมพ์เอง นำเข้า หรือดึงจาก TAB
+  foreach ($row as $c => $v) if (is_string($v) && strpos($v, "à¹") !== false) $row[$c] = arabic_digits($v);
   if ($table === 'Settings' && strpos((string)($row['key'] ?? ''), 'signer_') === 0 && isset($row['value'])) {
     $row['value'] = normalize_person_name((string)$row['value']);
   }

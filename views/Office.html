@@ -94,8 +94,8 @@ var Office = (function () {
   }
   DocxWriter.prototype.tw = function (px) { return Math.round(px * this.k); };
   DocxWriter.prototype.runProps = function (el) {
-    // บันทึกข้อความราชการบนเว็บใช้ TH SarabunIT๙ จึงใช้ฟอนต์เดียวกันใน Word ให้ตัดบรรทัดตรงกัน
-    var s = cs(el), f = /MemoSarabun|SarabunIT/i.test(s.fontFamily) ? 'TH SarabunIT๙' : FONT;
+    // ใช้ TH Sarabun New ทุกเอกสาร (รวมบันทึกข้อความ) เพราะ TH SarabunIT๙ แสดงเลข 0-9 เป็นเลขไทย ระบบใช้เลขอารบิค
+    var s = cs(el), f = FONT;
     var r = '<w:rPr><w:rFonts w:ascii="' + f + '" w:hAnsi="' + f + '" w:cs="' + f + '" w:eastAsia="' + f + '"/>';
     if (parseInt(s.fontWeight, 10) >= 600) r += '<w:b/><w:bCs/>';
     if (s.fontStyle === 'italic') r += '<w:i/><w:iCs/>';

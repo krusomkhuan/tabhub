@@ -46,7 +46,8 @@
   var parseAttendance = function (r) { try { var a = JSON.parse(r.attendance || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
   var reportGroupIds = function (r) { return r.group_ids ? String(r.group_ids).split(',').filter(String) : [r.group_id]; };
   var TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-  var thNum = function (s) { return String(s === undefined || s === null ? '' : s).replace(/[0-9]/g, function (d) { return '๐๑๒๓๔๕๖๗๘๙'[d]; }); };
+  // ระบบใช้เลขอารบิคทั้งหมด: แปลงเลขไทยที่พิมพ์มาเป็นเลขอารบิค
+  var thNum = function (s) { return String(s === undefined || s === null ? '' : s).replace(/[๐-๙]/g, function (d) { return String('๐๑๒๓๔๕๖๗๘๙'.indexOf(d)); }); };
   var dateParts = function (date) { var p = String(date || '').slice(0, 10).split('-'); return { day: Number(p[2]) || '', month: TH_MONTHS[Number(p[1]) - 1] || '', year: p[0] ? Number(p[0]) + 543 : '' }; };
   var thLongDate = function (date) { var d = dateParts(date); return thNum(d.day + ' ' + d.month + ' ' + d.year); };
   var DEFAULT_MEMO = 'ตาม ประกาศ{วิทยาลัย} เรื่องการจัดการเรียน การสอนในรูปแบบ Online เป็นกรณีพิเศษ ในวันที่ {วันที่} ได้มอบหมายให้ข้าราชการครูและบุคลากรทางการศึกษา มาปฏิบัติหน้าที่ราชการตามปกติ โดยให้ครูผู้สอนจัดกิจกรรมการเรียนการสอนออนไลน์ตามตารางเรียน ตารางสอนที่วิทยาลัยฯ กำหนดไว้';

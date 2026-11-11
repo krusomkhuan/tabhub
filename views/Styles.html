@@ -264,12 +264,15 @@
   .rp-page { width: 760px; min-width: 760px; padding: 26px 40px; margin: 0 auto 18px; color: #000; font-size: 15px; line-height: 1.55; border-radius: 0; }
   .rp-memo-head { position: relative; height: 84px; }
   .rp-memo-head img { position: absolute; left: 0; top: 0; width: 66px; height: 76px; }
-  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunIT9-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
-  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunIT9-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
-  .rp-page.rp-parent-letter { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'MemoSarabun', 'TH SarabunIT๙', 'TH Sarabun New', serif; font-size: 16pt; line-height: 1.15; }
+  /* TH SarabunIT๙ วาดเลข 0-9 เป็นเลขไทย จึงใช้ฟอนต์นี้กับทุกตัวอักษรยกเว้นตัวเลข และใช้ TH Sarabun New (แบบเดียวกัน) วาดเลขอารบิค */
+  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunIT9-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; unicode-range: U+0000-002F, U+003A-10FFFF; }
+  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunIT9-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; unicode-range: U+0000-002F, U+003A-10FFFF; }
+  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunNew-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; unicode-range: U+0030-0039; }
+  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunNew-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; unicode-range: U+0030-0039; }
+  .rp-page.rp-parent-letter { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'MemoSarabun', 'TH Sarabun New', serif; font-size: 16pt; line-height: 1.15; }
   .rp-page.rp-parent-letter h3 { font-size: 16pt; }
   .rp-memo-head h1 { margin: 0; padding-top: 12mm; text-align: center; font-size: 29pt; font-weight: 700; line-height: 30pt; }
-  .rp-page.rp-memo { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'MemoSarabun', 'TH SarabunIT๙', 'TH Sarabun New', serif; font-size: 16pt; line-height: 1.15; }
+  .rp-page.rp-memo { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'MemoSarabun', 'TH Sarabun New', serif; font-size: 16pt; line-height: 1.15; }
   .rp-memo .rp-memo-head { height: 24mm; }
   /* ครุฑสูง 1.5 ซม. วางระดับเดียวกับคำว่า "บันทึกข้อความ" ตามแบบบันทึกข้อความงานสารบรรณ */
   .rp-memo .rp-memo-head img { top: 8mm; width: 15mm; height: 15mm; }
