@@ -6,7 +6,7 @@
 
 /** แถวละรูปเดียว ต้องพอดีคอลัมน์ TEXT (64 KB หลังแปลงเป็น base64) */
 const SIGNATURE_MAX_BYTES = 40000;
-const SIGNATURE_MAX_PER_OWNER = 10;
+const SIGNATURE_MAX_PER_OWNER = 5;
 const SIGNATURE_SETTING_KEYS = ['signer_curriculum', 'signer_deputy', 'signer_finance', 'signer_admin_deputy', 'signer_dvt', 'signer_director'];
 
 /** ไม่สนช่องว่าง และถือว่าสระอำแบบพิมพ์แยก (นิคหิต + สระอา) เป็นตัวเดียวกัน ต้องตรงกับ Sig.key ในหน้าเว็บ */
