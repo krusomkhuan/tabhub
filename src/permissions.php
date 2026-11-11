@@ -10,6 +10,8 @@ const MENU_ACCESS = [
   'signature' => ['teacher', ['signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary']],
   'schedule' => ['dept', ['placeSession', 'removeSession', 'toggleLock', 'runAutoSchedule', 'clearSchedule']],
   'plans' => ['dept', ['copyPlans']],
+  // ครูดูแผนการเรียนได้อย่างเดียว และตั้งคาบใน/นอกของวิชาที่สอนให้แผนกอื่น (ผู้ที่มีเมนู plans จะไม่เห็นเมนูนี้ซ้ำ)
+  'plans-view' => ['teacher', []],
   'plancheck' => ['teacher', []],
   't-PlcSlots' => ['dept', []],
   'manual' => ['teacher', []],

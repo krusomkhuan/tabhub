@@ -53,7 +53,13 @@ function rank(r) { return { teacher: 1, dept: 2, curriculum: 3, executive: 3, ad
 function academicRole(r) { return r === 'admin' || r === 'curriculum'; }
 function can(r) { return S.me && rank(S.me.role) >= rank(r); }
 /* เมนูมาจากเซิร์ฟเวอร์ S.me.role คือบทบาทของหน้าปัจจุบัน ส่วน S.me.base_role คือบทบาทจริงของบัญชี */
-function menuOk(id) { return !!S.me && (S.me.menus || []).indexOf(id) >= 0; }
+function menuOk(id) {
+  var m = (S.me && S.me.menus) || [];
+  // เมนูดูอย่างเดียวซ่อนเมื่อผู้ใช้มีเมนูเต็มของหน้าเดียวกันอยู่แล้ว
+  var n = typeof NAV !== 'undefined' && NAV.filter(function (x) { return x.id === id; })[0];
+  if (n && n.hideIf && m.indexOf(n.hideIf) >= 0) return false;
+  return m.indexOf(id) >= 0;
+}
 
 function buildIndex() {
   IDX = {};
@@ -142,6 +148,7 @@ var NAV = [
   { id: 'signature', label: 'ลายเซ็นของฉัน', role: 'teacher' },
   { id: 'schedule', label: 'จัดตารางเรียน', role: 'dept' },
   { id: 'plans', label: 'แผนการเรียน', role: 'dept' },
+  { id: 'plans-view', label: 'แผนการเรียน', permLabel: 'แผนการเรียน (ดูอย่างเดียว และตั้งคาบใน/นอกของวิชาที่สอนนอกแผนก)', role: 'teacher', hideIf: 'plans' },
   { id: 'plancheck', label: 'ตรวจสอบแผนการเรียน', role: 'teacher' },
   { id: 't-PlcSlots', label: 'คาบ PLC', role: 'dept' },
   { id: 'manual', label: 'คู่มือการใช้งาน', role: 'teacher' },
@@ -170,7 +177,7 @@ var NAV = [
   { id: 'issues', label: 'แจ้งปัญหาการใช้งาน', role: 'teacher' }
 ];
 
-var NAV_ICON = { dashboard: '🏠', mine: '🗓', signature: '✍️', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
+var NAV_ICON = { dashboard: '🏠', mine: '🗓', signature: '✍️', 'plans-view': '📚', schedule: '🧩', plans: '📚', plancheck: '✅', manual: '📖', backup: '💾', colors: '🎨', issues: '🛟', reports: '🖨', deptview: '👥', hours: '⏱', log: '📝',
   'ot-claims': '💰', 'ot-subs': '🔁', 'ot-summary': '🧾', 'ot-teachers': '🎚', 'ot-holidays': '🏖', users: '👤', settings: '⚙', import: '⤵',
   't-OtSchemes': '📋', 't-OtPerHead': '🙋', 't-OtRounds': '📆', 't-OtBlocked': '⛔', 't-Semesters': '📅', 't-Departments': '🏫', 't-Majors': '🎓',
   't-Teachers': '🧑‍🏫', 't-Buildings': '🏢', 't-Rooms': '🚪', 't-Courses': '📘', 't-Groups': '👩‍🎓', 't-Windows': '⏳', 't-PlcSlots': '🤝' };
@@ -1226,9 +1233,32 @@ function sessionModal(sid) {
 }
 
 /* ===================== แผนการเรียน ===================== */
+/* คาบใน/คาบนอกในตารางแผน: เลือกได้ในแถวที่ผู้ใช้แก้แผนได้ หรือเป็นครูผู้สอนวิชานั้นให้กลุ่มของแผนกอื่น */
+var HOUR_TYPES = [['', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']];
+function myOutsidePlan(p) {
+  var me = S.me && IDX.Teachers[S.me.teacher_id], g = IDX.Groups[p.group_id];
+  return !!(me && g && Sched.ids(p.teacher_ids).indexOf(String(me.id)) >= 0 && String(g.department_id) !== String(me.department_id));
+}
+function hourTypeCell(p) {
+  var how = canEditPlan(p) ? 'plan' : myOutsidePlan(p) ? 'teacher' : '';
+  if (!how) { var o = HOUR_TYPES.filter(function (x) { return x[0] === (p.hour_type || ''); })[0]; return '<span class="small">' + (o ? o[1] : 'คาบใน') + '</span>'; }
+  return '<select class="plan-ht" data-ht="' + esc(p.id) + '" data-how="' + how + '" style="width:auto">' + HOUR_TYPES.map(function (o) { return '<option value="' + o[0] + '"' + ((p.hour_type || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+}
+/* บันทึกประเภทคาบ: วิชาเรียนร่วมเปลี่ยนพร้อมกันทุกกลุ่มที่แก้ได้ */
+function saveHourType(p, value, how) {
+  if (how === 'teacher') return api('planHourType', S.token, p.id, value);
+  var list = [p].concat(p.joint_key ? S.plans.filter(function (x) { return x.joint_key === p.joint_key && x.id !== p.id && canEditPlan(x); }) : []);
+  return list.reduce(function (chain, x) {
+    return chain.then(function () { return api('saveRow', S.token, 'Plans', { id: x.id, group_id: x.group_id, semester_id: x.semester_id, hour_type: value }); });
+  }, Promise.resolve()).then(function () { return list.length; });
+}
+
+VIEWS['plans-view'] = function (el) { VIEWS.plans(el); };
 VIEWS.plans = function (el) {
   if (!S.sem) { el.innerHTML = '<div class="card">ยังไม่มีภาคเรียน</div>'; return; }
   var sel = S.sel;
+  // ครูที่เปิดครั้งแรก: เริ่มที่แผนกของกลุ่มที่ตนสอนนอกแผนก
+  if (!sel.dept && !sel.group && S.me.role === 'teacher') { var op = S.plans.filter(myOutsidePlan)[0]; if (op) sel.dept = (IDX.Groups[op.group_id] || {}).department_id; }
   el.innerHTML = '<div class="split"><div class="card" style="padding:10px"><select id="pDept" style="margin-bottom:8px">' + deptOptions(sel.dept) + '</select>' +
     '<div class="glist">' + groupListHtml(sel.dept, sel.group, 'data-pg') + '</div></div><div id="planMain"></div></div>';
   $('#pDept').onchange = function () { sel.dept = this.value; VIEWS.plans(el); };
@@ -1249,15 +1279,23 @@ VIEWS.plans = function (el) {
   var total = plans.reduce(function (a, p) { return a + Sched.planPeriods(p, C); }, 0);
   box.innerHTML = '<div class="card"><div class="row" style="margin-bottom:10px"><h3 class="grow" style="margin:0">แผนการเรียน ' + esc(groupCode(sel.group)) + ' · ภาคเรียน ' + esc(semLabel(S.sem)) + '</h3><span class="tag">' + total + ' คาบ/สัปดาห์</span>' +
     (editable ? '<button class="btn pri sm" id="addPlan">+ เพิ่มวิชา</button>' : '') + '</div>' +
-    '<div class="tablewrap"><table class="data"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>ครูผู้สอน</th><th>ห้อง</th><th>คาบ/สัปดาห์</th><th>การแบ่ง</th><th></th></tr></thead><tbody>' +
+    '<div class="tablewrap"><table class="data"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>ครูผู้สอน</th><th>ห้อง</th><th>คาบ/สัปดาห์</th><th>การแบ่ง</th><th>ใน/นอก</th><th></th></tr></thead><tbody>' +
     (plans.map(function (p) {
       var c = courseOf(p.course_id);
-      return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn" title="รหัสเรียนร่วม ' + esc(p.joint_key) + '">เรียนร่วม</span>' : '') + (p.hour_type === 'out' ? ' <span class="tag">คาบนอก</span>' : p.hour_type === 'none' ? ' <span class="tag">ไม่นับ</span>' : '') + '</td><td class="small">' + esc(teacherNames(p.teacher_ids)) +
-        '</td><td>' + esc(roomName(p.room_id)) + '</td><td>' + Sched.planPeriods(p, C) + '</td><td>' + esc(Sched.splitBlocks(p, C).join('+')) + '</td><td style="white-space:nowrap">' +
+      return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn" title="รหัสเรียนร่วม ' + esc(p.joint_key) + '">เรียนร่วม</span>' : '') + '</td><td class="small">' + esc(teacherNames(p.teacher_ids)) +
+        '</td><td>' + esc(roomName(p.room_id)) + '</td><td>' + Sched.planPeriods(p, C) + '</td><td>' + esc(Sched.splitBlocks(p, C).join('+')) + '</td><td>' + hourTypeCell(p) + '</td><td style="white-space:nowrap">' +
         (editable ? '<button class="btn sm" data-ep="' + esc(p.id) + '">แก้ไข</button> <button class="btn sm bad" data-dp="' + esc(p.id) + '">ลบ</button>' : canEditPlan(p) ? '<button class="btn sm" data-ep="' + esc(p.id) + '" title="ครูในแผนกของคุณสอนวิชานี้">แก้ไข</button>' : '') + '</td></tr>';
-    }).join('') || '<tr><td colspan="7" class="muted">ยังไม่มีวิชา</td></tr>') + '</tbody></table></div>' +
+    }).join('') || '<tr><td colspan="8" class="muted">ยังไม่มีวิชา</td></tr>') + '</tbody></table></div>' +
+    (!plans.some(canEditPlan) && plans.some(myOutsidePlan) ? '<p class="small muted" style="margin:8px 0 0">คุณตั้งคาบใน/คาบนอกได้เฉพาะวิชาที่คุณสอนในกลุ่มนี้ วิชาเรียนร่วมเปลี่ยนพร้อมกันทุกกลุ่ม ส่วนข้อมูลอื่นของแผนให้วิชาการแผนกเป็นผู้แก้</p>' : '') +
     (!editable && plans.some(canEditPlan) ? '<p class="small muted" style="margin:8px 0 0">กลุ่มนี้เป็นของแผนกอื่น คุณแก้ได้เฉพาะวิชาที่ครูในแผนกของคุณสอน (ครู ห้อง จำนวนคาบ การแบ่งคาบ คาบใน/นอก และหมายเหตุ) ส่วนการเพิ่ม–ลบวิชาและจัดตารางให้แผนกเจ้าของกลุ่มเป็นผู้ทำ</p>' : '') + '</div>';
   if ($('#addPlan')) $('#addPlan').onclick = function () { planModal({ group_id: sel.group, semester_id: S.sem }); };
+  $$('[data-ht]', box).forEach(function (s) {
+    s.onchange = function () {
+      s.disabled = true;
+      saveHourType(IDX.Plans[s.dataset.ht], s.value, s.dataset.how).then(function (n) { toast('บันทึกแล้ว' + (n > 1 ? ' ' + n + ' กลุ่มที่เรียนร่วม' : '')); })
+        .catch(function () {}).then(loadSchedule).then(function () { VIEWS.plans(el); });
+    };
+  });
   $$('[data-ep]', box).forEach(function (b) { b.onclick = function () { planModal(IDX.Plans[b.dataset.ep]); }; });
   $$('[data-dp]', box).forEach(function (b) {
     b.onclick = function () {
@@ -2071,7 +2109,7 @@ function permMenuHtml() {
   NAV.forEach(function (n) {
     if (n.sec) { html +=(open ? '</div>' : '') + '<div class="perm-sec">' + esc(n.sec) + '</div><div class="perm-grid">'; open = true; return; }
     if (n.role === 'admin') return;
-    html += '<label class="perm-item"><input type="checkbox" data-menu="' + esc(n.id) + '" data-level="' + esc(n.role) + '"><span>' + esc(n.label) + '</span><small></small></label>';
+    html += '<label class="perm-item"><input type="checkbox" data-menu="' + esc(n.id) + '" data-level="' + esc(n.role) + '"><span>' + esc(n.permLabel || n.label) + '</span><small></small></label>';
   });
   return html + (open ? '</div>' : '');
 }
