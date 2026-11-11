@@ -821,6 +821,13 @@ function canEditGroup(gid) {
   if (S.me.role !== 'dept') return false;
   var g = IDX.Groups[gid]; return g && String(g.department_id) === String(S.me.department_id);
 }
+/* วิชาการแผนกแก้แถวแผนของกลุ่มแผนกอื่นได้ เมื่อครูในแผนกตัวเองเป็นผู้สอน (เช่น สามัญสัมพันธ์สอนวิชาสามัญ/เรียนร่วม)
+   แก้ได้เฉพาะครู ห้อง คาบ การแบ่ง คาบใน/นอก และหมายเหตุ เซิร์ฟเวอร์ตรวจซ้ำใน assert_dept_can_save_plan */
+function planTaughtByMyDept(p) {
+  if (!S.me || S.me.role !== 'dept') return false;
+  return Sched.ids(p.teacher_ids).some(function (id) { var t = IDX.Teachers[id]; return t && String(t.department_id) === String(S.me.department_id); });
+}
+function canEditPlan(p) { return canEditGroup(p.group_id) || planTaughtByMyDept(p); }
 
 VIEWS.schedule = function (el) {
   if (!S.sem) { el.innerHTML = '<div class="card">ยังไม่มีภาคเรียน — เพิ่มที่เมนู ปีการศึกษา / ภาคเรียน</div>'; return; }
@@ -1247,8 +1254,9 @@ VIEWS.plans = function (el) {
       var c = courseOf(p.course_id);
       return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn" title="รหัสเรียนร่วม ' + esc(p.joint_key) + '">เรียนร่วม</span>' : '') + (p.hour_type === 'out' ? ' <span class="tag">คาบนอก</span>' : p.hour_type === 'none' ? ' <span class="tag">ไม่นับ</span>' : '') + '</td><td class="small">' + esc(teacherNames(p.teacher_ids)) +
         '</td><td>' + esc(roomName(p.room_id)) + '</td><td>' + Sched.planPeriods(p, C) + '</td><td>' + esc(Sched.splitBlocks(p, C).join('+')) + '</td><td style="white-space:nowrap">' +
-        (editable ? '<button class="btn sm" data-ep="' + esc(p.id) + '">แก้ไข</button> <button class="btn sm bad" data-dp="' + esc(p.id) + '">ลบ</button>' : '') + '</td></tr>';
-    }).join('') || '<tr><td colspan="7" class="muted">ยังไม่มีวิชา</td></tr>') + '</tbody></table></div></div>';
+        (editable ? '<button class="btn sm" data-ep="' + esc(p.id) + '">แก้ไข</button> <button class="btn sm bad" data-dp="' + esc(p.id) + '">ลบ</button>' : canEditPlan(p) ? '<button class="btn sm" data-ep="' + esc(p.id) + '" title="ครูในแผนกของคุณสอนวิชานี้">แก้ไข</button>' : '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="muted">ยังไม่มีวิชา</td></tr>') + '</tbody></table></div>' +
+    (!editable && plans.some(canEditPlan) ? '<p class="small muted" style="margin:8px 0 0">กลุ่มนี้เป็นของแผนกอื่น คุณแก้ได้เฉพาะวิชาที่ครูในแผนกของคุณสอน (ครู ห้อง จำนวนคาบ การแบ่งคาบ คาบใน/นอก และหมายเหตุ) ส่วนการเพิ่ม–ลบวิชาและจัดตารางให้แผนกเจ้าของกลุ่มเป็นผู้ทำ</p>' : '') + '</div>';
   if ($('#addPlan')) $('#addPlan').onclick = function () { planModal({ group_id: sel.group, semester_id: S.sem }); };
   $$('[data-ep]', box).forEach(function (b) { b.onclick = function () { planModal(IDX.Plans[b.dataset.ep]); }; });
   $$('[data-dp]', box).forEach(function (b) {
@@ -1282,6 +1290,9 @@ function selectedValues(sel) { return Array.prototype.filter.call(sel.options, f
 
 function planModal(p) {
   var c = p.course_id ? courseOf(p.course_id) : null;
+  var ownGroup = canEditGroup(p.group_id);
+  // กลุ่มอื่นที่เรียนร่วมวิชานี้ (รหัสเรียนร่วมเดียวกัน) และผู้ใช้แก้ได้
+  var siblings = p.id && p.joint_key ? S.plans.filter(function (x) { return x.joint_key === p.joint_key && x.id !== p.id && canEditPlan(x); }) : [];
   var roomOpts = '<option value="">— ไม่กำหนด (ใช้ห้องประจำกลุ่ม/ระบุภายหลัง) —</option>' + sortBy(S.D.Rooms, function (r) { return nm('Buildings', r.building_id) + r.name; }).map(function (r) {
     return '<option value="' + esc(r.id) + '"' + (String(r.id) === String(p.room_id) ? ' selected' : '') + '>' + esc(r.name + ' · ' + nm('Buildings', r.building_id)) + '</option>';
   }).join('');
@@ -1295,13 +1306,24 @@ function planModal(p) {
     '<label class="f">คาบใน / คาบนอก (ใช้นับ รวมใน และ รวมนอก ในตารางสอนครู)</label><select id="pmH">' + [['', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].map(function (o) { return '<option value="' + o[0] + '"' + (String(p.hour_type || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
     '<label class="row small" style="margin-top:10px"><input type="checkbox" id="pmW" style="width:auto"' + (String(p.workplace) === 'true' ? ' checked' : '') + '> เรียนที่สถานประกอบการ / ฝึกงาน / ทวิภาคี — ล็อกห้ามขยับ ห้ามสอนชดเชย (ระเบียบข้อ 6)</label>' +
     '<label class="f">หมายเหตุ</label><input id="pmNote" value="' + esc(p.note) + '">' +
+    (siblings.length ? '<label class="row small" style="margin-top:10px;gap:6px"><input type="checkbox" id="pmAll" style="width:auto" checked> ใช้ครู ห้อง จำนวนคาบ การแบ่งคาบ และคาบใน/นอกเดียวกันกับกลุ่มที่เรียนร่วมทั้งหมด (' + esc(siblings.map(function (x) { return groupCode(x.group_id); }).join(', ')) + ')</label>' : '') +
+    (ownGroup ? '' : '<p class="small muted">กลุ่มนี้เป็นของแผนก' + esc(deptName((IDX.Groups[p.group_id] || {}).department_id)) + ' แก้รายวิชาและรหัสเรียนร่วมไม่ได้ และต้องมีครูในแผนกของคุณเป็นผู้สอนอย่างน้อย 1 คน</p>') +
     '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pmSave">บันทึก</button></div>');
+  if (!ownGroup) { $('#pmC', m).disabled = true; $('#pmJ', m).disabled = true; }
   $('#pmSave', m).onclick = function () {
     var course = courseFromText($('#pmC').value);
     if (!course) return toast('ไม่พบรายวิชานี้ — เพิ่มที่เมนู รายวิชา ก่อน', 1);
     var row = { id: p.id || '', semester_id: p.semester_id || S.sem, group_id: p.group_id, course_id: course.id, teacher_ids: selectedValues($('#pmT')).join(','),
       room_id: $('#pmR').value, periods: $('#pmN').value, split: $('#pmS').value.replace(/\s/g, ''), joint_key: $('#pmJ').value.trim(), workplace: $('#pmW').checked, note: $('#pmNote').value, hour_type: $('#pmH').value };
-    api('saveRow', S.token, 'Plans', row).then(loadSchedule).then(function () { closeModal(); VIEWS.plans($('#content')); toast('บันทึกแล้ว'); });
+    if (!ownGroup) { row.course_id = p.course_id; row.joint_key = p.joint_key; } // ช่องที่ล็อกไว้ ส่งค่าเดิม
+    var btn = this; btn.disabled = true;
+    var all = $('#pmAll', m) && $('#pmAll', m).checked ? siblings : [];
+    // บันทึกทีละแถว ให้กลุ่มเรียนร่วมใช้ครูและห้องชุดเดียวกัน
+    all.reduce(function (chain, x) {
+      return chain.then(function () { return api('saveRow', S.token, 'Plans', { id: x.id, group_id: x.group_id, semester_id: x.semester_id, teacher_ids: row.teacher_ids, room_id: row.room_id, periods: row.periods, split: row.split, hour_type: row.hour_type }); });
+    }, api('saveRow', S.token, 'Plans', row)).then(loadSchedule).then(function () {
+      closeModal(); VIEWS.plans($('#content')); toast(all.length ? 'บันทึกแล้ว ' + (all.length + 1) + ' กลุ่มที่เรียนร่วม' : 'บันทึกแล้ว');
+    }).catch(function () { btn.disabled = false; loadSchedule().then(function () { VIEWS.plans($('#content')); }); });
   };
 }
 
@@ -1375,7 +1397,39 @@ VIEWS.mine = function (el) {
   el.innerHTML = '<div class="row no-print" style="margin-bottom:10px">' + Grid.displayControl('mMode') + '<button class="btn pri" id="mShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button></div>' + reportPage('teacher', S.me.teacher_id);
   Grid.bindDisplayControl($('#mMode'), function () { VIEWS.mine(el); });
   Grid.bindShareButton($('#mShare'), function () { return $$('#content .page'); }, function () { return 'ตารางสอน ' + S.me.name + ' ภาคเรียน ' + semLabel(S.sem); }, function (m, bad) { toast(m, bad); });
+  mineHourTypes(el);
 };
+
+/* วิชาที่ครูสอนให้กลุ่มของแผนกอื่น (เช่น ครูสามัญ): ครูตั้งคาบใน/คาบนอกเองได้ กลุ่มที่เรียนร่วมกันแสดงเป็นแถวเดียว */
+function mineHourTypes(el) {
+  var me = IDX.Teachers[S.me.teacher_id]; if (!me) return;
+  var rows = [], byKey = {};
+  S.plans.forEach(function (p) {
+    if (Sched.ids(p.teacher_ids).indexOf(String(me.id)) < 0) return;
+    var g = IDX.Groups[p.group_id]; if (!g || String(g.department_id) === String(me.department_id)) return;
+    var k = p.joint_key ? 'J:' + p.joint_key : 'P:' + p.id;
+    if (!byKey[k]) { byKey[k] = { plan: p, groups: [] }; rows.push(byKey[k]); }
+    byKey[k].groups.push(groupCode(p.group_id));
+  });
+  if (!rows.length) return;
+  rows = sortBy(rows, function (r) { return courseOf(r.plan.course_id).code + r.groups.join(); });
+  var box = document.createElement('div'); box.className = 'card no-print';
+  box.innerHTML = '<h3 style="margin-top:0">คาบใน / คาบนอก ของวิชาที่สอนให้แผนกอื่น</h3><p class="small muted">ใช้นับยอดรวมใน/รวมนอกในตารางสอนของคุณ กลุ่มที่เรียนร่วมกันเปลี่ยนพร้อมกันทั้งชุด วิชาในแผนกของคุณเองให้วิชาการแผนกเป็นผู้ตั้ง</p>' +
+    '<div class="tablewrap"><table class="data"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>กลุ่มเรียน</th><th>แผนก</th><th>ประเภทคาบ</th></tr></thead><tbody>' +
+    rows.map(function (r) {
+      var p = r.plan, c = courseOf(p.course_id);
+      return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn">เรียนร่วม</span>' : '') + '</td><td class="small">' + esc(r.groups.join(', ')) + '</td><td class="small">' + esc(deptName((IDX.Groups[p.group_id] || {}).department_id)) + '</td>' +
+        '<td><select data-ht="' + esc(p.id) + '" style="width:auto">' + [['', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.hour_type || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></td></tr>';
+    }).join('') + '</tbody></table></div>';
+  el.appendChild(box);
+  $$('[data-ht]', box).forEach(function (s) {
+    s.onchange = function () {
+      s.disabled = true;
+      api('planHourType', S.token, s.dataset.ht, s.value).then(function (n) { toast('บันทึกแล้ว' + (n > 1 ? ' ' + n + ' กลุ่มที่เรียนร่วม' : '')); return loadSchedule(); }).then(function () { VIEWS.mine(el); })
+        .catch(function () { s.disabled = false; });
+    };
+  });
+}
 
 VIEWS.deptview = function (el) {
   var d = S.sel.dv || (S.sel.dv = S.me.department_id || (S.D.Departments[0] || {}).id);

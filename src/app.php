@@ -30,6 +30,7 @@ const API_ALLOW = [
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
   'signatureMap', 'signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary', 'signaturePlaceSave',
   'teachDocGet', 'teachDocSave', 'teachDocReset', 'docFileGet', 'docFileDownload', 'docFileSave', 'docFileDelete',
+  'planHourType',
   'issueList', 'issueSave', 'issueReply', 'issueDelete', 'backupList', 'backupCreate', 'backupDownload', 'backupDelete', 'backupUploadChunk', 'backupRestore',
 ];
 const LOGIN_MAX_FAILS = 5;

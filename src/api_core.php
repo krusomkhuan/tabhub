@@ -37,7 +37,7 @@ const EXEC_BLOCKED_APIS = [
   'teachReportImageAdd', 'teachReportImageDelete', 'teachReportSave', 'teachReportReview', 'teachReportDelete',
   'visitSave', 'visitDelete', 'visitImageAdd', 'visitImageDelete', 'visitDocSave', 'visitDocDelete',
   'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
-  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete',
+  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete', 'planHourType',
 ];
 /** เมนูที่มีไว้แก้ข้อมูลอย่างเดียว ผู้บริหารไม่ต้องเห็น */
 const EXEC_HIDDEN_MENUS = ['import', 'windows'];
@@ -371,9 +371,8 @@ function api_saveRow($token = '', $name = '', $row = []) {
     $id = $row['id'] ?? '';
     $i = js_true($id) ? find_row($rows, $id) : null;
     // ตรวจสิทธิ์จากแถวเดิมด้วย ไม่ใช่แค่ค่าที่ส่งมา
-    if ($i !== null && $name === 'Plans' && $me['role'] === 'dept') assert_dept_can_edit($me, $rows[$i]['group_id'], $rows[$i]['semester_id']);
+    if ($name === 'Plans') assert_dept_can_save_plan($me, $i !== null ? $rows[$i] : null, $row);
     if ($i !== null && $name === 'OtAbsences') { assert_ot_teacher($me, $rows[$i]['teacher_id']); assert_claim_open($rows[$i]['round_id'], $rows[$i]['teacher_id']); }
-    if ($name === 'Plans' && $me['role'] === 'dept') assert_dept_can_edit($me, $row['group_id'] ?? '', $row['semester_id'] ?? '');
     if ($name === 'OtAbsences') {
       assert_ot_teacher($me, $row['teacher_id'] ?? '');
       assert_claim_open($row['round_id'] ?? '', $row['teacher_id'] ?? '');
@@ -488,6 +487,77 @@ function assert_dept_can_edit(array $me, $groupId, $semesterId): void {
   $g = null;
   foreach (readTable('Groups') as $x) if ((string)$x['id'] === str($groupId)) { $g = $x; break; }
   if (!$g || (string)$g['department_id'] !== (string)$me['department_id']) throw new Exception('จัดได้เฉพาะกลุ่มเรียนของแผนกตัวเอง');
+  assert_dept_window($me, $semesterId);
+}
+
+/** แผนนี้มีครูในแผนกของผู้ใช้เป็นผู้สอน เช่น แผนกสามัญสัมพันธ์สอนวิชาสามัญ/เรียนร่วมให้กลุ่มของแผนกอื่น */
+function dept_teaches_plan(array $me, array $plan): bool {
+  $teachers = idx_table('Teachers');
+  foreach (explode(',', str($plan['teacher_ids'] ?? '')) as $id) {
+    $t = $teachers[trim($id)] ?? null;
+    if ($t && (string)$t['department_id'] === (string)$me['department_id']) return true;
+  }
+  return false;
+}
+
+/**
+ * สิทธิ์วิชาการแผนกในการบันทึกแผน: กลุ่มของแผนกตัวเองทำได้ทุกอย่าง
+ * กลุ่มของแผนกอื่นแก้ได้เฉพาะแถวที่ครูในแผนกตัวเองสอน และแก้ได้เฉพาะครู ห้อง จำนวนคาบ การแบ่งคาบ คาบใน/นอก และหมายเหตุ
+ * โดยหลังแก้ต้องยังมีครูในแผนกตัวเองสอนอยู่ (เพิ่มหรือลบวิชาในแผนของแผนกอื่นไม่ได้)
+ */
+function assert_dept_can_save_plan(array $me, ?array $old, array $new): void {
+  if ($me['role'] !== 'dept') return;
+  $groups = idx_table('Groups');
+  $mine = fn($gid) => (string)($groups[str($gid)]['department_id'] ?? '') === (string)$me['department_id'];
+  $gid = array_key_exists('group_id', $new) ? $new['group_id'] : ($old['group_id'] ?? '');
+  if ($mine($gid) && (!$old || $mine($old['group_id']))) {
+    if ($old) assert_dept_can_edit($me, $old['group_id'], $old['semester_id']);
+    assert_dept_can_edit($me, $gid, $new['semester_id'] ?? ($old['semester_id'] ?? ''));
+    return;
+  }
+  if (!$old || !dept_teaches_plan($me, $old)) throw new Exception('จัดได้เฉพาะกลุ่มเรียนของแผนกตัวเอง หรือวิชาที่ครูในแผนกตัวเองเป็นผู้สอน');
+  foreach (['group_id', 'semester_id', 'course_id', 'joint_key'] as $k) {
+    if (array_key_exists($k, $new) && str($new[$k]) !== str($old[$k])) throw new Exception('วิชาในแผนของแผนกอื่นแก้ได้เฉพาะครู ห้อง จำนวนคาบ การแบ่งคาบ คาบใน/นอก และหมายเหตุ');
+  }
+  if (!dept_teaches_plan($me, array_merge($old, $new))) throw new Exception('ต้องมีครูในแผนกของคุณเป็นผู้สอนวิชานี้อย่างน้อย 1 คน');
+  assert_dept_window($me, $old['semester_id']);
+}
+
+const PLAN_HOUR_TYPES = ['', 'out', 'none'];
+
+/**
+ * ครูที่สอนกลุ่มของแผนกอื่น (เช่น ครูสามัญ) ตั้งคาบใน/คาบนอกของวิชาที่ตัวเองสอนได้
+ * ใช้กับทุกกลุ่มที่เรียนร่วมวิชานี้กับครูคนเดียวกัน เพราะเป็นคาบชุดเดียวกัน
+ */
+function api_planHourType($token = '', $planId = '', $hourType = '') {
+  $me = auth_user($token);
+  $hourType = str($hourType);
+  if (!in_array($hourType, PLAN_HOUR_TYPES, true)) throw new Exception('ประเภทคาบไม่ถูกต้อง');
+  $tid = (string)($me['teacher_id'] ?? '');
+  if ($tid === '') throw new Exception('บัญชีนี้ยังไม่ได้ผูกกับรายชื่อครู');
+  return with_lock(function () use ($me, $planId, $hourType, $tid) {
+    $rows = readTable('Plans');
+    $i = find_row($rows, str($planId));
+    if ($i === null) throw new Exception('ไม่พบวิชาในแผน');
+    $teacher = idx_table('Teachers')[$tid] ?? null;
+    $group = idx_table('Groups')[(string)$rows[$i]['group_id']] ?? null;
+    $teaches = fn($p) => in_array($tid, array_map('trim', explode(',', (string)$p['teacher_ids'])), true);
+    if (!$teacher || !$teaches($rows[$i])) throw new Exception('ตั้งได้เฉพาะวิชาที่คุณเป็นผู้สอน');
+    if (!$group || (string)$group['department_id'] === (string)$teacher['department_id']) throw new Exception('วิชาในกลุ่มของแผนกตัวเอง ให้วิชาการแผนกเป็นผู้ตั้ง');
+    $key = (string)$rows[$i]['joint_key'];
+    $n = 0;
+    foreach ($rows as $k => $p) {
+      $same = $k === $i || ($key !== '' && (string)$p['joint_key'] === $key && (string)$p['semester_id'] === (string)$rows[$i]['semester_id'] && $teaches($p));
+      if ($same) { $rows[$k]['hour_type'] = $hourType; $n++; }
+    }
+    writeTable('Plans', $rows);
+    log_action($me, 'ตั้งคาบใน/คาบนอก', $rows[$i]['id'] . ' ' . ($hourType ?: 'in'));
+    return $n;
+  });
+}
+
+/** คิวจัดตารางของแผนกผู้ใช้ ไม่ได้กำหนดคิว = จัดได้ตลอด */
+function assert_dept_window(array $me, $semesterId): void {
   $wins = array_filter(readTable('Windows'), fn($w) => (string)$w['department_id'] === (string)$me['department_id'] && (string)$w['semester_id'] === str($semesterId));
   if (!$wins) return; // ไม่ได้กำหนดคิว = จัดได้ตลอด
   $today = date('Y-m-d');
