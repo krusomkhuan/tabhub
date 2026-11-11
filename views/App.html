@@ -47,9 +47,9 @@ function modal(html, wide) {
 }
 function closeModal() { var m = $('#mbg'); if (m) m.remove(); }
 
-var ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', executive: 'ผู้บริหาร', curriculum: 'เจ้าหน้าที่งานพัฒนาหลักสูตรฯ', dept: 'วิชาการแผนก', teacher: 'ครูผู้สอน' };
-var ROLE_SCOPES = { executive: 'ดูตารางเรียน ตารางสอน รายงานการสอน การนิเทศ สอนแทน/สอนชดเชย ใบเบิก และงบหน้าได้ทุกแผนก พิมพ์เอกสารได้ และจัดการลายเซ็นของตัวเอง แต่แก้ไขข้อมูลไม่ได้', admin: 'จัดการบัญชีผู้ใช้ สำรองข้อมูล ตั้งค่าระบบ และงานวิชาการทั้งหมด', curriculum: 'จัดการข้อมูลและงานวิชาการทุกแผนก จัดตาราง ตรวจรายงาน นิเทศ และค่าสอน โดยไม่จัดการบัญชีผู้ใช้ สำรองข้อมูล หรือตั้งค่าระบบ', dept: 'จัดแผนและตาราง ตรวจรายงาน นิเทศ และงานเบิกเฉพาะแผนกที่ได้รับมอบหมาย', teacher: 'ดูตารางและข้อมูลเผยแพร่ จัดทำรายงานการสอน บันทึกสอนแทน/สอนชดเชยของตนเอง และดูใบเบิกของตนเอง' };
-function rank(r) { return { teacher: 1, dept: 2, curriculum: 3, executive: 3, admin: 4 }[r] || 0; }
+var ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', executive: 'ผู้บริหาร', dept_head: 'หัวหน้าแผนกวิชา', curriculum: 'เจ้าหน้าที่งานพัฒนาหลักสูตรฯ', dept: 'วิชาการแผนก', teacher: 'ครูผู้สอน' };
+var ROLE_SCOPES = { dept_head: 'สิทธิ์เท่าวิชาการแผนก: จัดแผนและตาราง ตรวจรายงาน นิเทศ และงานเบิกเฉพาะแผนกที่ได้รับมอบหมาย', executive: 'ดูตารางเรียน ตารางสอน รายงานการสอน การนิเทศ สอนแทน/สอนชดเชย ใบเบิก และงบหน้าได้ทุกแผนก พิมพ์เอกสารได้ และจัดการลายเซ็นของตัวเอง แต่แก้ไขข้อมูลไม่ได้', admin: 'จัดการบัญชีผู้ใช้ สำรองข้อมูล ตั้งค่าระบบ และงานวิชาการทั้งหมด', curriculum: 'จัดการข้อมูลและงานวิชาการทุกแผนก จัดตาราง ตรวจรายงาน นิเทศ และค่าสอน โดยไม่จัดการบัญชีผู้ใช้ สำรองข้อมูล หรือตั้งค่าระบบ', dept: 'จัดแผนและตาราง ตรวจรายงาน นิเทศ และงานเบิกเฉพาะแผนกที่ได้รับมอบหมาย', teacher: 'ดูตารางและข้อมูลเผยแพร่ จัดทำรายงานการสอน บันทึกสอนแทน/สอนชดเชยของตนเอง และดูใบเบิกของตนเอง' };
+function rank(r) { return { teacher: 1, dept: 2, dept_head: 2, curriculum: 3, executive: 3, admin: 4 }[r] || 0; }
 function academicRole(r) { return r === 'admin' || r === 'curriculum'; }
 function can(r) { return S.me && rank(S.me.role) >= rank(r); }
 /* เมนูมาจากเซิร์ฟเวอร์ S.me.role คือบทบาทของหน้าปัจจุบัน ส่วน S.me.base_role คือบทบาทจริงของบัญชี */
@@ -223,6 +223,7 @@ function go(v) {
   v = n.id;
   // ทำงานในหน้านี้ตามระดับของเมนูที่ได้รับ เช่น ครูที่ได้เมนูจัดตารางจะใช้หน้านั้นแบบวิชาการแผนก
   var base = S.me.base_role || S.me.role;
+  if (base === 'dept_head') base = 'dept'; // หัวหน้าแผนกทำงานแบบวิชาการแผนก
   if (base === 'executive') base = 'curriculum'; // ผู้บริหารดูหน้าต่าง ๆ แบบทุกแผนก (เซิร์ฟเวอร์กันการแก้ไขไว้)
   S.me.role = rank(n.role) > rank(base) ? n.role : base;
   if (S.me.role === 'dept' && !S.sel.dept) S.sel.dept = S.me.department_id;
@@ -1715,8 +1716,8 @@ VIEWS.manual = function (el) {
   var topics = [['rights', 'สิทธิ์ผู้ใช้'], ['schedule', 'จัดตาราง'], ['documents', 'แก้ไขเอกสาร'], ['office', 'Word / Excel'], ['signature', 'ลายเซ็น'], ['makeup', 'สอนแทน / ชดเชย'], ['online', 'รายงานการสอน'], ['visits', 'นิเทศและภาพ'], ['claims', 'ค่าสอน'], ['help', 'แก้ปัญหา']];
   el.innerHTML = '<div class="card man-intro"><div class="row"><div class="grow"><h3>คู่มือการใช้งานระบบจัดตารางเรียน–ตารางสอน</h3><p class="small muted" style="margin:0">ปรับปรุง 11 พฤศจิกายน 2569 · สิทธิ์ของคุณ: ' + esc(ROLE_LABELS[S.me.role] || S.me.role) + '</p></div><button class="btn no-print" onclick="window.print()">🖨 พิมพ์คู่มือ</button></div><p class="mt-2">เลือกหัวข้อด้านล่างเพื่อดูวิธีใช้ เมนูที่เปิดได้จะแสดงเป็นลิงก์ ส่วนเมนูของสิทธิ์อื่นจะแสดงเป็นข้อความเพื่ออธิบายขั้นตอน</p><div class="actions no-print">' + topics.map(function (t) { return '<button class="btn sm" data-manual-jump="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div></div>' +
     section(1, 'rights', 'สิทธิ์ผู้ใช้และการกำหนดบัญชี', 'ทุกคน / ผู้ดูแลระบบ',
-      list(['<b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ:</b> จัดการข้อมูลวิชาการ แผนการเรียน ตารางเรียน รายงาน นิเทศ และงานค่าสอนทุกแผนก', '<b>วิชาการแผนก:</b> จัดแผนและตาราง ตรวจรายงาน นิเทศ และทำรายการเบิกเฉพาะแผนกตนเอง ตามคิวจัดตารางที่กำหนด', '<b>ครูผู้สอน:</b> ดูตารางและข้อมูลที่เผยแพร่ จัดทำรายงานการสอนของตนเอง ดูใบเบิก และบันทึกนิเทศในวิชาที่ตนเองสอน', '<b>ผู้บริหาร:</b> สำหรับผู้อำนวยการและรองผู้อำนวยการ ดูตาราง รายงานการสอน การนิเทศ สอนแทน/สอนชดเชย ใบเบิก และงบหน้าได้ทุกแผนก พิมพ์และดาวน์โหลดเอกสารได้ แต่แก้ไขหรือบันทึกข้อมูลไม่ได้ (ระบบแจ้งว่าดูข้อมูลได้อย่างเดียว) ยกเว้นเรื่องของตนเอง เช่น รหัสผ่าน โปรไฟล์ และลายเซ็น', '<b>ผู้ดูแลระบบ:</b> ทำงานได้ทั้งหมด รวมถึงจัดการบัญชีผู้ใช้ ตั้งค่าระบบ สำรองและกู้คืนข้อมูล']) +
-      '<p>ผู้ดูแลกำหนดสิทธิ์ที่ ' + menu('users') + ' → <b>เพิ่มผู้ใช้</b> หรือ <b>แก้ไข</b> → เลือกสิทธิ์ โดยวิชาการแผนกต้องระบุแผนก ส่วนครูผู้สอนต้องผูกกับรายชื่อครู บัญชีผู้บริหารควรตั้งชื่อ-สกุลให้ตรงกับชื่อผู้ลงนามในหน้าตั้งค่า เพื่อให้ลายเซ็นขึ้นในเอกสาร การเปลี่ยนสิทธิ์ แผนก หรือปิดบัญชีมีผลในการทำรายการครั้งถัดไป หากเมนูยังเป็นของเดิมให้รีเฟรชหน้า</p>' + '<p><b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ</b> เพิ่มหรือถอนเมนูให้ครูผู้สอนและวิชาการแผนกรายคนได้ที่ ' + menu('user-perms') + ' → <b>กำหนดสิทธิ์</b> (ไม่รวมการสร้างบัญชี เปลี่ยนบทบาท และตั้งรหัสผ่าน ซึ่งเป็นงานของผู้ดูแลระบบ)</p>') +
+      list(['<b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ:</b> จัดการข้อมูลวิชาการ แผนการเรียน ตารางเรียน รายงาน นิเทศ และงานค่าสอนทุกแผนก', '<b>หัวหน้าแผนกวิชา:</b> สิทธิ์เท่าวิชาการแผนกทุกอย่างในแผนกของตน ต่างกันที่ชื่อบทบาท', '<b>วิชาการแผนก:</b> จัดแผนและตาราง ตรวจรายงาน นิเทศ และทำรายการเบิกเฉพาะแผนกตนเอง ตามคิวจัดตารางที่กำหนด', '<b>ครูผู้สอน:</b> ดูตารางและข้อมูลที่เผยแพร่ จัดทำรายงานการสอนของตนเอง ดูใบเบิก และบันทึกนิเทศในวิชาที่ตนเองสอน', '<b>ผู้บริหาร:</b> สำหรับผู้อำนวยการและรองผู้อำนวยการ ดูตาราง รายงานการสอน การนิเทศ สอนแทน/สอนชดเชย ใบเบิก และงบหน้าได้ทุกแผนก พิมพ์และดาวน์โหลดเอกสารได้ แต่แก้ไขหรือบันทึกข้อมูลไม่ได้ (ระบบแจ้งว่าดูข้อมูลได้อย่างเดียว) ยกเว้นเรื่องของตนเอง เช่น รหัสผ่าน โปรไฟล์ และลายเซ็น', '<b>ผู้ดูแลระบบ:</b> ทำงานได้ทั้งหมด รวมถึงจัดการบัญชีผู้ใช้ ตั้งค่าระบบ สำรองและกู้คืนข้อมูล']) +
+      '<p>ผู้ดูแลกำหนดสิทธิ์ที่ ' + menu('users') + ' → <b>เพิ่มผู้ใช้</b> หรือ <b>แก้ไข</b> → เลือกสิทธิ์ โดยวิชาการแผนกและหัวหน้าแผนกวิชาต้องระบุแผนก ส่วนครูผู้สอนต้องผูกกับรายชื่อครู บัญชีผู้บริหารควรตั้งชื่อ-สกุลให้ตรงกับชื่อผู้ลงนามในหน้าตั้งค่า เพื่อให้ลายเซ็นขึ้นในเอกสาร การเปลี่ยนสิทธิ์ แผนก หรือปิดบัญชีมีผลในการทำรายการครั้งถัดไป หากเมนูยังเป็นของเดิมให้รีเฟรชหน้า</p>' + '<p><b>เจ้าหน้าที่งานพัฒนาหลักสูตรฯ</b> เพิ่มหรือถอนเมนูให้ครูผู้สอนและวิชาการแผนกรายคนได้ที่ ' + menu('user-perms') + ' → <b>กำหนดสิทธิ์</b> (ไม่รวมการสร้างบัญชี เปลี่ยนบทบาท และตั้งรหัสผ่าน ซึ่งเป็นงานของผู้ดูแลระบบ)</p>') +
     section(2, 'start', 'เริ่มใช้งานและเลือกภาคเรียน', 'ทุกคน',
       list(['เข้าระบบด้วยบัญชีของตนเอง แล้วตรวจ <b>ภาคเรียน</b> ด้านบนก่อนบันทึกข้อมูล', 'คลิกชื่อผู้ใช้เพื่อแก้ไขข้อมูลส่วนตัวหรือเปลี่ยนรหัสผ่าน หากชื่อครูหรือแผนกผิดให้ผู้ดูแลแก้ที่บัญชีผู้ใช้', 'หลังอัปโหลดโค้ดใหม่ ให้กด <b>Ctrl+F5</b> แล้วเปิดหน้าที่ต้องการใหม่ เพื่อโหลดหน้าจอรุ่นล่าสุด'])) +
     section(3, 'data', 'เตรียมข้อมูลและคิวจัดตาราง', 'เจ้าหน้าที่หลักสูตรฯ / ผู้ดูแลระบบ',
@@ -2077,7 +2078,7 @@ function sampleCsv(name) {
 VIEWS.users = function (el) {
   api('listUsers', S.token).then(function (users) {
     var roleTh = ROLE_LABELS;
-    el.innerHTML = '<div class="card"><h3>ขอบเขตสิทธิ์การใช้งาน</h3>' + ['executive', 'curriculum', 'dept', 'teacher'].map(function (role) { return '<p class="small"><b>' + esc(ROLE_LABELS[role]) + '</b> — ' + esc(ROLE_SCOPES[role]) + '</p>'; }).join('') + '<p class="small muted">เลือกแก้ไขบัญชีเพื่อกำหนดสิทธิ์ วิชาการแผนกต้องระบุแผนก และครูผู้สอนต้องผูกกับรายชื่อครู ผู้ดูแลระบบเท่านั้นที่เพิ่มหรือถอนเมนูรายบุคคลได้ การเปลี่ยนสิทธิ์มีผลในการทำรายการครั้งถัดไป และเมนูจะอัปเดตเมื่อผู้ใช้โหลดหน้าใหม่</p></div><div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
+    el.innerHTML = '<div class="card"><h3>ขอบเขตสิทธิ์การใช้งาน</h3>' + ['executive', 'curriculum', 'dept_head', 'dept', 'teacher'].map(function (role) { return '<p class="small"><b>' + esc(ROLE_LABELS[role]) + '</b> — ' + esc(ROLE_SCOPES[role]) + '</p>'; }).join('') + '<p class="small muted">เลือกแก้ไขบัญชีเพื่อกำหนดสิทธิ์ วิชาการแผนกต้องระบุแผนก และครูผู้สอนต้องผูกกับรายชื่อครู ผู้ดูแลระบบเท่านั้นที่เพิ่มหรือถอนเมนูรายบุคคลได้ การเปลี่ยนสิทธิ์มีผลในการทำรายการครั้งถัดไป และเมนูจะอัปเดตเมื่อผู้ใช้โหลดหน้าใหม่</p></div><div class="card"><div class="row" style="margin-bottom:12px"><span class="muted small grow">' + users.length + ' บัญชี</span>' +
       '<button class="btn sm" id="uBulk">สร้างบัญชีครูทุกคน</button><button class="btn pri sm" id="uAdd">+ เพิ่มผู้ใช้</button></div>' +
       '<div class="tablewrap"><table class="data"><thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>บทบาท</th><th>สิทธิ์เมนู</th><th>แผนก</th><th>ผูกกับครู</th><th>ลายเซ็น</th><th>สถานะ</th><th></th></tr></thead><tbody>' +
       sortBy(users, function (u) { return u.role + u.name; }).map(function (u) {
@@ -2120,7 +2121,7 @@ function userModal(u) {
   var m = modal('<h3>' + (u.id ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้') + '</h3>' +
     '<label class="f">ชื่อผู้ใช้ (ใช้เข้าระบบ)</label><input id="uU" value="' + esc(u.username) + '">' +
     '<label class="f">ชื่อ-สกุล</label><input id="uN" value="' + esc(u.name) + '">' +
-    '<label class="f">บทบาท</label><select id="uR">' + ['executive', 'curriculum', 'dept', 'teacher', 'admin'].map(function (role) { return '<option value="' + role + '">' + esc(ROLE_LABELS[role]) + '</option>'; }).join('') + '</select><p id="uScope" class="small muted"></p>' +
+    '<label class="f">บทบาท</label><select id="uR">' + ['executive', 'curriculum', 'dept_head', 'dept', 'teacher', 'admin'].map(function (role) { return '<option value="' + role + '">' + esc(ROLE_LABELS[role]) + '</option>'; }).join('') + '</select><p id="uScope" class="small muted"></p>' +
     '<label class="f">แผนกวิชา</label><select id="uD">' + deptOptions(u.department_id, '—') + '</select>' +
     '<label class="f">ผูกกับรายชื่อครู</label><select id="uT">' + tOpts + '</select>' +
     '<label class="f">' + (u.id ? 'ตั้งรหัสผ่านใหม่ (เว้นว่าง = ไม่เปลี่ยน)' : 'รหัสผ่าน (อย่างน้อย 6 ตัว)') + '</label><input id="uP" type="password" autocomplete="new-password">' +
@@ -2151,7 +2152,7 @@ function userModal(u) {
   function showUserScope() {
     var role = $('#uR', m).value;
     $('#uScope', m).textContent = ROLE_SCOPES[role];
-    $('#uD', m).required = role === 'dept'; $('#uT', m).required = role === 'teacher';
+    $('#uD', m).required = role === 'dept' || role === 'dept_head'; $('#uT', m).required = role === 'teacher';
   }
   $('#uR', m).onchange = function () { showUserScope(); fillPerms(true); }; showUserScope(); fillPerms(true);
   $('#uT', m).onchange = function () {
@@ -2172,7 +2173,7 @@ VIEWS['user-perms'] = function (el) {
   api('userPermList', S.token).then(function (users) {
     el.innerHTML = '<div class="card"><h3 style="margin-top:0">สิทธิ์ผู้ใช้รายบุคคล</h3><p class="small muted">เพิ่มหรือถอนเมนูให้ครูผู้สอนและวิชาการแผนกเป็นรายคน เช่น ให้ครูที่ช่วยงานแผนกเปิดเมนูจัดตารางของแผนกตัวเองได้ การสร้างบัญชี เปลี่ยนบทบาท และตั้งรหัสผ่านให้ติดต่อผู้ดูแลระบบ</p>' +
       '<div class="row"><input id="upQ" placeholder="ค้นหาชื่อหรือชื่อผู้ใช้…" value="' + esc(f.q) + '" style="max-width:240px"><select id="upD" style="width:auto">' + deptOptions(f.dept) + '</select>' +
-      '<select id="upR" style="width:auto"><option value="">ทุกบทบาท</option><option value="dept"' + (f.role === 'dept' ? ' selected' : '') + '>' + esc(ROLE_LABELS.dept) + '</option><option value="teacher"' + (f.role === 'teacher' ? ' selected' : '') + '>' + esc(ROLE_LABELS.teacher) + '</option></select>' +
+      '<select id="upR" style="width:auto"><option value="">ทุกบทบาท</option><option value="dept_head"' + (f.role === 'dept_head' ? ' selected' : '') + '>' + esc(ROLE_LABELS.dept_head) + '</option><option value="dept"' + (f.role === 'dept' ? ' selected' : '') + '>' + esc(ROLE_LABELS.dept) + '</option><option value="teacher"' + (f.role === 'teacher' ? ' selected' : '') + '>' + esc(ROLE_LABELS.teacher) + '</option></select>' +
       '<label class="row small" style="gap:4px"><input type="checkbox" id="upOnly" style="width:auto"' + (f.only ? ' checked' : '') + '> เฉพาะที่ปรับสิทธิ์แล้ว</label><span class="grow"></span><span class="small muted" id="upN"></span></div></div><div class="card" id="upOut" data-nofilter></div>';
     function draw() {
       var q = digitsKey(f.q.trim());

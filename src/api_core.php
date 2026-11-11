@@ -27,7 +27,8 @@ function pw_text($pw): string { return ($pw === null || is_array($pw)) ? '' : (i
 require_once __DIR__ . '/permissions.php';
 
 // ======================= ผู้ใช้และสิทธิ์ =======================
-const USER_ROLES = ['teacher' => 1, 'dept' => 2, 'curriculum' => 3, 'executive' => 3, 'admin' => 4];
+const USER_ROLES = ['teacher' => 1, 'dept' => 2, 'dept_head' => 2, 'curriculum' => 3, 'executive' => 3, 'admin' => 4];
+/** หัวหน้าแผนกวิชา (dept_head) มีสิทธิ์เท่าวิชาการแผนก ระบบใช้บทบาท dept ในการทำงานทุกจุด ต่างกันที่ชื่อบทบาท */
 
 /** ผู้บริหาร (ผู้อำนวยการ รองผู้อำนวยการ): ดูข้อมูลได้ทุกแผนกเหมือนงานพัฒนาหลักสูตรฯ แต่แก้ไขไม่ได้
  *  คำสั่งที่เปลี่ยนข้อมูลของระบบถูกกันไว้ทั้งหมด ยกเว้นเรื่องของตัวเอง (รหัสผ่าน โปรไฟล์ ลายเซ็น แจ้งปัญหา) */
@@ -67,6 +68,7 @@ function auth_user($token, ?string $need = null): array {
   kvPut('cache:tok_' . $token, json_encode($u, JSON_UNESCAPED_UNICODE), 21600);
   $menus = perm_effective($users[$i]);
   $base = $u['role'];
+  if ($base === 'dept_head') $u['role'] = 'dept';
   if ($base === 'executive') {
     if (in_array($GLOBALS['REQ_FN'] ?? '', EXEC_BLOCKED_APIS, true)) throw new Exception('บัญชีผู้บริหารดูข้อมูลได้อย่างเดียว แก้ไขไม่ได้');
     $u['role'] = 'curriculum'; // ขอบเขตการดูเท่างานพัฒนาหลักสูตรฯ คือทุกแผนก
@@ -173,7 +175,7 @@ function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
 
 // ======================= สิทธิ์เมนูรายบุคคล (เจ้าหน้าที่งานพัฒนาหลักสูตรฯ) =======================
 /** งานหลักสูตรฯ กำหนดสิทธิ์เมนูให้ครูและวิชาการแผนกได้ ไม่เกี่ยวกับบัญชี บทบาท หรือรหัสผ่าน ซึ่งยังเป็นของผู้ดูแลระบบ */
-const PERM_EDITABLE_ROLES = ['teacher', 'dept'];
+const PERM_EDITABLE_ROLES = ['teacher', 'dept', 'dept_head'];
 
 /** ต้องเป็นงานหลักสูตรฯ หรือผู้ดูแลระบบจริง ไม่ใช่สิทธิ์ที่ได้จากการเพิ่มเมนู เพื่อไม่ให้ส่งต่อสิทธิ์กันเองได้ */
 function perm_manager(string $token): array {
@@ -239,12 +241,12 @@ function api_saveUser($token = '', $data = []) {
     $u['role'] = js_true($data['role'] ?? '') ? $data['role'] : 'teacher';
     $u['department_id'] = $data['department_id'] ?? ''; $u['teacher_id'] = $data['teacher_id'] ?? '';
     if (!is_string($u['role']) || !isset(USER_ROLES[$u['role']])) throw new Exception('กรุณาเลือกสิทธิ์ที่ถูกต้อง');
-    if ($u['role'] === 'dept' && !isset(idx_table('Departments')[str($u['department_id'])])) throw new Exception('สิทธิ์วิชาการแผนกต้องระบุแผนกวิชา');
+    if (in_array($u['role'], ['dept', 'dept_head'], true) && !isset(idx_table('Departments')[str($u['department_id'])])) throw new Exception('สิทธิ์วิชาการแผนกต้องระบุแผนกวิชา');
     if ($u['role'] === 'teacher' && !isset(idx_table('Teachers')[str($u['teacher_id'])])) throw new Exception('สิทธิ์ครูผู้สอนต้องผูกกับรายชื่อครู');
     if (js_true($u['teacher_id'])) {
       $teacher = idx_table('Teachers')[str($u['teacher_id'])] ?? null;
       if (!$teacher) throw new Exception('ไม่พบรายชื่อครูที่เลือก');
-      if ($u['role'] === 'dept' && (string)$teacher['department_id'] !== str($u['department_id'])) throw new Exception('ครูที่ผูกกับวิชาการแผนกต้องอยู่ในแผนกเดียวกัน');
+      if (in_array($u['role'], ['dept', 'dept_head'], true) && (string)$teacher['department_id'] !== str($u['department_id'])) throw new Exception('ครูที่ผูกกับวิชาการแผนกต้องอยู่ในแผนกเดียวกัน');
       if ($u['role'] === 'teacher') $u['department_id'] = $teacher['department_id'];
     }
     $u['email'] = js_true($data['email'] ?? '') ? $data['email'] : ($u['email'] ?? '');
