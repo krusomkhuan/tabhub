@@ -1219,7 +1219,7 @@
   };
 
   /* ---------- งบหน้าแผนกวิชา ---------- */
-  var CV = { dept: '', level: 'vc', weeks: 18 };
+  var CV = { dept: '', level: 'vc', weeks: 18, mode: 'real' };
   var CV_DEFAULT_WEEKS = { vc: 18, vs: 15 };
   var CV_LEVELS = { vc: 'ปวช.', vs: 'ปวส.' };
   VIEWS['ot-cover'] = function (el) {
@@ -1227,32 +1227,52 @@
     var levelOpts = Object.keys(CV_LEVELS).map(function (k) { return '<option value="' + k + '"' + (k === CV.level ? ' selected' : '') + '>ระดับ ' + CV_LEVELS[k] + '</option>'; }).join('');
     // จำนวนสัปดาห์เลือกได้ 15 หรือ 18 ไม่ขึ้นกับระดับหรือรอบการเบิก (เปลี่ยนระดับแล้วตั้งค่าเริ่มต้นของระดับนั้นให้)
     var weekOpts = [18, 15].map(function (n) { return '<option value="' + n + '"' + (Number(CV.weeks) === n ? ' selected' : '') + '>' + n + ' สัปดาห์</option>'; }).join('');
-    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' + deptSelect('cvD', CV.dept) + '<select id="cvL" class="form-select form-select-sm w-auto">' + levelOpts + '</select><select id="cvW" class="form-select form-select-sm w-auto" title="จำนวนสัปดาห์ของงบหน้า">' + weekOpts + '</select><span class="grow"></span><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
+    // ข้อมูลจำลอง = ประมาณการจากตารางสอน + แบบการเบิกที่กำหนดให้ครู ใช้ทำแผนการใช้เงิน (คำนวณสด ไม่บันทึก)
+    // งบหน้าจำลองเฉพาะบทบาทจริงของบัญชี: วิชาการแผนก งานพัฒนาหลักสูตรฯ ผู้ดูแลระบบ (ต้องตรงกับ OT_SIM_ROLES)
+    var canSim = ['dept', 'curriculum', 'admin'].indexOf(S.me.base_role || S.me.role) >= 0;
+    if (!canSim) CV.mode = 'real';
+    var modeSel = !canSim ? '<input type="hidden" id="cvM" value="real">' : '<select id="cvM" class="form-select form-select-sm w-auto" title="แหล่งข้อมูลของงบหน้า"><option value="real"' + (CV.mode === 'real' ? ' selected' : '') + '>ข้อมูลจริง (ใบเบิกที่ล็อกแล้ว)</option><option value="sim"' + (CV.mode === 'sim' ? ' selected' : '') + '>ข้อมูลจำลอง (ประมาณการ)</option></select>';
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' + modeSel + deptSelect('cvD', CV.dept) + '<select id="cvL" class="form-select form-select-sm w-auto">' + levelOpts + '</select><select id="cvW" class="form-select form-select-sm w-auto" title="จำนวนสัปดาห์ของงบหน้า">' + weekOpts + '</select><span class="grow"></span><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
+    // งานพัฒนาหลักสูตรฯ/ผู้ดูแล: ข้อมูลจำลองเลือก "ทุกแผนกวิชา" เพื่อสรุปรวมทั้งวิทยาลัยได้
+    function allOpt() {
+      var sel = $j('select#cvD');
+      if (!sel.length) return;
+      sel.find('option[value="__all"]').remove();
+      if (CV.mode === 'sim' && can('curriculum')) sel.prepend('<option value="__all">ทุกแผนกวิชา (สรุปรวม)</option>');
+      else if (sel.val() === null || CV.dept === '__all') sel.val(sel.find('option').first().val());
+      if (CV.mode === 'sim' && CV.dept === '__all') sel.val('__all');
+    }
+    allOpt();
     function load() {
-      CV.dept = val('#cvD'); CV.level = val('#cvL'); CV.weeks = Number(val('#cvW')) || CV_DEFAULT_WEEKS[CV.level];
-      api('otCoverSheet', S.token, S.sem, CV.dept, CV.level, CV.weeks).then(function (r) {
+      CV.mode = val('#cvM'); CV.dept = val('#cvD'); CV.level = val('#cvL'); CV.weeks = Number(val('#cvW')) || CV_DEFAULT_WEEKS[CV.level];
+      var sim = CV.mode === 'sim', all = sim && CV.dept === '__all';
+      api(sim ? 'otCoverSim' : 'otCoverSheet', S.token, S.sem, CV.dept, CV.level, CV.weeks).then(function (r) {
         if (r.noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่ได้ตั้งวันเปิดภาคเรียนของภาคเรียนนี้ — งบหน้านับสัปดาห์จากวันเปิดภาคเรียน กำหนดได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
         var s = S.settings, sem = r.semester, lv = CV_LEVELS[r.level];
-        var head = Grid.deptHead(S.D.Teachers, CV.dept);
+        var head = all ? null : Grid.deptHead(S.D.Teachers, CV.dept);
         var sign = function (name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
         var num = function (v) { return '<td class="text-end">' + (v ? money(v) : '') + '</td>'; };
         var last = r.weeks[r.weeks.length - 1];
-        $j('#cvOut').removeClass('muted').html('<div class="page"><h2 class="text-center">งบหน้าการเบิกค่าสอนเกินภาระงาน ระดับ ' + lv + '</h2><div class="sub text-center">' + esc(s.college_name) + ' · แผนกวิชา' + esc(deptName(CV.dept)) + '<br>ภาคเรียนที่ ' + esc(semLabel(S.sem)) + ' จำนวน ' + r.weeks.length + ' สัปดาห์ (' + thDate(r.weeks[0].from) + ' – ' + thDate(last.to) + ')</div>' +
+        $j('#cvOut').removeClass('muted').html('<div class="page"><h2 class="text-center">' + (sim ? 'งบหน้าประมาณการค่าสอนเกินภาระงาน' : 'งบหน้าการเบิกค่าสอนเกินภาระงาน') + ' ระดับ ' + lv + (sim ? ' (ข้อมูลจำลอง)' : '') + '</h2><div class="sub text-center">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(CV.dept))) + '<br>ภาคเรียนที่ ' + esc(semLabel(S.sem)) + ' จำนวน ' + r.weeks.length + ' สัปดาห์ (' + thDate(r.weeks[0].from) + ' – ' + thDate(last.to) + ')</div>' +
           (r.startSet ? '' : '<div class="alert alert-warning no-print py-2 small">ยังไม่ได้ตั้งวันเปิดภาคเรียน จึงนับสัปดาห์จากรอบการเบิกแรกไปก่อน — ตั้งค่าได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>') +
+          (sim ? '<div class="alert alert-info no-print py-2 small">ข้อมูลจำลองสำหรับทำแผนการใช้เงิน: คำนวณจากตารางสอนและแบบการเบิกที่กำหนดให้ครู โดยเลือกชั่วโมงเบิกเต็มสิทธิ์ทุกสัปดาห์ ไม่หักวันหยุด/วันลา/สอนแทน และไม่คิดเบิกรายหัว — ไม่ใช่ยอดเบิกจริง และไม่บันทึกลงระบบ</div>' : '') +
+          (sim && r.noScheme && r.noScheme.length ? '<div class="alert alert-warning no-print py-2 small">ยังไม่ได้กำหนดแบบการเบิก (ไม่นับในงบหน้าจำลอง): ' + esc(r.noScheme.join(', ')) + '</div>' : '') +
+          (sim && r.warnings && r.warnings.length ? '<details class="alert alert-warning no-print py-2 small"><summary>ยอดของครู ' + r.warnings.length + ' คนติดเงื่อนไขแบบการเบิก ควรตรวจแบบการเบิก</summary>' + r.warnings.map(function (w) { return '<div>' + esc(w) + '</div>'; }).join('') + '</details>' : '') +
           (r.noRounds ? '<div class="alert alert-warning no-print py-2 small">ภาคเรียนนี้ยังไม่มีรอบการเบิก</div>' : '') +
           (r.notLocked.length ? '<div class="alert alert-warning no-print py-2 small">ยังไม่ล็อกใบเบิก: ' + esc(r.notLocked.join(', ')) + ' — งบหน้านับเฉพาะใบที่ล็อกแล้ว</div>' : '') +
           (r.outside ? '<div class="alert alert-warning no-print py-2 small">มียอดเบิกนอกช่วง ' + r.weeks.length + ' สัปดาห์ของระดับ ' + lv + ' รวม ' + money(r.outside) + ' บาท ซึ่งไม่ได้นับในงบหน้านี้ กรุณาตรวจสอบ</div>' : '') +
-          '<div class="table-responsive"><table class="table table-sm table-bordered align-middle cover-table"><thead class="text-center"><tr><th rowspan="2">ที่</th><th rowspan="2">ชื่อ-สกุล</th><th rowspan="2">ตำแหน่ง</th><th colspan="' + r.weeks.length + '">จำนวนเงินรายสัปดาห์ (บาท)</th><th rowspan="2">รวม (ชม.)</th><th rowspan="2">รวมเงิน (บาท)</th></tr><tr>' +
+          '<div class="table-responsive"><table class="table table-sm table-bordered align-middle cover-table"><thead class="text-center"><tr><th rowspan="2">ที่</th><th rowspan="2">' + (all ? 'แผนกวิชา' : 'ชื่อ-สกุล') + '</th><th rowspan="2">' + (all ? 'จำนวนครู' : 'ตำแหน่ง') + '</th><th colspan="' + r.weeks.length + '">จำนวนเงินรายสัปดาห์ (บาท)</th><th rowspan="2">รวม (ชม.)</th><th rowspan="2">รวมเงิน (บาท)</th></tr><tr>' +
           r.weeks.map(function (w) { return '<th title="' + thDate(w.from) + ' – ' + thDate(w.to) + '">' + w.index + '</th>'; }).join('') + '</tr></thead><tbody>' +
-          (r.rows.length ? r.rows.map(function (x, i) { return '<tr><td class="text-center">' + (i + 1) + '</td><td style="white-space:nowrap">' + esc(x.name) + '</td><td class="small">' + esc(x.position) + '</td>' + r.weeks.map(function (w) { return num(x.week_amounts[w.index] || 0); }).join('') + '<td class="text-end">' + x.hours + '</td>' + num(x.amount) + '</tr>'; }).join('') : '<tr><td colspan="' + (r.weeks.length + 5) + '" class="text-center muted">ยังไม่มีใบเบิกระดับ ' + lv + ' ที่ล็อกแล้ว</td></tr>') +
+          (r.rows.length ? r.rows.map(function (x, i) { return '<tr><td class="text-center">' + (i + 1) + '</td><td style="white-space:nowrap">' + esc(x.name) + '</td><td class="small">' + (all ? x.people + ' คน' : esc(x.position)) + '</td>' + r.weeks.map(function (w) { return num(x.week_amounts[w.index] || 0); }).join('') + '<td class="text-end">' + x.hours + '</td>' + num(x.amount) + '</tr>'; }).join('') : '<tr><td colspan="' + (r.weeks.length + 5) + '" class="text-center muted">' + (sim ? 'ไม่มีครูที่ได้ยอดประมาณการระดับ ' + lv : 'ยังไม่มีใบเบิกระดับ ' + lv + ' ที่ล็อกแล้ว') + '</td></tr>') +
           '<tr class="fw-bold"><td colspan="3" class="text-end">รวมทั้งสิ้น</td>' + r.weeks.map(function (w) { return num(r.weekTotals[w.index] || 0); }).join('') + '<td class="text-end">' + r.totals.hours + '</td>' + num(r.totals.amount) + '</tr>' +
           '<tr><td colspan="' + (r.weeks.length + 5) + '" class="text-center">(' + esc(r.totalText) + ')</td></tr></tbody></table></div>' +
-          '<p class="small">ผู้มีสิทธิ์เบิกระดับ ' + lv + ' ' + r.rows.length + ' คน</p>' +
-          '<div class="signs">' + sign(head && head.name, esc(Grid.deptHeadTitle(deptName(CV.dept))) + '<br>ผู้จัดทำ') + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้<br>ผู้ตรวจสอบ') + '</div>' +
+          '<p class="small">' + (sim ? 'ผู้มีสิทธิ์เบิกระดับ ' + lv + ' (ประมาณการ) ' + (all ? r.people : r.rows.length) + ' คน' : 'ผู้มีสิทธิ์เบิกระดับ ' + lv + ' ' + r.rows.length + ' คน') + '</p>' +
+          '<div class="signs">' + (all ? sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้<br>ผู้จัดทำ') : sign(head && head.name, esc(Grid.deptHeadTitle(deptName(CV.dept))) + '<br>ผู้จัดทำ') + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้<br>ผู้ตรวจสอบ')) + '</div>' +
           '<div class="signs">' + sign(s.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + sign(s.signer_director, 'ผู้อำนวยการวิทยาลัย<br>ผู้อนุมัติ') + '</div></div>');
       });
     }
     $j('#cvD,#cvW').on('change', load);
+    $j('#cvM').on('change', function () { CV.mode = val('#cvM'); allOpt(); load(); });
     $j('#cvL').on('change', function () { $j('#cvW').val(String(CV_DEFAULT_WEEKS[val('#cvL')])); load(); });
     load();
   };

@@ -723,6 +723,160 @@ function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 
   ];
 }
 
+// ---------------- งบหน้าจำลอง (ประมาณการ) ----------------
+/**
+ * เลือกชั่วโมงเบิกอัตโนมัติของ 1 สัปดาห์ตามแบบการเบิก สำหรับงบหน้าจำลองเท่านั้น (ไม่บันทึกลงใบเบิก)
+ * ใช้คาบสถานประกอบการนับภาระก่อน ครบภาระแล้วที่เหลือเป็นชั่วโมงเบิก ไม่เกินสูงสุดของระดับ
+ * เกินเพดานรวม: แบบรวมแล้วตัดให้ ot_eval_week ตัดตามระเบียบ แบบอื่นตัดระดับที่อัตราต่ำก่อน
+ */
+function ot_sim_select(array $items, array $sch, $cap): array {
+  $by = [];
+  foreach ($items as $it) $by[$it['level']][] = $it;
+  $sel = []; $claim = []; $short = false;
+  foreach ($by as $lv => $list) {
+    $L = $sch['levels'][$lv] ?? null;
+    if (!$L || !$L['enabled']) continue;
+    stable_usort($list, fn($a, $b) => (int)js_true($b['no_claim'] ?? '') <=> (int)js_true($a['no_claim'] ?? ''));
+    $need = (int)$L['load']; $load = []; $rest = [];
+    foreach ($list as $it) {
+      if (count($load) < $need) $load[] = $it['key'];
+      elseif (!js_true($it['no_claim'] ?? '')) $rest[] = $it['key'];
+    }
+    if (count($load) < $need) { $short = true; continue; } // ภาระไม่ครบ ระดับนี้เบิกไม่ได้
+    foreach ($load as $k) $sel[$k] = 'L';
+    $claim[$lv] = $L['max'] ? array_slice($rest, 0, (int)$L['max']) : $rest;
+  }
+  $method = $sch['cap_method'];
+  if ($method === 'fill_first' && $short) $claim = []; // แบบวันหยุดต้องครบภาระทุกระดับก่อน
+  $rate = fn($l) => $sch['levels'][$l]['rate'];
+  $lowFirst = array_keys($claim);
+  stable_usort($lowFirst, fn($a, $b) => $rate($a) <=> $rate($b));
+  if ($method !== 'free') {
+    // หลายระดับ: ระดับที่เบิกน้อยกว่าขั้นต่ำให้ตัดออก
+    foreach ($lowFirst as $l) {
+      $active = count(array_filter($claim, 'count'));
+      if ($active > 1 && $claim[$l] && $sch['levels'][$l]['min'] && count($claim[$l]) < $sch['levels'][$l]['min']) $claim[$l] = [];
+    }
+  }
+  if ($method !== 'combined_trim') {
+    $totalCap = $method === 'none' ? 999 : min($sch['total_cap'] ?: 999, $cap);
+    if ($method === 'none' && $cap < 12) $totalCap = $cap;
+    $over = array_sum(array_map('count', $claim)) - $totalCap;
+    foreach ($lowFirst as $l) {
+      if ($over <= 0) break;
+      $cut = min($over, count($claim[$l]));
+      $claim[$l] = array_slice($claim[$l], 0, count($claim[$l]) - $cut);
+      $over -= $cut;
+    }
+  }
+  foreach ($claim as $keys) foreach ($keys as $k) $sel[$k] = 'C';
+  return $sel;
+}
+
+/** ยอดประมาณการของครูแต่ละคนจากตารางสอนและแบบการเบิกที่กำหนดให้ (ไม่หักวันหยุด/วันลา) */
+function ot_sim_teachers(array $teachers, array $round, string $level, array $weekOf, array $X): array {
+  $rows = []; $noScheme = []; $warn = [];
+  foreach ($teachers as $t) {
+    $schemes = ot_teacher_schemes($t, $X);
+    if (!$schemes) { $noScheme[] = $t['name']; continue; }
+    $weeks = ot_hours_for(['settings' => $X['settings'], 'teacher' => $t, 'round' => $round, 'sessions' => $X['sessions'], 'groups' => $X['groups'], 'courses' => $X['courses'], 'absences' => [], 'blocked' => [], 'subs' => []]);
+    $cap = ot_personal_cap($t, $X['settings'], $round['start_date'])['cap'];
+    $ctx = ['subQuota' => [], 'perHead' => [], 'courses' => $X['courses'], 'refAmount' => ot_ref_amount($t, $X, $cap)];
+    $best = null;
+    foreach ($schemes as $sch) { // ครูมีหลายแบบ: ใช้แบบที่ได้ยอดรวมทั้งภาคเรียนสูงสุด
+      $res = ['scheme' => $sch['name'], 'all' => 0, 'weeks' => [], 'errors' => []];
+      foreach ($weeks as $w) {
+        if (!$w['items']) continue;
+        $r = ot_eval_week($w['items'], ot_sim_select($w['items'], $sch, $cap), [], $sch, $cap, $ctx);
+        $res['all'] += $r['amount'];
+        $res['weeks'][$w['index']] = $r['levels'][$level] ?? ['hours' => 0, 'amount' => 0];
+        foreach ($r['errors'] as $e) $res['errors'][$e] = true;
+      }
+      if (!$best || $res['all'] > $best['all']) $best = $res;
+    }
+    if ($best['errors']) $warn[] = $t['name'] . ' (' . $best['scheme'] . '): ' . implode(' · ', array_slice(array_keys($best['errors']), 0, 2));
+    $row = ['teacher_id' => $t['id'], 'name' => $t['name'], 'position' => $t['position'], 'department_id' => $t['department_id'], 'scheme' => $best['scheme'], 'week_amounts' => [], 'hours' => 0, 'amount' => 0];
+    foreach ($best['weeks'] as $i => $lv) {
+      if (!$lv['amount'] && !$lv['hours']) continue;
+      $idx = $weekOf[$i] ?? null;
+      if ($idx === null) continue;
+      $row['week_amounts'][$idx] = ($row['week_amounts'][$idx] ?? 0) + $lv['amount'];
+      $row['hours'] += $lv['hours']; $row['amount'] += $lv['amount'];
+    }
+    if ($row['hours'] || $row['amount']) $rows[] = $row;
+  }
+  return ['rows' => $rows, 'noScheme' => $noScheme, 'warnings' => $warn];
+}
+
+/**
+ * งบหน้าจำลอง: ประมาณการค่าสอนเกินภาระงานทั้งภาคเรียนจากตารางสอนและแบบการเบิกที่กำหนดให้ครู
+ * คำนวณสดและอ่านอย่างเดียว ไม่เขียนข้อมูลใด ๆ จึงไม่กระทบใบเบิกและงบหน้าจริง
+ * แผนกดูได้เฉพาะแผนกตัวเอง งานพัฒนาหลักสูตรฯ/ผู้ดูแลเลือก __all เพื่อสรุปรวมรายแผนกได้
+ */
+/** ผู้ทำงบหน้าจำลองได้: วิชาการแผนก งานพัฒนาหลักสูตรฯ และผู้ดูแลระบบ (ตามบทบาทจริงของบัญชี) */
+const OT_SIM_ROLES = ['dept', 'curriculum', 'admin'];
+
+function api_otCoverSim($token = '', $semesterId = '', $deptId = '', $level = 'vc', $weeks = '') {
+  $me = auth_user($token, 'dept');
+  if (!in_array($me['base_role'] ?? '', OT_SIM_ROLES, true)) throw new Exception('งบหน้าจำลองใช้ได้เฉพาะวิชาการแผนก งานพัฒนาหลักสูตรฯ และผู้ดูแลระบบ');
+  $all = str($deptId) === '__all';
+  if ($me['role'] === 'dept' && ($all || str($deptId) !== (string)$me['department_id'])) throw new Exception('ดูงบหน้าได้เฉพาะแผนกตัวเอง');
+  if (!isset(OT_COVER_WEEKS[str($level)])) throw new Exception('ระดับไม่ถูกต้อง');
+  $count = in_array((int)$weeks, OT_COVER_WEEK_CHOICES, true) ? (int)$weeks : OT_COVER_WEEKS[str($level)];
+  $sem = idx_table('Semesters')[str($semesterId)] ?? null;
+  if (!$sem) throw new Exception('ไม่พบภาคเรียน');
+  $start = substr((string)($sem['start_date'] ?? ''), 0, 10);
+  $startSet = $start !== '';
+  if (!$startSet) {
+    $rounds = array_values(array_filter(readTable('OtRounds'), fn($r) => (string)$r['semester_id'] === str($semesterId)));
+    stable_usort($rounds, fn($a, $b) => strcmp((string)$a['start_date'], (string)$b['start_date']));
+    $start = $rounds ? substr((string)$rounds[0]['start_date'], 0, 10) : '';
+  }
+  if ($start === '') return ['sim' => true, 'semester' => $sem, 'level' => str($level), 'week_count' => $count, 'noDates' => true, 'weeks' => [], 'rows' => []];
+  $until = ot_parse($start)->modify('+' . (($count + 1) * 7) . ' days');
+  $wk = array_slice(ot_weeks_of(['start_date' => $start, 'end_date' => ot_ymd($until)]), 0, $count);
+  $last = $wk[count($wk) - 1]['dates'];
+  $round = ['id' => '', 'semester_id' => str($semesterId), 'start_date' => $start, 'end_date' => $last[count($last) - 1]];
+  $weekOf = array_combine(array_column($wk, 'index'), array_column($wk, 'index'));
+
+  $plans = idx_table('Plans'); $courses = idx_table('Courses');
+  $X = [
+    'settings' => readSettings(), 'groups' => idx_table('Groups'), 'courses' => $courses,
+    'schemes' => array_map('ot_scheme', readTable('OtSchemes')),
+    'sessions' => array_map(function ($s) use ($plans, $courses) {
+      $s['workplace'] = sched_is_workplace($s, ['plans' => $plans, 'courses' => $courses]);
+      return $s;
+    }, sem_sessions($semesterId)),
+  ];
+  $teachers = array_values(array_filter(readTable('Teachers'), fn($t) => (string)$t['ot_enabled'] === 'true' && ($all || (string)$t['department_id'] === str($deptId))));
+  $sim = ot_sim_teachers($teachers, $round, str($level), $weekOf, $X);
+  $rows = $sim['rows'];
+  if ($all) { // สรุปรวมรายแผนก: 1 แถวต่อแผนก
+    $depts = idx_table('Departments'); $by = [];
+    foreach ($rows as $r) {
+      $id = (string)$r['department_id'];
+      $d = &$by[$id];
+      $d ??= ['department_id' => $id, 'name' => $depts[$id]['name'] ?? 'ไม่ระบุแผนก', 'position' => '', 'people' => 0, 'week_amounts' => [], 'hours' => 0, 'amount' => 0];
+      $d['people']++; $d['hours'] += $r['hours']; $d['amount'] += $r['amount'];
+      foreach ($r['week_amounts'] as $i => $a) $d['week_amounts'][$i] = ($d['week_amounts'][$i] ?? 0) + $a;
+      unset($d);
+    }
+    $rows = array_values($by);
+    stable_usort($rows, fn($a, $b) => strcmp($a['name'], $b['name']));
+  }
+  $weekTotals = array_fill_keys(array_column($wk, 'index'), 0);
+  foreach ($rows as $r) foreach ($r['week_amounts'] as $i => $a) $weekTotals[$i] += $a;
+  foreach ($rows as &$x) $x['week_amounts'] = (object)$x['week_amounts'];
+  unset($x);
+  $total = array_sum(array_column($rows, 'amount'));
+  return [
+    'sim' => true, 'all' => $all, 'semester' => $sem, 'level' => str($level), 'week_count' => $count, 'startSet' => $startSet, 'start' => $start,
+    'weeks' => array_map(fn($w) => ['index' => $w['index'], 'from' => $w['dates'][0], 'to' => $w['dates'][count($w['dates']) - 1]], $wk),
+    'rows' => $rows, 'people' => count($sim['rows']), 'totals' => ['hours' => array_sum(array_column($rows, 'hours')), 'amount' => $total], 'weekTotals' => (object)$weekTotals,
+    'totalText' => ot_baht_text($total), 'noScheme' => $sim['noScheme'], 'warnings' => $sim['warnings'], 'notLocked' => [], 'outside' => 0,
+  ];
+}
+
 // ======================= แจ้งปัญหาการใช้งาน =======================
 const ISSUE_STATUS = ['open', 'doing', 'done'];
 
