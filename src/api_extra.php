@@ -877,6 +877,103 @@ function api_otCoverSim($token = '', $semesterId = '', $deptId = '', $level = 'v
   ];
 }
 
+/**
+ * งบหน้าประกอบการขออนุมัติเวลาทำงานของสถานศึกษา (แบบฟอร์ม 12 ข้อ) ของ 1 แผนก จากข้อมูลประมาณการ
+ * คิดจากสัปดาห์เต็ม 1 สัปดาห์ตามตารางสอน: สอนทั้งหมด = คาบสอนต่อสัปดาห์, สอนพิเศษ = ชม.เบิกต่อสัปดาห์,
+ * ในเวลาราชการ = ส่วนที่เหลือ และเงิน = ชม.เบิก × อัตรา × จำนวนสัปดาห์ของระดับ (ปวช. 18 / ปวส. 15)
+ * อ่านอย่างเดียว ไม่บันทึกข้อมูล
+ */
+function api_otCoverApproval($token = '', $semesterId = '', $deptId = '') {
+  $me = auth_user($token, 'dept');
+  if (!in_array($me['base_role'] ?? '', OT_SIM_ROLES, true)) throw new Exception('งบหน้าประมาณการใช้ได้เฉพาะวิชาการแผนก งานพัฒนาหลักสูตรฯ และผู้ดูแลระบบ');
+  if ($me['role'] === 'dept' && str($deptId) !== (string)$me['department_id']) throw new Exception('ดูงบหน้าได้เฉพาะแผนกตัวเอง');
+  $dept = idx_table('Departments')[str($deptId)] ?? null;
+  if (!$dept) throw new Exception('กรุณาเลือกแผนกวิชา');
+  $sem = idx_table('Semesters')[str($semesterId)] ?? null;
+  if (!$sem) throw new Exception('ไม่พบภาคเรียน');
+  $start = substr((string)($sem['start_date'] ?? ''), 0, 10);
+  if ($start === '') return ['noDates' => true, 'semester' => $sem];
+  $mon = ot_parse($start)->modify('-' . ot_dow(ot_parse($start)) . ' days');
+  $round = ['id' => '', 'semester_id' => str($semesterId), 'start_date' => ot_ymd($mon), 'end_date' => ot_ymd($mon->modify('+6 days'))];
+
+  $plans = idx_table('Plans'); $courses = idx_table('Courses'); $groups = idx_table('Groups');
+  $sessions = array_map(function ($s) use ($plans, $courses) {
+    $s['workplace'] = sched_is_workplace($s, ['plans' => $plans, 'courses' => $courses]);
+    return $s;
+  }, sem_sessions($semesterId));
+  $X = ['settings' => readSettings(), 'groups' => $groups, 'courses' => $courses, 'sessions' => $sessions, 'schemes' => array_map('ot_scheme', readTable('OtSchemes'))];
+  $weeksOf = OT_COVER_WEEKS + ['bd' => OT_COVER_WEEKS['vs']];
+
+  $rows = []; $costs = []; $warn = []; $noScheme = [];
+  foreach (readTable('Teachers') as $t) {
+    if ((string)$t['department_id'] !== str($deptId)) continue;
+    $week = ot_hours_for(['settings' => $X['settings'], 'teacher' => $t, 'round' => $round, 'sessions' => $sessions, 'groups' => $groups, 'courses' => $courses, 'absences' => [], 'blocked' => [], 'subs' => []])[0] ?? ['items' => []];
+    $taught = count($week['items']);
+    if (!$taught) continue; // ไม่มีคาบสอนในภาคเรียนนี้
+    $best = null;
+    if ((string)$t['ot_enabled'] === 'true' && $week['items']) {
+      $cap = ot_personal_cap($t, $X['settings'], $start)['cap'];
+      $ctx = ['subQuota' => [], 'perHead' => [], 'courses' => $courses, 'refAmount' => ot_ref_amount($t, $X, $cap)];
+      foreach (ot_teacher_schemes($t, $X) as $sch) { // หลายแบบ: ใช้แบบที่ได้เงินทั้งภาคเรียนสูงสุด
+        $r = ot_eval_week($week['items'], ot_sim_select($week['items'], $sch, $cap), [], $sch, $cap, $ctx);
+        $lv = []; $sum = 0;
+        foreach (OT_LEVELS as $l) {
+          $h = $r['levels'][$l]['hours'] ?? 0;
+          if (!$h) continue;
+          $rate = $sch['levels'][$l]['rate'];
+          $lv[$l] = ['hours' => $h, 'rate' => $rate, 'weeks' => $weeksOf[$l], 'amount' => $h * $rate * $weeksOf[$l]];
+          $sum += $lv[$l]['amount'];
+        }
+        if (!$best || $sum > $best['amount']) $best = ['scheme' => $sch['name'], 'levels' => $lv, 'amount' => $sum, 'errors' => $r['errors']];
+      }
+    }
+    $extra = $best ? array_sum(array_column($best['levels'], 'hours')) : 0;
+    if (!$best) $noScheme[] = $t['name'];
+    if ($best && $best['errors']) $warn[] = $t['name'] . ' (' . $best['scheme'] . '): ' . implode(' · ', array_slice(array_unique($best['errors']), 0, 2));
+    $rows[] = ['teacher_id' => $t['id'], 'name' => $t['name'], 'position' => $t['position'], 'is_dept_head' => (string)$t['is_dept_head'] === 'true',
+      'taught' => $taught, 'inside' => max(0, $taught - $extra), 'extra' => $extra, 'amount' => $best['amount'] ?? 0, 'levels' => (object)($best['levels'] ?? [])];
+    foreach ($best['levels'] ?? [] as $l => $x) {
+      $k = $l . '|' . $x['rate'];
+      $c = &$costs[$k];
+      $c ??= ['level' => $l, 'rate' => $x['rate'], 'weeks' => $x['weeks'], 'hours' => 0, 'amount' => 0];
+      $c['hours'] += $x['hours']; $c['amount'] += $x['amount'];
+      unset($c);
+    }
+  }
+  $costs = array_values($costs);
+  stable_usort($costs, fn($a, $b) => [array_search($a['level'], OT_LEVELS), $b['rate']] <=> [array_search($b['level'], OT_LEVELS), $a['rate']]);
+
+  // ห้องเรียน/กลุ่มเรียนของแผนกที่มีคาบสอนในภาคเรียนนี้ แยกตามระดับและชั้นปี
+  $used = array_flip(array_map(fn($s) => (string)$s['group_id'], $sessions));
+  $classes = [];
+  foreach ($groups as $g) {
+    if ((string)$g['department_id'] !== str($deptId) || !isset($used[(string)$g['id']])) continue;
+    $l = ot_level_of($g);
+    $y = trim((string)($g['year_level'] ?? '')) ?: (string)$g['level'];
+    $c = &$classes[$l]['years'][$y];
+    $c ??= ['year' => $y, 'codes' => [], 'students' => 0];
+    $c['codes'][] = $g['code']; $c['students'] += num($g['students'] ?? 0);
+    unset($c);
+  }
+  $levels = [];
+  foreach (OT_LEVELS as $l) {
+    if (empty($classes[$l])) continue;
+    $years = array_values($classes[$l]['years']);
+    stable_usort($years, fn($a, $b) => strnatcmp($a['year'], $b['year']));
+    foreach ($years as &$y) natsort($y['codes']);
+    unset($y);
+    $levels[] = ['level' => $l, 'label' => OT_LEVEL_TH[$l], 'years' => array_map(fn($y) => ['year' => $y['year'], 'codes' => array_values($y['codes']), 'students' => $y['students']], $years),
+      'rooms' => array_sum(array_map(fn($y) => count($y['codes']), $years)), 'students' => array_sum(array_column($years, 'students'))];
+  }
+  $total = array_sum(array_column($costs, 'amount'));
+  return [
+    'semester' => $sem, 'department' => ['id' => $dept['id'], 'name' => $dept['name']], 'week' => ['from' => $round['start_date'], 'to' => $round['end_date']],
+    'rows' => $rows, 'costs' => $costs, 'levels' => $levels, 'warnings' => $warn, 'noScheme' => $noScheme,
+    'totals' => ['taught' => array_sum(array_column($rows, 'taught')), 'inside' => array_sum(array_column($rows, 'inside')), 'extra' => array_sum(array_column($rows, 'extra')), 'amount' => $total],
+    'totalText' => ot_baht_text($total),
+  ];
+}
+
 // ======================= แจ้งปัญหาการใช้งาน =======================
 const ISSUE_STATUS = ['open', 'doing', 'done'];
 

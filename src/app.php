@@ -26,7 +26,7 @@ const API_ALLOW = [
   'otTeacherData', 'otSaveClaim', 'otUnlockClaim', 'otSaveSub', 'otSubReport', 'otCancelSub', 'otListSubs', 'subDocList', 'subDocGet', 'subDocSave', 'subDocDelete', 'otAlerts', 'otDeptSummary', 'otSubmit', 'otSuggestSchemes',
   'importFromTAB', 'listTabSemesters',
   'teachReportImageAdd', 'teachReportImages', 'teachReportImageDelete', 'teachReportSlots', 'teachReportSave', 'teachReportList', 'teachReportReview', 'teachReportDelete', 'teachReportSummary',
-  'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet', 'otCoverSim',
+  'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet', 'otCoverSim', 'otCoverApproval',
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
   'signatureMap', 'signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary', 'signaturePlaceSave',
   'userPermList', 'userPermSave',
