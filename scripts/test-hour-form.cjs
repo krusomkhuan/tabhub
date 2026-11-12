@@ -40,7 +40,7 @@ input('p1', 2, 'in').value = ''; input('p2', 2, 'in').value = '';
 input('p1', 1, 'in').oninput();
 assert.equal(input('p1', 2, 'in').value, '4'); assert.equal(input('p2', 2, 'in').value, '4');
 elements.haSave.onclick();
-assert(sent); assert.deepEqual(sent.slot_types.p1a, ['in', 'in']); assert.deepEqual(sent.slot_types.p1b, ['in']); assert.equal(sent.hours_in, '3');
+assert(sent); assert.equal(sent.anchor_plan_id, 'p1'); assert.deepEqual(sent.slot_types.p1a, ['in', 'in']); assert.deepEqual(sent.slot_types.p1b, ['in']); assert.equal(sent.hours_in, '3');
 // A duplicate between in/out must never submit.
 sent = null; input('p1', 1, 'out').value = '8'; elements.haSave.onclick(); assert.equal(sent, null); assert.match(elements.haError.textContent, /ซ้ำ/);
 // A number not present in that day's timetable must never submit.

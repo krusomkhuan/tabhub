@@ -185,6 +185,16 @@ function api_runAutoSchedule($token = '', $semesterId = '', $opt = []) {
       'teacher_ids' => $s['teacher_ids'], 'room_id' => $s['room_id'], 'day' => $s['day'], 'start' => $s['start'], 'length' => $s['length'], 'locked' => false,
       'updated_by' => $me['name'] . ' (อัตโนมัติ)', 'updated_at' => $now,
     ], $res['added']);
+    // กันชั้นสุดท้าย: คาบที่จัดอัตโนมัติเพิ่มต้องไม่ทำให้แผนใดเกินจำนวนคาบ
+    foreach ($plans as $p) {
+      $before = 0; $added = 0;
+      foreach ($fixed as $s) if ((string)$s['plan_id'] === (string)$p['id']) $before += num($s['length']);
+      foreach ($add as $s) if ((string)$s['plan_id'] === (string)$p['id']) $added += num($s['length']);
+      if ($added && $before + $added > sched_plan_periods($p, $ctx)) {
+        $g = $ctx['groups'][$p['group_id']]['code'] ?? '';
+        throw new Exception('จัดอัตโนมัติแล้วคาบจะเกินแผน' . ($g !== '' ? ' กลุ่ม ' . $g : '') . ' (' . ($before + $added) . '/' . sched_plan_periods($p, $ctx) . ' คาบ) จึงยกเลิกการบันทึก');
+      }
+    }
     foreach ($plans as $p) {
       $error = sched_allocation_error($p, array_merge($all, $add), $ctx);
       if ($error !== '') throw new Exception($error . ' — กรุณาจัดคาบใน/นอกของวิชานี้ด้วยตนเอง');

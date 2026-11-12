@@ -613,7 +613,9 @@ function api_planHourAllocation($token = '', $payload = []) {
     if (!$ids) throw new Exception('เลือกกลุ่มเรียนอย่างน้อย 1 กลุ่ม');
     $selected = array_values(array_filter($plans, fn($p) => in_array($p['id'], $ids, true)));
     if (count($selected) !== count($ids)) throw new Exception('ไม่พบแผนการเรียนที่เลือก');
-    $lead = $selected[0]; $ctx = ['courses' => idx_table('Courses')];
+    $anchor = str($data['anchor_plan_id'] ?? $selected[0]['id']);
+    if (!in_array($anchor, $ids, true)) throw new Exception('ต้องเลือกกลุ่มผู้เรียนที่เปิดเข้ามาแก้ไข กรุณาเปิดกำหนดคาบของกลุ่มอื่นแยกต่างหาก');
+    $lead = $plans[find_row($plans, $anchor)]; $ctx = ['courses' => idx_table('Courses')];
     $groupKey = sched_hour_group_key($lead, $sessions);
     foreach ($selected as $p) {
       if ($p['semester_id'] !== $lead['semester_id'] || $p['course_id'] !== $lead['course_id'] || $p['teacher_ids'] !== $lead['teacher_ids']) throw new Exception('เลือกได้เฉพาะวิชา ภาคเรียน และชุดครูผู้สอนเดียวกัน');

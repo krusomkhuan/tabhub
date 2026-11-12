@@ -23,7 +23,7 @@ var Sched = (function () {
       for (var k = 0; k < Number(s.length); k++) slots.push(Number(s.day) + ':' + (Number(s.start) + k));
     });
     if (!slots.length || !p.joint_key) return 'P:' + p.id;
-    return 'J:' + p.joint_key + '|' + (p.semester_id || '') + '|' + (p.course_id || '') + '|' + ids(p.teacher_ids).sort().join(',') + '|' + slots.sort().join(',');
+    return 'J:' + p.joint_key + '|' + (p.semester_id || '') + '|' + (p.course_id || '') + '|' + ids(p.teacher_ids).sort().join(',') + '|' + (String(p.workplace) === 'true' ? 'workplace' : 'college') + '|' + slots.sort().join(',');
   }
 
   function parsePeriodNumbers(value) {
@@ -204,15 +204,24 @@ var Sched = (function () {
     });
     var blocks = [];
     units.forEach(function (u) {
-      var lead = u.plans[0];
       var pattern = null;
       u.plans.forEach(function (p) {
         var parts = splitBlocks(p, ctx).slice().sort(function (a, b) { return a - b; }).join('+');
         if (pattern !== null && pattern !== parts) throw new Error('การแบ่งคาบของกลุ่มที่ใช้รหัสเรียนร่วมเดียวกันไม่ตรงกัน กรุณาตรวจแผนของทุกกลุ่มในชุดเรียนร่วมก่อนจัดอัตโนมัติ');
         pattern = parts;
       });
-      remainingBlocks(lead, sessions, ctx).forEach(function (len) {
-        blocks.push({ unit: u, length: len });
+      /* ก้อนที่เหลือคิดรายกลุ่ม กลุ่มที่ลงครบแล้วไม่ถูกเพิ่มคาบซ้ำ และวางร่วมกันเฉพาะกลุ่มที่ขาดก้อนเดียวกัน */
+      var byRemain = {}, order = [];
+      u.plans.forEach(function (p) {
+        var left = remainingBlocks(p, sessions, ctx);
+        if (!left.length) return;
+        var sig = left.slice().sort(function (a, b) { return a - b; }).join('+');
+        if (!byRemain[sig]) { byRemain[sig] = { key: u.key + '#' + sig, plans: [] }; order.push(sig); }
+        byRemain[sig].plans.push(p);
+      });
+      order.forEach(function (sig) {
+        var sub = byRemain[sig];
+        remainingBlocks(sub.plans[0], sessions, ctx).forEach(function (len) { blocks.push({ unit: sub, length: len }); });
       });
     });
     return blocks;

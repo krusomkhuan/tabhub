@@ -7,6 +7,7 @@ const sessions = plans.flatMap((p, i) => i < 2 ? [{ id: p.id + 'a', plan_id: p.i
 assert.equal(S.hourGroupKey(plans[0], sessions), S.hourGroupKey(plans[1], sessions));
 assert.notEqual(S.hourGroupKey(plans[0], sessions), S.hourGroupKey(plans[2], sessions));
 assert.notEqual(S.hourGroupKey(plans[0], []), S.hourGroupKey(plans[1], []));
+assert.notEqual(S.hourGroupKey(plans[0], sessions), S.hourGroupKey({ ...plans[1], workplace: 'true' }, sessions));
 assert.deepEqual(plain(S.parsePeriodNumbers('๑,๒ 8-9 12')), [1, 2, 8, 9, 12]);
 for (const bad of ['0', '1.5', '2,2', '9-8', 'x']) assert.throws(() => S.parsePeriodNumbers(bad));
 const days = { 1: [8, 9], 2: [4] };

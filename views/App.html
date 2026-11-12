@@ -1330,7 +1330,7 @@ function hourAllocationModal(p, afterSave) {
         var no = Grid.periodNo(S.settings, Number(s.start) + k); row.all.push(no); if (row[type]) row[type].push(no);
       }); });
       Object.keys(byDay).sort().forEach(function (day) {
-        var row = byDay[day]; html += '<div class="ha-day"><b>' + esc(S.days[day]) + '</b><span class="small muted">คาบตามตาราง: ' + esc(row.all.join(',')) + '</span>';
+        var row = byDay[day]; html += '<div class="ha-day"><b>' + esc(groupCode(plan.group_id)) + ' · ' + esc(S.days[day]) + '</b><span class="small muted">คาบตามตารางของกลุ่มนี้: ' + esc(row.all.join(',')) + '</span>';
         ['in', 'out'].forEach(function (type) {
           var key = pid + '|' + day + '|' + type, value = Object.prototype.hasOwnProperty.call(choices, key) ? choices[key] : row[type].join(',');
           html += '<label>' + (type === 'in' ? 'ใน' : 'นอก') + ' (เลขคาบ)<input type="text" data-ha-periods data-ha-plan="' + esc(pid) + '" data-ha-day="' + esc(day) + '" data-ha-type="' + type + '" value="' + esc(value) + '" placeholder="เช่น 8,9"' + (workplace ? ' readonly' : '') + '></label>';
@@ -1394,7 +1394,7 @@ function hourAllocationModal(p, afterSave) {
       if (Object.keys(assigned).some(function (key) { return !used[key]; })) throw new Error('มีเลขคาบที่ไม่มีอยู่ในตารางของกลุ่ม/วันที่เลือก');
     } catch (e) { $('#haError', m).textContent = e.message; return; }
     var btn = this; btn.disabled = true;
-    api('planHourAllocation', S.token, { plan_ids: picked, weeks: String(weeks), hours_in: String(a), hours_out: String(b), slot_types: types }).then(loadSchedule).then(function () {
+    api('planHourAllocation', S.token, { anchor_plan_id: p.id, plan_ids: picked, weeks: String(weeks), hours_in: String(a), hours_out: String(b), slot_types: types }).then(loadSchedule).then(function () {
       closeModal(); toast('บันทึกคาบใน/นอกแล้ว'); if (afterSave) afterSave();
     }).catch(function () { btn.disabled = false; });
   };

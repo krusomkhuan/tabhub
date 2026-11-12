@@ -28,7 +28,8 @@ function sched_hour_group_key(array $p, array $sessions): string {
   if (!$slots || empty($p['joint_key'])) return 'P:' . $p['id'];
   sort($slots, SORT_STRING);
   $teachers = sched_ids($p['teacher_ids'] ?? ''); sort($teachers, SORT_STRING);
-  return 'J:' . $p['joint_key'] . '|' . ($p['semester_id'] ?? '') . '|' . ($p['course_id'] ?? '') . '|' . implode(',', $teachers) . '|' . implode(',', $slots);
+  $workplace = (string)($p['workplace'] ?? '') === 'true' ? 'workplace' : 'college';
+  return 'J:' . $p['joint_key'] . '|' . ($p['semester_id'] ?? '') . '|' . ($p['course_id'] ?? '') . '|' . implode(',', $teachers) . '|' . $workplace . '|' . implode(',', $slots);
 }
 
 function sched_allocation_error(array $p, array $sessions, array $ctx): string {
@@ -217,22 +218,32 @@ final class SchedBlock {
 }
 
 function sched_units(array $plans, array $sessions, array $ctx): array {
-  $byKey = []; $units = [];
+  $byJoint = [];
   foreach ($plans as $p) {
     if (!sched_ids($p['teacher_ids'] ?? '') && !js_true($p['group_id'] ?? '')) continue;
     $key = js_true($p['joint_key'] ?? '') ? 'J:' . $p['joint_key'] : 'P:' . $p['id'];
-    if (!isset($byKey[$key])) { $byKey[$key] = (object)['key' => $key, 'plans' => []]; $units[] = $byKey[$key]; }
-    $byKey[$key]->plans[] = $p;
+    $byJoint[$key][] = $p;
   }
   $blocks = [];
-  foreach ($units as $u) {
+  foreach ($byJoint as $key => $list) {
     $pattern = null;
-    foreach ($u->plans as $p) {
+    foreach ($list as $p) {
       $parts = sched_split($p, $ctx); sort($parts, SORT_NUMERIC);
       if ($pattern !== null && $parts !== $pattern) throw new Exception('การแบ่งคาบของกลุ่มที่ใช้รหัสเรียนร่วมเดียวกันไม่ตรงกัน กรุณาตรวจแผนของทุกกลุ่มในชุดเรียนร่วมก่อนจัดอัตโนมัติ');
       $pattern = $parts;
     }
-    foreach (sched_remaining($u->plans[0], $sessions, $ctx) as $len) $blocks[] = new SchedBlock($u, $len);
+    // ก้อนที่เหลือคิดรายกลุ่ม กลุ่มที่ลงครบแล้วไม่ถูกเพิ่มคาบซ้ำ และวางร่วมกันเฉพาะกลุ่มที่ขาดก้อนเดียวกัน
+    $byRemain = [];
+    foreach ($list as $p) {
+      $left = sched_remaining($p, $sessions, $ctx);
+      if (!$left) continue;
+      sort($left, SORT_NUMERIC);
+      $byRemain[implode('+', $left)][] = $p;
+    }
+    foreach ($byRemain as $sig => $group) {
+      $u = (object)['key' => $key . '#' . $sig, 'plans' => $group];
+      foreach (sched_remaining($group[0], $sessions, $ctx) as $len) $blocks[] = new SchedBlock($u, $len);
+    }
   }
   return $blocks;
 }

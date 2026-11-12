@@ -68,6 +68,9 @@ $tables['Sessions'][]=array_merge($s,['id'=>'s3','plan_id'=>'p3','day'=>'3']);
 $bad=$payload; $bad['plan_ids'][]='p3'; $bad['slot_types']['s3']=['in','out','in'];
 try {api_planHourAllocation('',$bad);throw new Exception('unrelated group accepted');} catch(Exception $e) {if($e->getMessage()==='unrelated group accepted')throw $e;}
 if($writes!==$before)throw new Exception('unrelated group written');
+$bad=$payload; $bad['anchor_plan_id']='p3';
+try {api_planHourAllocation('',$bad);throw new Exception('wrong anchor accepted');} catch(Exception $e) {if($e->getMessage()==='wrong anchor accepted')throw $e;}
+if($writes!==$before)throw new Exception('wrong anchor written');
 echo 'PASS';`;
 const it = spawnSync(process.argv[2] || 'php', [], { cwd: root, input: integration, encoding: 'utf8' });
 assert.equal(it.status, 0, it.stderr); assert.equal(it.stdout, 'PASS');
