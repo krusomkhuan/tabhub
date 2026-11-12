@@ -977,29 +977,36 @@
     var box = function (on) { return on ? '☑' : '☐'; };
     var text = function (v) { return v ? esc(thNum(v)).replace(/\n/g, '<br>') : blank; };
     var sign = function (name, role) { return '<div class="vr-sign">ลงชื่อ ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')' + (role ? '<br>' + role : '') + '</div>'; };
-    var html = '<div class="page rp-page vr-page" data-pdf-width="760"><div class="rp-center"><b>' + esc(st.college_name || '') + '</b><br><b>แบบรายงานการนิเทศนักศึกษาฝึกอาชีพในสถานประกอบการ (รายสัปดาห์)</b><br><b>ภาคเรียนที่ ' + esc(thNum(semLabel(S.sem))) + '</b><br>ครูนิเทศก์ ชื่อ ' + esc(t.name || blank) + ' แผนกวิชา' + esc(deptName(dept).replace(/^แผนก(วิชา)?\s*/, '') || blank) + '</div>';
-    list.forEach(function (v) {
-      var c = courseOf(v.course_id), d = dateParts(v.visit_date), sites = visitSites(v);
+    // หนึ่งฉบับต่อหนึ่งสัปดาห์: ทุกรายวิชาที่นิเทศในสัปดาห์อยู่ในตารางเดียว ผลการนิเทศอ้างลำดับเดียวกัน
+    var weeks = uniq(list.map(function (v) { return String(v.week_no || semWeek(v.visit_date) || ''); }));
+    var dates = list.map(function (v) { return String(v.visit_date || '').slice(0, 10); }).filter(Boolean).sort();
+    var html = '<div class="page rp-page vr-page" data-pdf-width="760"><div class="rp-center"><b>' + esc(st.college_name || '') + '</b><br><b>แบบรายงานการนิเทศนักศึกษาฝึกอาชีพในสถานประกอบการ (รายสัปดาห์)</b><br><b>ภาคเรียนที่ ' + esc(thNum(semLabel(S.sem))) + '</b></div>' +
+      '<p class="vr-head">ครูนิเทศก์ ชื่อ ' + esc(t.name || blank) + ' แผนกวิชา' + esc(deptName(dept).replace(/^แผนก(วิชา)?\s*/, '') || blank) + '<br>นิเทศสัปดาห์ที่ ' + (weeks.length ? esc(thNum(weeks.join(', '))) : '........') + ' ระหว่างวันที่ ' + (dates.length ? esc(thLongDate(dates[0])) : blank) + ' ถึงวันที่ ' + (dates.length ? esc(thLongDate(dates[dates.length - 1])) : blank) + '</p>' +
+      '<p class="vr-label"><b>ส่วนที่ 1 รายวิชาที่นิเทศในสัปดาห์นี้</b></p><table class="rp-table vr-table vr-courses"><thead><tr><th>ที่</th><th>รหัสวิชา / ชื่อวิชา</th><th>กลุ่มเรียน</th><th>วันที่ / เวลา</th><th>รูปแบบการนิเทศ</th><th>ชื่อสถานประกอบการ</th><th>สาขางาน</th><th>จำนวนผู้เรียน</th></tr></thead><tbody>';
+    list.forEach(function (v, i) {
+      var c = courseOf(v.course_id), sites = visitSites(v), n = sites.length || 1;
       if (!sites.length) sites = [{}];
-      html += '<div class="vr-course"><table class="rp-table vr-table"><tbody>' +
-        '<tr><td colspan="2" class="rp-left">นิเทศสัปดาห์ที่ ' + text(v.week_no) + '</td><td colspan="2" class="rp-left">วันที่ ' + thNum(d.day) + ' เดือน ' + d.month + ' พ.ศ. ' + thNum(d.year) + (v.visit_time ? ' เวลา ' + esc(thNum(String(v.visit_time).replace(':', '.'))) + ' น.' : '') + '</td></tr>' +
-        '<tr><th>รูปแบบการนิเทศ</th><th>ชื่อ - สถานประกอบการ</th><th>สาขางาน</th><th>จำนวนผู้เรียน</th></tr>' +
-        sites.map(function (s) { return '<tr><td class="rp-left">' + box(s.type === 'onsite') + ' Onsite ' + box(s.type !== 'onsite' && s.type) + ' Online</td><td class="rp-left">' + text(s.company) + '</td><td>' + text(s.major) + '</td><td>' + text(s.students) + '</td></tr>'; }).join('') +
-        '<tr><td colspan="2" class="rp-left">ชื่อวิชา ' + esc(c.name) + '<br><span class="small">กลุ่มเรียน ' + esc(groupNames(v.group_ids)) + '</span></td><td colspan="2" class="rp-left">รหัสวิชา ' + esc(thNum(c.code)) + '</td></tr></tbody></table>' +
-        '<table class="rp-table vr-table"><tbody><tr><th>งานที่นักเรียนนักศึกษาได้ปฏิบัติ</th><th>งานที่ครูมอบหมายเพิ่มเติม</th></tr><tr><td class="rp-left vr-text">' + text(v.findings) + '</td><td class="rp-left vr-text">' + text(v.tasks_assigned) + '</td></tr></tbody></table>' +
-        '<p class="vr-label"><b>สำหรับครูนิเทศ</b><br>ปัญหาที่พบ/วิธีแก้ปัญหา</p><p class="rp-text">' + text(v.suggestions) + '</p></div>';
+      sites.forEach(function (s, k) {
+        html += '<tr>' + (k ? '' :
+          '<td rowspan="' + n + '">' + (i + 1) + '</td><td rowspan="' + n + '" class="rp-left">' + esc(thNum(c.code)) + '<br>' + esc(c.name) + '</td><td rowspan="' + n + '">' + esc(groupNames(v.group_ids)) + '</td>' +
+          '<td rowspan="' + n + '">' + esc(thNum(thDate(v.visit_date))) + (v.visit_time ? '<br>' + esc(thNum(String(v.visit_time).replace(':', '.'))) + ' น.' : '') + '</td>') +
+          '<td class="rp-left vr-type">' + box(s.type === 'onsite') + ' Onsite<br>' + box(s.type !== 'onsite' && s.type) + ' Online</td><td class="rp-left">' + text(s.company) + '</td><td>' + text(s.major) + '</td><td>' + text(s.students) + '</td></tr>';
+      });
     });
+    html += '</tbody></table><p class="vr-label"><b>ส่วนที่ 2 ผลการนิเทศ</b> (ลำดับที่ตรงกับส่วนที่ 1)</p><table class="rp-table vr-table vr-results"><thead><tr><th>ที่</th><th>งานที่นักเรียนนักศึกษาได้ปฏิบัติ</th><th>งานที่ครูมอบหมายเพิ่มเติม</th><th>ปัญหาที่พบ / วิธีแก้ปัญหา (สำหรับครูนิเทศ)</th></tr></thead><tbody>' +
+      list.map(function (v, i) { return '<tr><td>' + (i + 1) + '</td><td class="rp-left vr-text">' + text(v.findings) + '</td><td class="rp-left vr-text">' + text(v.tasks_assigned) + '</td><td class="rp-left vr-text">' + text(v.suggestions) + '</td></tr>'; }).join('') +
+      '</tbody></table>';
     // ชื่อในวงเล็บอยู่กึ่งกลางใต้เส้นลงชื่อ ไม่รวมคำว่า "ลงชื่อ" และตำแหน่ง
-    html += '<div class="rp-sign-one"><div class="vr-tsign"><span>ลงชื่อ</span><span class="vr-tsign-name">' + (window.Sig ? Sig.slot(t.name) : '') + '.................................<br>(' + esc(t.name || '.................................') + ')</span><span>ครูนิเทศก์ประจำวิชา</span></div></div>' +
+    html += '<div class="rp-sign-one"><div class="vr-tsign"><span>ลงชื่อ</span><span class="vr-tsign-name">' + (window.Sig ? Sig.slot(t.name) : '') + '.................................<br>(' + esc(t.name || '.................................') + ')</span><span>ครูนิเทศก์</span></div></div>' +
       '<table class="rp-table vr-approve"><tbody><tr><th class="rp-left">' + esc(Grid.deptHeadTitle(deptName(dept))) + '</th><th class="rp-left">หัวหน้างานอาชีวศึกษาระบบทวิภาคี</th></tr>' +
       '<tr><td class="rp-left">☐ ทราบ<br>☐ อื่น ๆ ' + blank + sign(head.name) + '</td><td class="rp-left">☐ เสนอรองฝ่ายวิชาการ<br>☐ อื่น ๆ ' + blank + sign(st.signer_dvt) + '</td></tr>' +
       '<tr><th class="rp-left">รองผู้อำนวยการฝ่ายวิชาการ</th><th class="rp-left">ผู้อำนวยการสถานศึกษา</th></tr>' +
       '<tr><td class="rp-left">☐ ทราบ/ รวบรวม<br>☐ เชิญ นร./นศ. พร้อมผู้ปกครองมาพบ<br>☐ อื่น ๆ ' + blank + sign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</td><td class="rp-left">☐ ทราบ/ รวบรวม<br>☐ เชิญ นร./นศ. พร้อมผู้ปกครองมาพบ<br>☐ อื่น ๆ ' + blank + sign(st.signer_director, 'ผู้อำนวยการ' + esc(st.college_name || '')) + '</td></tr></tbody></table></div>';
     // ภาพประกอบแยกตามรายวิชา
     var withImages = list.filter(function (v) { return (imgs[v.id] || []).length; });
-    if (withImages.length) html += '<div class="page rp-page vr-page" data-pdf-width="760"><h2 class="rp-title">ภาพประกอบการนิเทศ</h2>' + withImages.map(function (v) {
+    if (withImages.length) html += '<div class="page rp-page vr-page" data-pdf-width="760"><h2 class="rp-title">ภาพประกอบการนิเทศ' + (weeks.length ? ' สัปดาห์ที่ ' + esc(thNum(weeks.join(', '))) : '') + '</h2>' + withImages.map(function (v) {
       var images = imgs[v.id];
-      return '<div class="vr-photos"><p class="rp-center"><b>' + esc(thNum(visitCourseLabel(v))) + '</b><br>' + esc(thLongDate(v.visit_date)) + '</p><div class="rp-pics rp-pics-' + images.length + '">' + images.map(function (img) { return '<img src="' + esc(img.url) + '" alt="ภาพประกอบการนิเทศ">'; }).join('') + '</div></div>';
+      return '<div class="vr-photos"><p class="rp-center"><b>ลำดับที่ ' + (list.indexOf(v) + 1) + ' ' + esc(thNum(visitCourseLabel(v))) + '</b><br>' + esc(thLongDate(v.visit_date)) + '</p><div class="rp-pics rp-pics-' + images.length + '">' + images.map(function (img) { return '<img src="' + esc(img.url) + '" alt="ภาพประกอบการนิเทศ">'; }).join('') + '</div></div>';
     }).join('') + '</div>';
     return html;
   }
