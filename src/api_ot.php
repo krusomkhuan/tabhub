@@ -41,9 +41,14 @@ function assert_claim_open($roundId, $teacherId): void {
 }
 
 function ot_ctx(array $round): array {
+  $plans = idx_table('Plans'); $courses = idx_table('Courses');
+  $sessions = array_map(function ($s) use ($plans, $courses) {
+    $s['workplace'] = sched_is_workplace($s, ['plans' => $plans, 'courses' => $courses]);
+    return $s;
+  }, sem_sessions($round['semester_id']));
   return [
     'settings' => readSettings(),
-    'sessions' => sem_sessions($round['semester_id']),
+    'sessions' => $sessions,
     'groups' => idx_table('Groups'), 'courses' => idx_table('Courses'),
     'absences' => array_values(array_filter(readTable('OtAbsences'), fn($a) => (string)$a['round_id'] === (string)$round['id'])),
     'blocked' => array_values(array_filter(readTable('OtBlocked'), fn($b) => $b['round_id'] === '' || (string)$b['round_id'] === (string)$round['id'])),

@@ -475,9 +475,12 @@ var Grid = (function () {
     /* คาบเรียนร่วมนับเป็นคาบนอกหรือไม่นับ เมื่อทุกกลุ่มในช่องตั้งแบบเดียวกัน นอกนั้นนับเป็นคาบใน */
     var hoursIn = 0, hoursOut = 0;
     mergeItems(sessions).forEach(function (list) {
-      var every = function (x) { return list.every(function (s) { return o.hourType(s) === x; }); }, len = Number(list[0].length) || 0;
-      if (every('none')) return;
-      if (every('out')) hoursOut += len; else hoursIn += len;
+      var len = Number(list[0].length) || 0;
+      for (var k = 0; k < len; k++) {
+        var every = function (x) { return list.every(function (s) { return o.hourType(s, k) === x; }); };
+        if (every('none')) continue;
+        if (every('out')) hoursOut++; else hoursIn++;
+      }
     });
     var rowCount = Math.max(9, Math.ceil((rows.length + (official ? 1 : 0)) / 2));
     var courseCells = function (r) {

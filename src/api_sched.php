@@ -49,6 +49,7 @@ function api_placeSession($token = '', $payload = []) {
     $ctx = sched_ctx_now();
     // แผนเรียนร่วม: วางทุกกลุ่มพร้อมกัน
     $plans = js_true($plan['joint_key']) ? array_values(array_filter($allPlans, fn($p) => (string)$p['semester_id'] === (string)$plan['semester_id'] && (string)$p['joint_key'] === (string)$plan['joint_key'])) : [$plan];
+    foreach ($plans as $p) if (sched_is_workplace($p, $ctx) && in_array($payload['hour_type'] ?? '', ['out', 'none'], true)) throw new Exception('คาบสถานประกอบการต้องเป็นคาบใน และนำมาเบิกไม่ได้');
     $ei = js_true($payload['id'] ?? '') ? find_row($all, $payload['id']) : null;
     $existing = $ei !== null ? $all[$ei] : null;
     if ($existing && (string)$existing['locked'] === 'true' && !is_academic_manager($me)) throw new Exception('คาบนี้ถูกล็อก');
@@ -76,6 +77,7 @@ function api_placeSession($token = '', $payload = []) {
         'teacher_ids' => $p['teacher_ids'], 'room_id' => $room, 'day' => num($payload['day'] ?? 0), 'start' => num($payload['start'] ?? 0), 'length' => $len,
         'locked' => $old ? $old['locked'] : false, 'updated_by' => $me['name'], 'updated_at' => now_dt(),
         'hour_type' => array_key_exists('hour_type', $payload) ? $payload['hour_type'] : ($old['hour_type'] ?? ''),
+        'hour_types' => !array_key_exists('hour_type', $payload) && $old && num($old['length']) === $len ? ($old['hour_types'] ?? '') : '',
       ];
     }
     foreach ($cands as $c) $problems = array_merge($problems, sched_check($c, $others, $ctx));
@@ -84,6 +86,10 @@ function api_placeSession($token = '', $payload = []) {
     // จำนวนคาบไม่เกินแผน ผู้ดูแลระบบก็บังคับวางเกินไม่ได้
     $over = sched_over_problem($plans, $sem, $moving, $len, $existing, $ctx);
     if ($over) return ['ok' => false, 'problems' => [$over]];
+    foreach ($plans as $p) {
+      $error = sched_allocation_error($p, array_merge(array_values($others), $cands), $ctx);
+      if ($error !== '') return ['ok' => false, 'problems' => [['type' => 'allocation', 'msg' => $error, 'hard' => true]]];
+    }
     writeTable('Sessions', array_merge(array_values(array_diff_key($all, $moving)), $cands));
     log_action($me, $existing ? 'ย้ายคาบ' : 'สร้างคาบ', sched_describe($cands[0], $ctx));
     return ['ok' => true, 'problems' => $problems, 'sessions' => sem_sessions($plan['semester_id'])];
@@ -179,6 +185,10 @@ function api_runAutoSchedule($token = '', $semesterId = '', $opt = []) {
       'teacher_ids' => $s['teacher_ids'], 'room_id' => $s['room_id'], 'day' => $s['day'], 'start' => $s['start'], 'length' => $s['length'], 'locked' => false,
       'updated_by' => $me['name'] . ' (อัตโนมัติ)', 'updated_at' => $now,
     ], $res['added']);
+    foreach ($plans as $p) {
+      $error = sched_allocation_error($p, array_merge($all, $add), $ctx);
+      if ($error !== '') throw new Exception($error . ' — กรุณาจัดคาบใน/นอกของวิชานี้ด้วยตนเอง');
+    }
     writeTable('Sessions', array_merge($all, $add));
     log_action($me, 'จัดอัตโนมัติ', count($add) . ' คาบ, ค้าง ' . count($res['unplaced']));
     $planById = [];
@@ -248,7 +258,7 @@ function api_getPublicData($semesterId = '') {
   $pick = fn(array $rows, array $cols) => array_map(fn($r) => array_intersect_key($r, array_flip($cols)), $rows);
   $ctx = sched_ctx_now();
   $rawSessions = sem_sessions($sem);
-  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)(js_true($x['hour_type'] ?? '') ? $x['hour_type'] : ($ctx['plans'][$x['plan_id']]['hour_type'] ?? ''))], $rawSessions);
+  $sessions = array_map(fn($x) => array_intersect_key($x, array_flip(['id', 'group_id', 'course_id', 'teacher_ids', 'room_id', 'day', 'start', 'length'])) + ['hour_types' => json_encode(sched_hour_types($x, $ctx['plans'][$x['plan_id']] ?? [], $ctx)), 'workplace' => sched_is_workplace($x, $ctx), 'hour_type' => (string)(js_true($x['hour_type'] ?? '') ? $x['hour_type'] : ($ctx['plans'][$x['plan_id']]['hour_type'] ?? ''))], $rawSessions);
   return [
     'incomplete' => plan_incomplete(str($sem), $rawSessions, $ctx),
     'settings' => [

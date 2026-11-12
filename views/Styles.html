@@ -671,4 +671,17 @@
     html[data-theme="dark"] table.tt td.lunch, html[data-theme="dark"] table.tt td.lock { background: repeating-linear-gradient(45deg, #dbe5ef, #dbe5ef 8px, #f3f6fa 8px, #f3f6fa 16px); color: #000; }
     .theme-btn { display: none; }
   }
+  .ha-field { display: grid; grid-template-columns: 135px minmax(0, 1fr); align-items: center; gap: 16px; margin: 10px 0; }
+  .ha-field > label { text-align: right; }
+  .ha-field > select { max-width: 390px; }
+  .ha-number { display: flex; align-items: center; gap: 16px; }
+  .ha-number > input { width: 95px; }
+  .ha-day { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 12px 0; border-bottom: 1px solid var(--border, #ddd); }
+  .ha-day > b, .ha-day > span { grid-column: 1 / -1; }
+  .ha-day label { display: grid; gap: 5px; }
+  @media (max-width: 520px) {
+    .ha-field { grid-template-columns: 100px minmax(0, 1fr); gap: 10px; }
+    .ha-number { gap: 8px; }
+    .ha-number > input { width: 75px; }
+  }
 </style>

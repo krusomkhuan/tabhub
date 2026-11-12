@@ -224,9 +224,9 @@ function weekHtml(w, r, canEdit) {
         var bg = it.blocked ? '#eceef3' : it.absent ? '#fde8e8' : v === 'L' ? '#dff5e3' : v === 'C' ? '#2457d6' : '#fff';
         var fg = v === 'C' && !it.blocked && !it.absent ? '#fff' : '#1d2433';
         var c = courseOf(it.course_id);
-        var tip = c.code + ' ' + c.name + ' · ' + groupCode(it.group_id) + ' · ' + LV[it.level] + (it.blocked ? ' · ' + it.blocked : '') + (it.absent ? ' · ' + it.absent : '') + (it.sub ? ' · ' + (it.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย') : '') + (it.pending ? ' · ' + it.pending : '') + (it.made_up ? ' · สอนชดเชยแล้ว ' + thDate(it.made_up) + ' (รายงานผลแล้ว) นับชั่วโมงที่คาบนี้' : '');
+        var tip = c.code + ' ' + c.name + ' · ' + groupCode(it.group_id) + ' · ' + LV[it.level] + (it.blocked ? ' · ' + it.blocked : '') + (it.absent ? ' · ' + it.absent : '') + (it.sub ? ' · ' + (it.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย') : '') + (it.pending ? ' · ' + it.pending : '') + (it.no_claim ? ' · ' + it.no_claim : '') + (it.made_up ? ' · สอนชดเชยแล้ว ' + thDate(it.made_up) + ' (รายงานผลแล้ว) นับชั่วโมงที่คาบนี้' : '');
         return '<div class="ss" data-w="' + w.index + '" data-key="' + esc(it.key) + '" title="' + esc(tip) + '" style="min-height:40px;cursor:' + (canEdit && !it.blocked && !it.absent ? 'pointer' : 'default') + ';background:' + bg + ';color:' + fg + ';border:1px solid #cfd5e2;' + (it.absent ? 'text-decoration:line-through;' : '') + '">' +
-          '<b>' + esc(c.code) + '</b><span>' + esc(groupCode(it.group_id)) + (it.sub ? ' · ' + (it.sub === 'sub' ? 'แทน' : 'ชดเชย') : '') + (it.made_up ? ' · ชดเชย ✓' : '') + (it.pending ? ' ⚠' : '') + '</span></div>';
+          '<b>' + esc(c.code) + '</b><span>' + esc(groupCode(it.group_id)) + (it.sub ? ' · ' + (it.sub === 'sub' ? 'แทน' : 'ชดเชย') : '') + (it.made_up ? ' · ชดเชย ✓' : '') + (it.pending ? ' ⚠' : '') + (it.no_claim ? ' · ภาระงานเท่านั้น' : '') + '</span></div>';
       }).join('') + '</td>';
     }
     h += '</tr>';
@@ -259,7 +259,7 @@ function bindClaim() {
       var it = w.items.filter(function (x) { return x.key === div.dataset.key; })[0];
       if (it.blocked || it.absent) return toast(it.blocked ? 'ชั่วโมงห้ามเบิก: ' + it.blocked : 'ไม่นับ: ' + it.absent, 1);
       var m = OT.sel[w.index] = OT.sel[w.index] || {};
-      m[it.key] = !m[it.key] ? 'L' : m[it.key] === 'L' ? 'C' : '';
+      m[it.key] = !m[it.key] ? 'L' : m[it.key] === 'L' && !it.no_claim ? 'C' : '';
       if (!m[it.key]) delete m[it.key];
       renderClaimKeepScroll();
     };
@@ -275,7 +275,7 @@ function bindClaim() {
 function copyWeek(from, to) {
   var d = OT.data, wf = d.weeks[from - 1], wt = d.weeks[to - 1], src = OT.sel[from] || {}, out = {};
   var pat = {}; wf.items.forEach(function (it) { if (src[it.key]) pat[it.day + '|' + it.period + '|' + it.session_id] = src[it.key]; });
-  wt.items.forEach(function (it) { var v = pat[it.day + '|' + it.period + '|' + it.session_id]; if (v && !it.blocked && !it.absent) out[it.key] = v; });
+  wt.items.forEach(function (it) { var v = pat[it.day + '|' + it.period + '|' + it.session_id]; if (v && !it.blocked && !it.absent && !(v === 'C' && it.no_claim)) out[it.key] = v; });
   OT.sel[to] = out; OT.ph[to] = JSON.parse(JSON.stringify(OT.ph[from] || {}));
 }
 

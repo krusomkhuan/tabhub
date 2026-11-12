@@ -8,6 +8,57 @@ var Sched = (function () {
     return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(String);
   }
 
+  function hourTypes(s, p, course) {
+    if (String(s.workplace) === 'true' || String((p || {}).workplace) === 'true' || (p || {}).course_type === 'internship' || (course || {}).course_type === 'internship') return Array.from({ length: Number(s.length) }, function () { return 'in'; });
+    var types;
+    try { types = JSON.parse(s.hour_types || 'null'); } catch (e) { types = null; }
+    if (Array.isArray(types) && types.length === Number(s.length) && types.every(function (x) { return ['in', 'out', 'none'].indexOf(x) >= 0; })) return types;
+    return Array.from({ length: Number(s.length) }, function () { return s.hour_type || (p || {}).hour_type || 'in'; });
+  }
+
+  function hourGroupKey(p, sessions) {
+    var slots = [];
+    sessions.forEach(function (s) {
+      if (String(s.plan_id) !== String(p.id)) return;
+      for (var k = 0; k < Number(s.length); k++) slots.push(Number(s.day) + ':' + (Number(s.start) + k));
+    });
+    if (!slots.length || !p.joint_key) return 'P:' + p.id;
+    return 'J:' + p.joint_key + '|' + (p.semester_id || '') + '|' + (p.course_id || '') + '|' + ids(p.teacher_ids).sort().join(',') + '|' + slots.sort().join(',');
+  }
+
+  function parsePeriodNumbers(value) {
+    var text = String(value || '').trim().replace(/[๐-๙]/g, function (c) { return c.charCodeAt(0) - 3664; });
+    if (!text) return [];
+    var out = [];
+    text.split(/[,\s]+/).forEach(function (part) {
+      var m = /^([1-9][0-9]*)(?:-([1-9][0-9]*))?$/.exec(part);
+      if (!m) throw new Error('กรอกเลขคาบ เช่น 1,2 หรือ 8-9');
+      var from = Number(m[1]), to = m[2] ? Number(m[2]) : from;
+      if (to < from || to > 100) throw new Error('ช่วงเลขคาบไม่ถูกต้อง');
+      for (var p = from; p <= to; p++) { if (out.indexOf(p) >= 0) throw new Error('กรอกเลขคาบซ้ำ: ' + p); out.push(p); }
+    });
+    return out;
+  }
+
+  /** เชื่อมวันอื่นเฉพาะเมื่อประเภทชัดเจน ห้ามเดาประเภทของคาบผสม */
+  function linkPeriodDays(days, sourceDay, inValue, outValue, hoursIn, hoursOut, need) {
+    var inside = parsePeriodNumbers(inValue), outside = parsePeriodNumbers(outValue), source = days[sourceDay] || [];
+    var entered = inside.concat(outside);
+    if (new Set(entered).size !== entered.length) throw new Error('เลขคาบซ้ำระหว่างใน/นอก');
+    if (entered.some(function (p) { return source.indexOf(p) < 0; })) throw new Error('มีเลขคาบที่ไม่มีในตารางของวันนี้');
+    if (entered.length !== source.length || !source.length) return null;
+    var result = {}, remaining = 0;
+    Object.keys(days).forEach(function (day) { result[day] = { in: [], out: [] }; if (String(day) !== String(sourceDay)) remaining += days[day].length; });
+    result[sourceDay] = { in: inside, out: outside };
+    var uniform = !outside.length ? 'in' : !inside.length ? 'out' : '';
+    if (uniform) { hoursIn = uniform === 'in' ? need : 0; hoursOut = uniform === 'out' ? need : 0; }
+    var leftIn = Number(hoursIn) - inside.length, leftOut = Number(hoursOut) - outside.length;
+    if (leftIn < 0 || leftOut < 0 || Number(hoursIn) + Number(hoursOut) !== need) throw new Error('จำนวนคาบใน/นอกของวันนี้ไม่ตรงกับยอดตามแผน');
+    var type = uniform || (leftOut === 0 && leftIn >= remaining ? 'in' : leftIn === 0 && leftOut >= remaining ? 'out' : '');
+    if (type) Object.keys(days).forEach(function (day) { if (String(day) !== String(sourceDay)) result[day][type] = days[day].slice(); });
+    return { days: result, hoursIn: Number(hoursIn), hoursOut: Number(hoursOut), unresolved: remaining > 0 && !type };
+  }
+
   /** สร้างบริบทจากข้อมูลดิบ */
   function makeCtx(o) {
     var ctx = {
@@ -109,6 +160,14 @@ var Sched = (function () {
     return n;
   }
 
+  function splitError(p, ctx) {
+    var split = String(p.split || '').trim();
+    if (!split) return '';
+    if (!/^[1-9][0-9]*(\+[1-9][0-9]*)*$/.test(split)) return 'ระบุการแบ่งคาบเป็นจำนวนเต็มบวก เช่น 2+1';
+    if (split.split('+').map(Number).reduce(function (a, b) { return a + b; }, 0) !== planPeriods(p, ctx)) return 'ผลรวมการแบ่งคาบต้องเท่ากับจำนวนคาบต่อสัปดาห์';
+    return '';
+  }
+
   /** แบ่งเป็นก้อน เช่น "2+2" หรืออัตโนมัติ (ก้อนละไม่เกิน 4 คาบ) */
   function splitBlocks(p, ctx) {
     var n = planPeriods(p, ctx);
@@ -146,6 +205,12 @@ var Sched = (function () {
     var blocks = [];
     units.forEach(function (u) {
       var lead = u.plans[0];
+      var pattern = null;
+      u.plans.forEach(function (p) {
+        var parts = splitBlocks(p, ctx).slice().sort(function (a, b) { return a - b; }).join('+');
+        if (pattern !== null && pattern !== parts) throw new Error('การแบ่งคาบของกลุ่มที่ใช้รหัสเรียนร่วมเดียวกันไม่ตรงกัน กรุณาตรวจแผนของทุกกลุ่มในชุดเรียนร่วมก่อนจัดอัตโนมัติ');
+        pattern = parts;
+      });
       remainingBlocks(lead, sessions, ctx).forEach(function (len) {
         blocks.push({ unit: u, length: len });
       });
@@ -374,6 +439,6 @@ var Sched = (function () {
     return String(p.workplace) === 'true' || !!(c && c.course_type === 'internship');
   }
 
-  return { isWorkplace: isWorkplace, ids: ids, makeCtx: makeCtx, check: check, auto: auto, splitBlocks: splitBlocks, remainingBlocks: remainingBlocks, planPeriods: planPeriods };
+  return { linkPeriodDays: linkPeriodDays, parsePeriodNumbers: parsePeriodNumbers, hourGroupKey: hourGroupKey, hourTypes: hourTypes, isWorkplace: isWorkplace, ids: ids, makeCtx: makeCtx, check: check, auto: auto, splitError: splitError, splitBlocks: splitBlocks, remainingBlocks: remainingBlocks, planPeriods: planPeriods };
 })();
 

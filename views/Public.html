@@ -129,7 +129,7 @@
       var head = Grid.deptHead(D.teachers, t.department_id);
       out.innerHTML = Grid.teacherSheet({
         settings: D.settings, dayNames: D.days, locked: D.locked || [], teacher: t, teacherId: P.id, sessions: D.sessions, groups: D.groups,
-        hourType: function (s) { return s.hour_type || 'in'; }, plc: D.plc || [],
+        hourType: function (s, k) { var types; try { types = JSON.parse(s.hour_types || 'null'); } catch (e) {} return types && types.length === Number(s.length) ? types[k] : s.hour_type || 'in'; }, plc: D.plc || [],
         course: course, group: gcode, room: function (id) { return (IX.rooms[id] || {}).name || ''; }, color: publicSessionColor,
         deptName: (IX.departments[t.department_id] || {}).name || '', semLabel: sem ? sem.label : '', sign: Grid.signBlock(D.settings, head && head.name, false, (IX.departments[t.department_id] || {}).name)
       });

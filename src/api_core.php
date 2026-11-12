@@ -38,7 +38,7 @@ const EXEC_BLOCKED_APIS = [
   'teachReportImageAdd', 'teachReportImageDelete', 'teachReportSave', 'teachReportReview', 'teachReportDelete',
   'visitSave', 'visitDelete', 'visitImageAdd', 'visitImageDelete', 'visitDocSave', 'visitDocDelete',
   'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
-  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete', 'planHourType', 'userPermSave',
+  'teachDocSave', 'teachDocReset', 'docFileSave', 'docFileDelete', 'planHourType', 'planHourAllocation', 'userPermSave',
 ];
 /** เมนูที่มีไว้แก้ข้อมูลอย่างเดียว ผู้บริหารไม่ต้องเห็น */
 const EXEC_HIDDEN_MENUS = ['import', 'windows', 'user-perms'];
@@ -458,6 +458,15 @@ function api_saveRow($token = '', $name = '', $row = []) {
     if ($i === null) { $rows[] = ['id' => new_id()]; $i = count($rows) - 1; }
     foreach (SCHEMA[$name] as $h) if ($h !== 'id' && array_key_exists($h, $row)) $rows[$i][$h] = $row[$h];
     $cur = $rows[$i];
+    if ($name === 'Plans' && array_intersect(['split', 'periods', 'course_id'], array_keys($row))) {
+      $error = sched_split_error($cur, ['courses' => idx_table('Courses')]);
+      if ($error !== '') throw new Exception($error);
+    }
+    if ($name === 'Plans') {
+      if (sched_is_workplace($cur, ['courses' => idx_table('Courses')]) && in_array($row['hour_type'] ?? '', ['out', 'none'], true)) throw new Exception('คาบสถานประกอบการต้องเป็นคาบใน และนำมาเบิกไม่ได้');
+      $error = sched_allocation_error($cur, readTable('Sessions'), ['courses' => idx_table('Courses')]);
+      if ($error !== '') throw new Exception($error);
+    }
     if ($name === 'Semesters' && str($cur['is_default'] ?? '') === 'true') {
       foreach ($rows as $k => $r) if ($k !== $i) $rows[$k]['is_default'] = false;
       saveSetting('default_semester_id', $cur['id']);
@@ -594,6 +603,70 @@ function assert_dept_can_save_plan(array $me, ?array $old, array $new): void {
 
 const PLAN_HOUR_TYPES = ['', 'out', 'none'];
 
+/** บันทึกจำนวนชั่วโมงพร้อมประเภทแต่ละคาบ โดยไม่ย้าย/แบ่ง/ลบคาบสอน */
+function api_planHourAllocation($token = '', $payload = []) {
+  $me = auth_user($token);
+  $data = (array)$payload;
+  return with_lock(function () use ($me, $data) {
+    $plans = readTable('Plans'); $sessions = readTable('Sessions');
+    $ids = array_values(array_unique(array_map('str', (array)($data['plan_ids'] ?? []))));
+    if (!$ids) throw new Exception('เลือกกลุ่มเรียนอย่างน้อย 1 กลุ่ม');
+    $selected = array_values(array_filter($plans, fn($p) => in_array($p['id'], $ids, true)));
+    if (count($selected) !== count($ids)) throw new Exception('ไม่พบแผนการเรียนที่เลือก');
+    $lead = $selected[0]; $ctx = ['courses' => idx_table('Courses')];
+    $groupKey = sched_hour_group_key($lead, $sessions);
+    foreach ($selected as $p) {
+      if ($p['semester_id'] !== $lead['semester_id'] || $p['course_id'] !== $lead['course_id'] || $p['teacher_ids'] !== $lead['teacher_ids']) throw new Exception('เลือกได้เฉพาะวิชา ภาคเรียน และชุดครูผู้สอนเดียวกัน');
+      if (sched_hour_group_key($p, $sessions) !== $groupKey) throw new Exception('กำหนดได้เฉพาะกลุ่มผู้เรียนชุดเดียวกันที่เรียนร่วมวันและคาบเดียวกันครบทุกช่วง กรุณาแยกกำหนดกลุ่มที่เรียนคนละเวลา');
+      if ($me['role'] === 'teacher') {
+        $teacher = idx_table('Teachers')[$me['teacher_id']] ?? null;
+        $group = idx_table('Groups')[$p['group_id']] ?? null;
+        if (!$teacher || !$group || !in_array((string)$me['teacher_id'], sched_ids($p['teacher_ids']), true) || $group['department_id'] === $teacher['department_id']) throw new Exception('ตั้งได้เฉพาะวิชาที่ตนสอนให้แผนกอื่น');
+      } else {
+        if (!in_array($me['role'], ['dept', 'admin', 'curriculum'], true)) throw new Exception('ไม่มีสิทธิ์กำหนดคาบใน/นอก');
+        assert_dept_can_save_plan($me, $p, []);
+      }
+    }
+    $slotTypes = (array)($data['slot_types'] ?? []);
+    $known = [];
+    foreach ($sessions as &$s) if (in_array($s['plan_id'], $ids, true)) {
+      $known[] = $s['id'];
+      $types = $slotTypes[$s['id']] ?? null;
+      if (!is_array($types) || !array_is_list($types) || count($types) !== (int)num($s['length']) || array_diff($types, ['in', 'out'])) throw new Exception('เลือกใน/นอกให้ครบทุกคาบตามตารางล่าสุด แล้วบันทึกใหม่');
+      $plan = $plans[find_row($plans, $s['plan_id'])];
+      if (sched_is_workplace($plan, $ctx) && array_diff($types, ['in'])) throw new Exception('คาบสถานประกอบการกำหนดได้เฉพาะคาบใน และนำมาเบิกไม่ได้');
+      $s['hour_types'] = json_encode($types);
+      $s['hour_type'] = count(array_unique($types)) === 1 ? $types[0] : '';
+    }
+    unset($s);
+    if (array_diff(array_keys($slotTypes), $known)) throw new Exception('ตารางเปลี่ยนไปแล้ว กรุณาเปิดแบบฟอร์มใหม่');
+    foreach ($plans as &$p) if (in_array($p['id'], $ids, true)) {
+      $p['teaching_weeks'] = str($data['weeks'] ?? '');
+      $p['hours_in'] = str($data['hours_in'] ?? '');
+      $p['hours_out'] = str($data['hours_out'] ?? '');
+      $p['hour_type'] = num($p['hours_in']) === 0 ? 'out' : '';
+      $error = sched_allocation_error($p, $sessions, $ctx);
+      if ($error !== '') throw new Exception($error);
+    }
+    unset($p);
+    // ชุดเรียนร่วมเวลาเดียวกันต้องเลือกประเภทตรงกัน เพื่อไม่ให้ยอดรวมครูนับผิด
+    $jointSlots = [];
+    foreach ($sessions as $s) {
+      $p = find_row($plans, $s['plan_id']); if ($p === null) continue; $p = $plans[$p];
+      if (!$p['joint_key'] || $p['semester_id'] !== $lead['semester_id']) continue;
+      foreach (sched_hour_types($s, $p) as $k => $type) {
+        $key = $p['joint_key'].'|'.$s['day'].'|'.(num($s['start'])+$k);
+        $jointSlots[$key]['types'][$type] = true;
+        if (in_array($s['plan_id'], $ids, true)) $jointSlots[$key]['selected'] = true;
+      }
+    }
+    foreach ($jointSlots as $slot) if (!empty($slot['selected']) && count($slot['types']) > 1) throw new Exception('กลุ่มที่เรียนร่วมเวลาเดียวกันต้องกำหนดใน/นอกให้ตรงกัน กรุณาเลือกกลุ่มเรียนร่วมให้ครบ');
+    writeTable('Plans', $plans); writeTable('Sessions', $sessions);
+    log_action($me, 'กำหนดชั่วโมงใน/นอก', ['plans' => $ids, 'weeks' => $data['weeks'], 'in' => $data['hours_in'], 'out' => $data['hours_out']]);
+    return count($ids);
+  });
+}
+
 /**
  * ครูที่สอนกลุ่มของแผนกอื่น (เช่น ครูสามัญ) ตั้งคาบใน/คาบนอกของวิชาที่ตัวเองสอนได้
  * ใช้กับทุกกลุ่มที่เรียนร่วมวิชานี้กับครูคนเดียวกัน เพราะเป็นคาบชุดเดียวกัน
@@ -608,15 +681,17 @@ function api_planHourType($token = '', $planId = '', $hourType = '') {
     $rows = readTable('Plans');
     $i = find_row($rows, str($planId));
     if ($i === null) throw new Exception('ไม่พบวิชาในแผน');
+    if (sched_is_workplace($rows[$i], ['courses' => idx_table('Courses')]) && $hourType !== '') throw new Exception('คาบสถานประกอบการต้องเป็นคาบใน และนำมาเบิกไม่ได้');
     $teacher = idx_table('Teachers')[$tid] ?? null;
     $group = idx_table('Groups')[(string)$rows[$i]['group_id']] ?? null;
     $teaches = fn($p) => in_array($tid, array_map('trim', explode(',', (string)$p['teacher_ids'])), true);
     if (!$teacher || !$teaches($rows[$i])) throw new Exception('ตั้งได้เฉพาะวิชาที่คุณเป็นผู้สอน');
     if (!$group || (string)$group['department_id'] === (string)$teacher['department_id']) throw new Exception('วิชาในกลุ่มของแผนกตัวเอง ให้วิชาการแผนกเป็นผู้ตั้ง');
-    $key = (string)$rows[$i]['joint_key'];
+    $sessions = readTable('Sessions');
+    $key = sched_hour_group_key($rows[$i], $sessions);
     $n = 0;
     foreach ($rows as $k => $p) {
-      $same = $k === $i || ($key !== '' && (string)$p['joint_key'] === $key && (string)$p['semester_id'] === (string)$rows[$i]['semester_id'] && $teaches($p));
+      $same = $k === $i || (sched_hour_group_key($p, $sessions) === $key && $teaches($p));
       if ($same) { $rows[$k]['hour_type'] = $hourType; $n++; }
     }
     writeTable('Plans', $rows);

@@ -709,7 +709,8 @@ function planCheck() {
     return me.role === 'teacher' ? Sched.ids(p.teacher_ids).indexOf(String(me.teacher_id)) >= 0 : inDept(p.group_id);
   }).map(function (p) {
     var need = Sched.planPeriods(p, C), got = placed[p.id] || 0;
-    return { plan: p, gid: String(p.group_id), need: need, placed: got, state: planState(need, got) };
+    var parts = S.sessions.filter(function (s) { return String(s.plan_id) === String(p.id); }).map(function (s) { return Number(s.length); });
+    return { plan: p, gid: String(p.group_id), need: need, placed: got, parts: parts, state: planState(need, got) };
   });
   var busy = {};
   S.plans.forEach(function (p) { busy[p.group_id] = 1; });
@@ -748,16 +749,16 @@ VIEWS.plancheck = function (el) {
   el.innerHTML = '<div class="card"><h3>ตรวจสอบแผนการเรียน · ภาคเรียน ' + esc(semLabel(S.sem)) + '</h3>' + planAlertHtml(c).replace(/href="#plancheck"/, '').replace(/^<a/, '<div').replace(/<\/a>$/, '</div>').replace(' — กดเพื่อตรวจสอบ', '') +
     '<div class="plan-sum"><span class="tag">ทั้งหมด ' + c.rows.length + ' วิชา</span><span class="tag ok">ครบแล้ว ' + count('done') + '</span><span class="tag warn">ยังไม่ครบ ' + count('part') + '</span><span class="tag">ยังไม่จัด ' + count('none') + '</span><span class="tag bad">เกินแผน/ไม่ได้กำหนดคาบ ' + count('over') + '</span>' + (c.empty.length ? '<span class="tag bad">กลุ่มไม่มีแผน ' + c.empty.length + '</span>' : '') + '</div>' +
     '<div class="row">' + (academicRole(S.me.role) ? '<select id="pcD" style="width:auto">' + deptOptions(f.dept) + '</select>' : '') +
-    '<select id="pcS" style="width:auto"><option value="bad"' + (f.state === 'bad' ? ' selected' : '') + '>เฉพาะที่ยังไม่เรียบร้อย</option><option value="all"' + (f.state === 'all' ? ' selected' : '') + '>ทุกวิชา</option></select></div></div>' +
+    '<select id="pcS" style="width:auto"><option value="bad"' + (f.state === 'bad' ? ' selected' : '') + '>เฉพาะที่ยังไม่เรียบร้อย</option><option value="split"' + (f.state === 'split' ? ' selected' : '') + '>วิชาที่แบ่งคาบหลายช่วง</option><option value="all"' + (f.state === 'all' ? ' selected' : '') + '>ทุกวิชา</option></select></div></div>' +
     '<div class="card" id="pcOut"></div>';
   function draw() {
     var inDept = function (gid) { return !f.dept || (IDX.Groups[gid] && String(IDX.Groups[gid].department_id) === String(f.dept)); };
-    var list = sortBy((f.state === 'bad' ? c.bad : c.rows).filter(function (r) { return inDept(r.gid); }), function (r) { return groupCode(r.gid) + ' ' + courseOf(r.plan.course_id).code; });
-    var empty = c.empty.filter(function (g) { return inDept(g.id); });
+    var list = sortBy((f.state === 'bad' ? c.bad : c.rows).filter(function (r) { return inDept(r.gid) && (f.state !== 'split' || r.parts.length > 1); }), function (r) { return groupCode(r.gid) + ' ' + courseOf(r.plan.course_id).code; });
+    var empty = f.state === 'split' ? [] : c.empty.filter(function (g) { return inDept(g.id); });
     function fix(gid) { return canEditGroup(gid) ? '<button class="btn sm" data-pc-go="' + esc(gid) + '">จัดตาราง</button>' : ''; }
     var html = list.map(function (r) {
       var co = courseOf(r.plan.course_id);
-      return '<tr class="plan-row ' + r.state[0] + '"><td style="white-space:nowrap">' + esc(groupCode(r.gid)) + '</td><td>' + esc(co.code + ' ' + co.name) + '<div class="small muted">' + esc(teacherNames(r.plan.teacher_ids)) + '</div></td><td class="plan-c">' + r.need + '</td><td class="plan-c">' + r.placed + '</td><td class="plan-c"><span class="plan-st">' + r.state[1] + '</span></td><td style="text-align:right">' + (r.state[0] === 'done' ? '' : fix(r.gid)) + '</td></tr>';
+      return '<tr class="plan-row ' + r.state[0] + '"><td style="white-space:nowrap">' + esc(groupCode(r.gid)) + '</td><td>' + esc(co.code + ' ' + co.name) + '<div class="small muted">' + esc(teacherNames(r.plan.teacher_ids)) + '</div></td><td class="plan-c">' + r.need + '<div class="small muted">แผน ' + esc(Sched.splitBlocks(r.plan, ctx()).join('+')) + (r.plan.split ? '' : ' (อัตโนมัติ)') + '</div></td><td class="plan-c">' + r.placed + (r.parts.length ? '<div class="small muted">' + r.parts.join('+') + ' = ' + r.placed + ' คาบ</div>' : '') + '</td><td class="plan-c"><span class="plan-st">' + r.state[1] + '</span></td><td style="text-align:right">' + fix(r.gid) + '</td></tr>';
     }).concat(empty.map(function (g) {
       return '<tr class="plan-row over"><td style="white-space:nowrap">' + esc(g.code || g.name) + '</td><td class="muted">ยังไม่มีแผนการเรียนในภาคเรียนนี้</td><td class="plan-c">-</td><td class="plan-c">-</td><td class="plan-c"><span class="plan-st">ไม่มีแผน</span></td><td style="text-align:right">' + (canEditGroup(g.id) ? '<button class="btn sm" data-pc-plan="' + esc(g.id) + '">เพิ่มแผน</button>' : '') + '</td></tr>';
     })).join('');
@@ -907,12 +908,13 @@ function sessionColor(s) {
   return Grid.sessionColor({ settings: S.settings, groups: S.D.ColorGroups || [], course_id: s.course_id, color: c.color, course_type: c.course_type, name: c.name, teacher_ids: s.teacher_ids, room_id: s.room_id, room: s.room_id ? roomName(s.room_id) : '', department_id: (IDX.Groups[s.group_id] || {}).department_id, workplace: Sched.isWorkplace(s, ctx()) });
 }
 
-function sessionHourType(s) {
-  return s.hour_type || (IDX.Plans[s.plan_id] || {}).hour_type || 'in';
+function sessionHourType(s, offset) {
+  var types = Sched.hourTypes(s, IDX.Plans[s.plan_id] || {}, courseOf(s.course_id));
+  return offset === undefined ? (types.every(function (x) { return x === types[0]; }) ? types[0] : 'mixed') : types[offset];
 }
 
-function hourTypeOptions(value, inherited) {
-  return [['', 'ตามแผนการเรียน' + (inherited ? ' (' + ({ in: 'คาบใน', out: 'คาบนอก', none: 'ไม่นับ' }[inherited] || 'คาบใน') + ')' : '')], ['in', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].map(function (x) {
+function hourTypeOptions(value, inherited, workplace) {
+  return [['', 'ตามแผนการเรียน' + (inherited ? ' (' + ({ in: 'คาบใน', out: 'คาบนอก', none: 'ไม่นับ', mixed: 'ใน/นอกแยกแต่ละคาบ' }[inherited] || 'คาบใน') + ')' : '')], ['in', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].filter(function (x) { return !workplace || x[0] === '' || x[0] === 'in'; }).map(function (x) {
     return '<option value="' + x[0] + '"' + (String(value || '') === x[0] ? ' selected' : '') + '>' + x[1] + '</option>';
   }).join('');
 }
@@ -1031,7 +1033,8 @@ function renderPlanBox(gid, editable) {
   var totals = { t: 0, p: 0, u: 0, need: 0, placed: 0, done: 0 };
   var rows = sortBy(plans, function (p) { return courseOf(p.course_id).code; }).map(function (p) {
     var need = Sched.planPeriods(p, C);
-    var placed = S.sessions.filter(function (s) { return String(s.plan_id) === String(p.id); }).reduce(function (a, s) { return a + Number(s.length); }, 0);
+    var actual = S.sessions.filter(function (s) { return String(s.plan_id) === String(p.id); });
+    var placed = actual.reduce(function (a, s) { return a + Number(s.length); }, 0);
     var blocks = Sched.remainingBlocks(p, S.sessions, C);
     var c = courseOf(p.course_id);
     totals.t += Number(c.theory) || 0; totals.p += Number(c.practice) || 0; totals.u += Number(c.credits) || 0;
@@ -1044,13 +1047,20 @@ function renderPlanBox(gid, editable) {
     var state = planState(need, placed);
     return '<tr class="plan-row ' + state[0] + '" data-plan-row="' + esc(p.id) + '"><td class="plan-c">' + esc(c.code) + '</td><td><div>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn">เรียนร่วม</span>' : '') + '</div>' +
       '<div class="small muted">' + esc(teacherNames(p.teacher_ids)) + (p.room_id ? ' · ห้อง ' + esc(roomName(p.room_id)) : '') + '</div></td><td class="plan-c">' + esc([c.theory, c.practice, c.credits].join('-')) + '</td><td class="plan-c">' + need +
-      '</td><td class="plan-c"><span class="plan-st">' + state[1] + '</span> (' + placed + '/' + need + ')' + (left > 0 && chips ? '<div>' + chips + (editable && left > 1 ? ' <button class="btn sm" data-custom="' + esc(p.id) + '" title="ลงจำนวนคาบอื่น">±</button>' : '') + '</div>' : '') + '</td></tr>';
+      '</td><td class="plan-c"><span class="plan-st">' + state[1] + '</span> (' + placed + '/' + need + ')' +
+      '<div class="small muted">แผน: ' + esc(Sched.splitBlocks(p, C).join('+')) + (p.split ? '' : ' (อัตโนมัติ)') +
+      (actual.length ? '<br>ลงจริง: ' + actual.map(function (s) { return Number(s.length); }).join('+') + ' = ' + placed + ' คาบ' : '') + '</div>' +
+      (editable ? '<button class="btn sm" data-split-plan="' + esc(p.id) + '">แบ่งคาบ</button>' : '') +
+      (left > 0 && chips ? '<div>' + chips + (editable && left > 1 ? ' <button class="btn sm" data-custom="' + esc(p.id) + '" title="เลือกจำนวนคาบที่จะลงครั้งนี้">± เลือกจำนวนคาบ</button>' : '') + '</div>' : '') + '</td></tr>';
   }).join('');
   box.innerHTML = '<div class="row"><h3 class="grow" style="margin:0 0 8px">รายวิชาที่ต้องจัด' + (editable ? ' — คลิกแถวเพื่อเริ่มจัดตาราง' : '') + '</h3><a class="small" href="#plans">แก้ไขแผนการเรียน</a></div>' +
     (editable ? '<label class="row small" style="margin:0 0 10px">ประเภทคาบที่จะลงใหม่ <select id="placeHourType" style="width:auto">' + hourTypeOptions(S.sel.placeHourType || '') + '</select></label>' : '') +
     '<div class="tablewrap"><table class="data plan-status"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>ท-ป-น</th><th>ชั่วโมง</th><th>สถานะ</th></tr></thead><tbody>' + rows +
     '<tr class="plan-total"><td></td><td>ครบแล้ว ' + totals.done + ' จาก ' + plans.length + ' วิชา</td><td class="plan-c">' + totals.t + '-' + totals.p + '-' + totals.u + '</td><td class="plan-c">' + totals.need + '</td><td class="plan-c">ลงแล้ว ' + totals.placed + '/' + totals.need + '</td></tr></tbody></table></div>';
   if ($('#placeHourType', box)) $('#placeHourType', box).onchange = function () { S.sel.placeHourType = this.value; };
+  $$('[data-split-plan]', box).forEach(function (b) {
+    b.onclick = function () { scheduleSplitModal(IDX.Plans[b.dataset.splitPlan]); };
+  });
   /* คลิกแถวเท่ากับเลือกก้อนคาบแรกที่ยังไม่ได้วาง */
   $$('[data-plan-row]', box).forEach(function (tr) {
     var first = $('.chip', tr);
@@ -1070,12 +1080,49 @@ function renderPlanBox(gid, editable) {
   });
   $$('[data-custom]', box).forEach(function (b) {
     b.onclick = function () {
-      var n = Number(prompt('ต้องการลงครั้งละกี่คาบ?', '1'));
-      if (!n || n < 1) return;
+      var plan = IDX.Plans[b.dataset.custom];
+      var left = Sched.planPeriods(plan, ctx()) - S.sessions.filter(function (s) { return String(s.plan_id) === String(plan.id); }).reduce(function (n, s) { return n + Number(s.length); }, 0);
+      var input = prompt('ต้องการลงครั้งนี้กี่คาบ? เหลือ ' + left + ' คาบ เช่น ลง 2 คาบ แล้วลงอีก 1 คาบคนละวัน รวม 3 คาบ', String(Math.min(2, left)));
+      if (input === null) return;
+      var n = Number(input);
+      if (!Number.isInteger(n) || n < 1 || n > left) return toast('ระบุจำนวนเต็มตั้งแต่ 1 ถึง ' + left + ' คาบ', 1);
       S.sel.chip = { plan_id: b.dataset.custom, length: n, i: -1 };
       markCells(S.sel.chip); toast('แตะช่องในตารางเพื่อวาง ' + n + ' คาบ');
     };
   });
+}
+
+function scheduleSplitModal(p) {
+  var C = ctx(), need = Sched.planPeriods(p, C);
+  var actual = S.sessions.filter(function (s) { return String(s.plan_id) === String(p.id); });
+  var suggestion = actual.length > 1 && actual.reduce(function (n, s) { return n + Number(s.length); }, 0) === need ?
+    actual.map(function (s) { return Number(s.length); }).sort(function (a, b) { return b - a; }).join('+') : '';
+  var m = modal('<h3>แบ่งคาบ · ' + esc(courseOf(p.course_id).code) + ' · ' + esc(groupCode(p.group_id)) + '</h3>' +
+    '<p>วิชานี้ต้องจัดรวม ' + need + ' คาบ/สัปดาห์ กำหนดแต่ละช่วง เช่น <b>2+1</b> แล้วเลือกวันและคาบให้แต่ละช่วงในตาราง</p>' +
+    (actual.length ? '<p class="small">คาบที่ลงแล้ว: ' + actual.map(function (s) { return esc(S.days[s.day]) + ' คาบ ' + Grid.periodRange(S.settings, s.start, s.length) + ' (' + Number(s.length) + ' คาบ)'; }).join(' · ') + '</p>' : '') +
+    '<label class="f">การแบ่งคาบ (เว้นว่าง = อัตโนมัติ)</label><input id="splitValue" placeholder="เช่น 2+1" value="' + esc(p.split || '') + '">' +
+    (suggestion ? '<button class="btn sm" id="splitActual">ใช้รูปแบบที่ลงจริง ' + esc(suggestion) + '</button>' : '') +
+    '<p id="splitTotal" class="small"></p>' +
+    (p.joint_key ? '<p class="small muted">บันทึกรูปแบบเฉพาะกลุ่มนี้ หากจัดอัตโนมัติแบบเรียนร่วม ต้องกำหนดรูปแบบให้ตรงกันทุกกลุ่มที่เรียนร่วม</p>' : '') +
+    '<p class="small muted">บันทึกเพื่อใช้จัดครั้งต่อไป คาบที่ลงไว้ยังอยู่วันและเวลาเดิม</p>' +
+    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="splitSave">บันทึกการแบ่งคาบ</button></div>');
+  var input = $('#splitValue', m), save = $('#splitSave', m);
+  function validate() {
+    var value = input.value.replace(/\s/g, '');
+    var error = Sched.splitError(Object.assign({}, p, { split: value }), C);
+    $('#splitTotal', m).textContent = error || (value ? value + ' = ' + need + ' คาบ' : 'ใช้การแบ่งคาบอัตโนมัติ');
+    save.disabled = !!error;
+  }
+  input.oninput = validate;
+  if ($('#splitActual', m)) $('#splitActual', m).onclick = function () { input.value = suggestion; validate(); };
+  validate();
+  save.onclick = function () {
+    validate(); if (save.disabled) return;
+    save.disabled = true;
+    api('saveRow', S.token, 'Plans', { id: p.id, split: input.value.replace(/\s/g, '') }).then(loadSchedule).then(function () {
+      S.sel.chip = null; closeModal(); VIEWS.schedule($('#content')); toast('บันทึกการแบ่งคาบแล้ว');
+    }).catch(function () { validate(); });
+  };
 }
 
 /* ---------- ลากวาง ---------- */
@@ -1212,8 +1259,8 @@ function sessionModal(sid) {
     (probs.length ? '<ul class="problems">' + probs.map(function (p) { return '<li class="' + (p.hard ? 'hard' : 'soft') + '">' + esc(p.msg) + '</li>'; }).join('') + '</ul>' : '') +
     (editable ? '<label class="f">ห้องเรียน</label><select id="smRoom">' + roomOpts + '</select>' +
       '<label class="f">จำนวนคาบ</label><input id="smLen" type="number" min="1" max="' + S.settings.periods_per_day + '" value="' + s.length + '">' +
-      '<label class="f" for="smHourType">คาบใน / คาบนอก</label><select id="smHourType">' + hourTypeOptions(s.hour_type || '', plan.hour_type || 'in') + '</select><div class="small muted">ใช้กับคาบช่วงนี้' + (plan.joint_key ? 'และกลุ่มเรียนร่วมที่ย้ายตามกัน' : '') + ' · ใช้นับยอดรวมใน/รวมนอกในตารางสอนครู</div>'
-      : '<p>ประเภทคาบ: ' + esc({ in: 'คาบใน', out: 'คาบนอก', none: 'ไม่นับ' }[sessionHourType(s)] || 'คาบใน') + '</p>') +
+      '<label class="f" for="smHourType">คาบใน / คาบนอก</label><select id="smHourType">' + hourTypeOptions(s.hour_type || '', sessionHourType(s), Sched.isWorkplace(s, C)) + '</select><div class="small muted">ใช้กับคาบช่วงนี้' + (plan.joint_key ? 'และกลุ่มเรียนร่วมที่ย้ายตามกัน' : '') + ' · ใช้นับยอดรวมใน/รวมนอกในตารางสอนครู</div>' + (canEditPlan(plan) || myOutsidePlan(plan) ? '<button class="btn sm" id="smAllocation">กำหนดชั่วโมงและเลือกใน/นอกแต่ละคาบ</button>' : '')
+      : '<p>ประเภทคาบ: ' + esc({ in: 'คาบใน', out: 'คาบนอก', none: 'ไม่นับ', mixed: 'มีทั้งคาบในและคาบนอก' }[sessionHourType(s)] || 'คาบใน') + '</p>') +
     '<p class="small muted">แก้ไขล่าสุด: ' + esc(s.updated_by || '-') + '</p>' +
     '<div class="actions">' +
     '<button class="btn sm" id="smT">ดูตารางครู</button>' + (s.room_id ? '<button class="btn sm" id="smR">ดูตารางห้อง</button>' : '') +
@@ -1223,6 +1270,7 @@ function sessionModal(sid) {
   $('#smT', m).onclick = function () { closeModal(); S.sel.mode = 'teacher'; S.sel.teacher = Sched.ids(s.teacher_ids)[0]; S.sel.dept = ''; VIEWS.schedule($('#content')); };
   if ($('#smR', m)) $('#smR', m).onclick = function () { closeModal(); S.sel.mode = 'room'; S.sel.room = s.room_id; VIEWS.schedule($('#content')); };
   if (!editable) return;
+  if ($('#smAllocation', m)) $('#smAllocation', m).onclick = function () { hourAllocationModal(plan, function () { renderSchedMain(); }); };
   /* ย้ายด้วยการแตะ: จอสัมผัสลากวางแบบเดสก์ท็อปไม่ได้ */
   $('#smMove', m).onclick = function () { selectSessionMove(s.id); };
   $('#smDel', m).onclick = function () { api('removeSession', S.token, s.id).then(function (ss) { S.sessions = ss; closeModal(); renderSchedMain(); }); };
@@ -1246,13 +1294,115 @@ function myOutsidePlan(p) {
 }
 function hourTypeCell(p) {
   var how = canEditPlan(p) ? 'plan' : myOutsidePlan(p) ? 'teacher' : '';
-  if (!how) { var o = HOUR_TYPES.filter(function (x) { return x[0] === (p.hour_type || ''); })[0]; return '<span class="small">' + (o ? o[1] : 'คาบใน') + '</span>'; }
-  return '<select class="plan-ht" data-ht="' + esc(p.id) + '" data-how="' + how + '" style="width:auto">' + HOUR_TYPES.map(function (o) { return '<option value="' + o[0] + '"' + ((p.hour_type || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+  var label = String(p.hours_in || '') !== '' || String(p.hours_out || '') !== '' ? 'ใน ' + Number(p.hours_in) + ' / นอก ' + Number(p.hours_out) + (p.teaching_weeks ? ' · ' + p.teaching_weeks + ' สัปดาห์' : '') : ({ out: 'คาบนอก', none: 'ไม่นับ' }[p.hour_type] || 'คาบใน');
+  if (Sched.isWorkplace(p, ctx())) label = 'ใน ' + Sched.planPeriods(p, ctx()) + ' / นอก 0 · ภาระงานเท่านั้น';
+  return how ? '<button class="btn sm" data-allocation="' + esc(p.id) + '">' + esc(label) + ' · กำหนด</button>' : '<span class="small">' + esc(label) + '</span>';
+}
+
+function hourAllocationModal(p, afterSave) {
+  var C = ctx(), need = Sched.planPeriods(p, C), workplace = Sched.isWorkplace(p, C), key = Sched.hourGroupKey(p, S.sessions), available = S.plans.filter(function (x) {
+    return Sched.hourGroupKey(x, S.sessions) === key && (canEditPlan(x) || myOutsidePlan(x));
+  });
+  var selected = [p.id].concat(available.filter(function (x) { return x.id !== p.id; }).map(function (x) { return x.id; }));
+  var co = courseOf(p.course_id), count = Math.max(5, selected.length), m;
+  var opts = function (id) { return '<option value="">-- เลือกข้อมูล --</option>' + available.map(function (x) { var g = IDX.Groups[x.group_id] || {}; return '<option value="' + esc(x.id) + '"' + (x.id === id ? ' selected' : '') + '>' + esc((g.student_code ? g.student_code + ' : ' : '') + groupCode(x.group_id)) + '</option>'; }).join(''); };
+  var inputs = '';
+  for (var i = 0; i < count; i++) inputs += '<div class="ha-field"><label>กลุ่มเรียน ' + (i + 1) + (i === 0 ? ' *' : '') + '</label><select data-allocation-group aria-label="กลุ่มเรียน ' + (i + 1) + '">' + opts(selected[i]) + '</select></div>';
+  var configured = String(p.hours_in || '') !== '' || String(p.hours_out || '') !== '';
+  m = modal('<h3>กำหนดคาบใน / คาบนอก ตามกลุ่มผู้เรียน</h3><p>ภาคเรียน ' + esc(semLabel(p.semester_id)) + '</p><p><b>' + esc(co.code) + '</b> · ' + esc(co.name) + ' (' + esc([co.theory, co.practice, co.credits].join('-')) + ')</p><p class="small muted">เลือกเฉพาะกลุ่มที่เรียนร่วมกันจริง คาบของแต่ละกลุ่มนับรวมทุกวันในสัปดาห์ตามแผนของกลุ่มนั้น</p>' + inputs +
+    '<div class="ha-field"><label for="haWeeks">รูปแบบการเรียน</label><div class="ha-number"><input id="haWeeks" type="number" min="1" max="52" value="' + esc(p.teaching_weeks || '') + '" placeholder="15"><span>สัปดาห์</span></div></div>' +
+    '<div class="ha-field"><label for="haIn">ใน</label><div class="ha-number"><input id="haIn" type="number" min="0" step="1" value="' + (workplace ? need : configured ? Number(p.hours_in) : p.hour_type === 'out' ? 0 : need) + '"><span>ชั่วโมง/สัปดาห์</span></div></div>' +
+    '<div class="ha-field"><label for="haOut">นอก</label><div class="ha-number"><input id="haOut" type="number" min="0" step="1" value="' + (workplace ? 0 : configured ? Number(p.hours_out) : p.hour_type === 'out' ? need : 0) + '"><span>ชั่วโมง/สัปดาห์</span></div></div>' +
+    '<p class="small">ใน + นอก ต้องเท่ากับ ' + need + ' ชั่วโมง/สัปดาห์ กรอกเลขคาบจริงเพียงวันเดียว เช่น 8,9 ระบบเชื่อมวันอื่นของกลุ่มเดียวกันให้เมื่อระบุประเภทได้แน่นอน คาบผสมที่ยังระบุไม่ได้จะแจ้งให้กรอกเพิ่ม</p><div id="haSlots"></div><p id="haError" class="small" role="status"></p>' +
+    '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="haSave">บันทึก</button></div>', true);
+  var choices = {}, linkSource = null;
+  function ids() { return $$('[data-allocation-group]', m).map(function (x) { return x.value; }).filter(Boolean); }
+  function slots() {
+    $$('[data-ha-periods]', m).forEach(function (x) { choices[x.dataset.haPlan + '|' + x.dataset.haDay + '|' + x.dataset.haType] = x.value; });
+    var picked = ids(), html = '';
+    picked.forEach(function (pid) {
+      var plan = IDX.Plans[pid], ss = S.sessions.filter(function (s) { return s.plan_id === pid; }).slice().sort(function (a, b) { return Number(a.day) - Number(b.day) || Number(a.start) - Number(b.start); });
+      var placed = ss.reduce(function (sum, s) { return sum + Number(s.length); }, 0), required = Sched.planPeriods(plan, C);
+      html += '<h4>' + esc(groupCode(plan.group_id)) + '</h4><p class="small">ลงตารางแล้ว ' + (ss.length ? ss.map(function (s) { return Number(s.length); }).join(' + ') : '0') + ' = <b>' + placed + '/' + required + ' คาบ</b>' + (placed > required ? ' · เกินแผน ต้องแก้คาบในตารางก่อนบันทึก' : placed < required ? ' · เหลืออีก ' + (required - placed) + ' คาบ' : ' · ครบตามแผน') + '</p>';
+      if (!ss.length) html += '<p class="small muted">ยังไม่ลงตาราง เลือกใน/นอกเมื่อลงแต่ละคาบในหน้าจัดตาราง</p>';
+      var byDay = {};
+      ss.forEach(function (s) { var row = byDay[s.day] || (byDay[s.day] = { all: [], in: [], out: [] }); Sched.hourTypes(s, plan, courseOf(s.course_id)).forEach(function (type, k) {
+        var no = Grid.periodNo(S.settings, Number(s.start) + k); row.all.push(no); if (row[type]) row[type].push(no);
+      }); });
+      Object.keys(byDay).sort().forEach(function (day) {
+        var row = byDay[day]; html += '<div class="ha-day"><b>' + esc(S.days[day]) + '</b><span class="small muted">คาบตามตาราง: ' + esc(row.all.join(',')) + '</span>';
+        ['in', 'out'].forEach(function (type) {
+          var key = pid + '|' + day + '|' + type, value = Object.prototype.hasOwnProperty.call(choices, key) ? choices[key] : row[type].join(',');
+          html += '<label>' + (type === 'in' ? 'ใน' : 'นอก') + ' (เลขคาบ)<input type="text" data-ha-periods data-ha-plan="' + esc(pid) + '" data-ha-day="' + esc(day) + '" data-ha-type="' + type + '" value="' + esc(value) + '" placeholder="เช่น 8,9"' + (workplace ? ' readonly' : '') + '></label>';
+        }); html += '</div>';
+      });
+    });
+    $('#haSlots', m).innerHTML = html;
+    $$('[data-ha-periods]', m).forEach(function (x) { x.oninput = function () { linkDays(x); }; });
+  }
+  function linkDays(input) {
+    var pid = input.dataset.haPlan, day = input.dataset.haDay, days = {}, rowInputs = $$('[data-ha-periods]', m);
+    S.sessions.filter(function (s) { return s.plan_id === pid; }).forEach(function (s) {
+      var row = days[s.day] || (days[s.day] = []);
+      for (var k = 0; k < Number(s.length); k++) row.push(Grid.periodNo(S.settings, Number(s.start) + k));
+    });
+    function value(type) { var x = rowInputs.filter(function (x) { return x.dataset.haPlan === pid && x.dataset.haDay === day && x.dataset.haType === type; })[0]; return x ? x.value : ''; }
+    try {
+      if (linkSource && linkSource.mixed && linkSource.day !== day) {
+        rowInputs.forEach(function (x) { if (x.dataset.haDay === day && x.dataset.haPlan !== pid) x.value = value(x.dataset.haType); });
+        $('#haError', m).textContent = 'คาบผสม: คงประเภทของวันเดิมไว้ กรุณากรอกคาบที่เหลือให้ครบตามยอดใน/นอก';
+        return;
+      }
+      var linked = Sched.linkPeriodDays(days, day, value('in'), value('out'), Number($('#haIn', m).value), Number($('#haOut', m).value), need);
+      if (!linked) return;
+      linkSource = { day: day, mixed: Sched.parsePeriodNumbers(value('in')).length > 0 && Sched.parsePeriodNumbers(value('out')).length > 0 };
+      $('#haIn', m).value = linked.hoursIn; $('#haOut', m).value = linked.hoursOut;
+      rowInputs.forEach(function (x) {
+        var row = linked.days[x.dataset.haDay];
+        if (row) x.value = row[x.dataset.haType].join(',');
+      });
+      $('#haError', m).textContent = linked.unresolved ? 'คาบผสมยังระบุวันอื่นไม่ได้: กรุณากรอกเลขคาบใน/นอกของวันที่ยังว่าง แล้วจึงบันทึก' : 'เชื่อมคาบทุกวันของกลุ่มที่เลือกแล้ว รวมไม่เกิน ' + need + ' คาบ/สัปดาห์';
+    } catch (e) { $('#haError', m).textContent = e.message; }
+  }
+  $$('[data-allocation-group]', m).forEach(function (x) { x.onchange = slots; }); slots();
+  if (workplace) { $('#haIn', m).readOnly = true; $('#haOut', m).readOnly = true; $('#haError', m).textContent = 'คาบสถานประกอบการเป็นคาบในทั้งหมด นับภาระงานได้ แต่เบิกเงินไม่ได้'; }
+  $('#haSave', m).onclick = function () {
+    var picked = ids(), a = Number($('#haIn', m).value), b = Number($('#haOut', m).value), weeks = Number($('#haWeeks', m).value);
+    var error = !picked.length ? 'เลือกกลุ่มเรียนอย่างน้อย 1 กลุ่ม' : new Set(picked).size !== picked.length ? 'เลือกกลุ่มเรียนซ้ำกัน' :
+      !Number.isInteger(weeks) || weeks < 1 || weeks > 52 ? 'ระบุจำนวนสัปดาห์ตั้งแต่ 1 ถึง 52' :
+      !Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a + b !== need ? 'ใน + นอก ต้องเท่ากับ ' + need + ' ชั่วโมง' : '';
+    if (error) { $('#haError', m).textContent = error; return; }
+    var types = {}, assigned = {};
+    try {
+      $$('[data-ha-periods]', m).forEach(function (x) {
+        Sched.parsePeriodNumbers(x.value).forEach(function (no) {
+          var key = x.dataset.haPlan + '|' + x.dataset.haDay + '|' + no;
+          if (assigned[key]) throw new Error('คาบ ' + no + ' ของ' + S.days[x.dataset.haDay] + ' ซ้ำระหว่างใน/นอก');
+          assigned[key] = x.dataset.haType;
+        });
+      });
+      var used = {};
+      S.sessions.filter(function (s) { return picked.indexOf(s.plan_id) >= 0; }).forEach(function (s) {
+        types[s.id] = [];
+        for (var k = 0; k < Number(s.length); k++) {
+          var no = Grid.periodNo(S.settings, Number(s.start) + k), key = s.plan_id + '|' + s.day + '|' + no;
+          if (used[key]) throw new Error('พบคาบซ้อนกันในตารางของกลุ่มเดียวกัน กรุณาแก้ตารางก่อน');
+          if (!assigned[key]) throw new Error('ยังไม่ได้กำหนดใน/นอกของ ' + groupCode(s.group_id) + ' ' + S.days[s.day] + ' คาบ ' + no);
+          types[s.id].push(assigned[key]); used[key] = true;
+        }
+      });
+      if (Object.keys(assigned).some(function (key) { return !used[key]; })) throw new Error('มีเลขคาบที่ไม่มีอยู่ในตารางของกลุ่ม/วันที่เลือก');
+    } catch (e) { $('#haError', m).textContent = e.message; return; }
+    var btn = this; btn.disabled = true;
+    api('planHourAllocation', S.token, { plan_ids: picked, weeks: String(weeks), hours_in: String(a), hours_out: String(b), slot_types: types }).then(loadSchedule).then(function () {
+      closeModal(); toast('บันทึกคาบใน/นอกแล้ว'); if (afterSave) afterSave();
+    }).catch(function () { btn.disabled = false; });
+  };
 }
 /* บันทึกประเภทคาบ: วิชาเรียนร่วมเปลี่ยนพร้อมกันทุกกลุ่มที่แก้ได้ */
 function saveHourType(p, value, how) {
   if (how === 'teacher') return api('planHourType', S.token, p.id, value);
-  var list = [p].concat(p.joint_key ? S.plans.filter(function (x) { return x.joint_key === p.joint_key && x.id !== p.id && canEditPlan(x); }) : []);
+  var list = [p].concat(S.plans.filter(function (x) { return x.id !== p.id && Sched.hourGroupKey(x, S.sessions) === Sched.hourGroupKey(p, S.sessions) && canEditPlan(x); }));
   return list.reduce(function (chain, x) {
     return chain.then(function () { return api('saveRow', S.token, 'Plans', { id: x.id, group_id: x.group_id, semester_id: x.semester_id, hour_type: value }); });
   }, Promise.resolve()).then(function () { return list.length; });
@@ -1294,6 +1444,7 @@ VIEWS.plans = function (el) {
     (!plans.some(canEditPlan) && plans.some(myOutsidePlan) ? '<p class="small muted" style="margin:8px 0 0">คุณตั้งคาบใน/คาบนอกได้เฉพาะวิชาที่คุณสอนในกลุ่มนี้ วิชาเรียนร่วมเปลี่ยนพร้อมกันทุกกลุ่ม ส่วนข้อมูลอื่นของแผนให้วิชาการแผนกเป็นผู้แก้</p>' : '') +
     (!editable && plans.some(canEditPlan) ? '<p class="small muted" style="margin:8px 0 0">กลุ่มนี้เป็นของแผนกอื่น คุณแก้ได้เฉพาะวิชาที่ครูในแผนกของคุณสอน (ครู ห้อง จำนวนคาบ การแบ่งคาบ คาบใน/นอก และหมายเหตุ) ส่วนการเพิ่ม–ลบวิชาและจัดตารางให้แผนกเจ้าของกลุ่มเป็นผู้ทำ</p>' : '') + '</div>';
   if ($('#addPlan')) $('#addPlan').onclick = function () { planModal({ group_id: sel.group, semester_id: S.sem }); };
+  $$('[data-allocation]', box).forEach(function (b) { b.onclick = function () { hourAllocationModal(IDX.Plans[b.dataset.allocation], function () { VIEWS.plans(el); }); }; });
   $$('[data-ht]', box).forEach(function (s) {
     s.onchange = function () {
       s.disabled = true;
@@ -1338,16 +1489,17 @@ function planModal(p) {
     '<label class="f">ครูผู้สอน</label>' + teacherPicker('pmT', p.teacher_ids) +
     '<label class="f">ห้องเรียน</label><select id="pmR">' + roomOpts + '</select>' +
     '<div class="row"><div class="grow"><label class="f">คาบ/สัปดาห์ (ว่าง = ท+ป ของวิชา)</label><input id="pmN" type="number" min="0" value="' + esc(p.periods) + '"></div>' +
-    '<div class="grow"><label class="f">การแบ่งคาบ เช่น 2+2 หรือ 4</label><input id="pmS" value="' + esc(p.split) + '" placeholder="อัตโนมัติ"></div></div>' +
+    '<div class="grow"><label class="f">การแบ่งคาบ เช่น 2+1 = 3 คาบ</label><input id="pmS" value="' + esc(p.split) + '" placeholder="อัตโนมัติ"></div></div>' +
     '<label class="f">รหัสเรียนร่วม (ใส่รหัสเดียวกันในทุกกลุ่มที่เรียนพร้อมกัน ครูคนเดียวกัน)</label><input id="pmJ" value="' + esc(p.joint_key) + '" placeholder="เช่น ENG-ปวช1">' +
-    '<label class="f">คาบใน / คาบนอก (ใช้นับ รวมใน และ รวมนอก ในตารางสอนครู)</label><select id="pmH">' + [['', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].map(function (o) { return '<option value="' + o[0] + '"' + (String(p.hour_type || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+    '<label class="f">คาบใน / คาบนอก</label>' + (p.id ? hourTypeCell(p) : '<p class="small muted">บันทึกวิชาแล้วกด “กำหนด” เพื่อระบุสัปดาห์ ชั่วโมง และเลือกใน/นอกแต่ละคาบ</p>') +
     '<label class="row small" style="margin-top:10px"><input type="checkbox" id="pmW" style="width:auto"' + (String(p.workplace) === 'true' ? ' checked' : '') + '> เรียนที่สถานประกอบการ / ฝึกงาน / ทวิภาคี — ล็อกห้ามขยับ ห้ามสอนชดเชย (ระเบียบข้อ 6)</label>' +
     '<label class="f">หมายเหตุ</label><input id="pmNote" value="' + esc(p.note) + '">' +
-    (siblings.length ? '<label class="row small" style="margin-top:10px;gap:6px"><input type="checkbox" id="pmAll" style="width:auto" checked> ใช้ครู ห้อง จำนวนคาบ การแบ่งคาบ และคาบใน/นอกเดียวกันกับกลุ่มที่เรียนร่วมทั้งหมด (' + esc(siblings.map(function (x) { return groupCode(x.group_id); }).join(', ')) + ')</label>' : '') +
+    (siblings.length ? '<label class="row small" style="margin-top:10px;gap:6px"><input type="checkbox" id="pmAll" style="width:auto" checked> ใช้ครู ห้อง จำนวนคาบ และการแบ่งคาบเดียวกันกับกลุ่มที่เรียนร่วมทั้งหมด (' + esc(siblings.map(function (x) { return groupCode(x.group_id); }).join(', ')) + ')</label>' : '') +
     (ownGroup ? '' : '<p class="small muted">กลุ่มนี้เป็นของแผนก' + esc(deptName((IDX.Groups[p.group_id] || {}).department_id)) + ' แก้รายวิชาและรหัสเรียนร่วมไม่ได้ และต้องมีครูในแผนกของคุณเป็นผู้สอนอย่างน้อย 1 คน</p>') +
     // ลบวิชาอยู่ในหน้าต่างแก้ไขเท่านั้น (ไม่มีปุ่มลบในแถว) เฉพาะกลุ่มที่ผู้ใช้จัดได้
     '<div class="actions">' + (p.id && ownGroup ? '<button class="btn bad" id="pmDel" style="margin-right:auto">ลบวิชานี้ออกจากแผน</button>' : '') + '<button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pmSave">บันทึก</button></div>');
   if (!ownGroup) { $('#pmC', m).disabled = true; $('#pmJ', m).disabled = true; }
+  $$('[data-allocation]', m).forEach(function (b) { b.onclick = function () { hourAllocationModal(p, function () { VIEWS.plans($('#content')); }); }; });
   if ($('#pmDel', m)) $('#pmDel', m).onclick = function () {
     if (!confirm('ลบ ' + (c ? c.code + ' ' + c.name : 'วิชานี้') + ' ออกจากแผนของ ' + groupCode(p.group_id) + '?\nคาบที่ลงตารางแล้วจะถูกลบด้วย และกู้คืนไม่ได้')) return;
     api('deleteRow', S.token, 'Plans', p.id).then(loadSchedule).then(function () { closeModal(); VIEWS.plans($('#content')); toast('ลบวิชาออกจากแผนแล้ว'); });
@@ -1356,13 +1508,15 @@ function planModal(p) {
     var course = courseFromText($('#pmC').value);
     if (!course) return toast('ไม่พบรายวิชานี้ — เพิ่มที่เมนู รายวิชา ก่อน', 1);
     var row = { id: p.id || '', semester_id: p.semester_id || S.sem, group_id: p.group_id, course_id: course.id, teacher_ids: selectedValues($('#pmT')).join(','),
-      room_id: $('#pmR').value, periods: $('#pmN').value, split: $('#pmS').value.replace(/\s/g, ''), joint_key: $('#pmJ').value.trim(), workplace: $('#pmW').checked, note: $('#pmNote').value, hour_type: $('#pmH').value };
+      room_id: $('#pmR').value, periods: $('#pmN').value, split: $('#pmS').value.replace(/\s/g, ''), joint_key: $('#pmJ').value.trim(), workplace: $('#pmW').checked, note: $('#pmNote').value };
     if (!ownGroup) { row.course_id = p.course_id; row.joint_key = p.joint_key; } // ช่องที่ล็อกไว้ ส่งค่าเดิม
+    var splitError = Sched.splitError(row, ctx());
+    if (splitError) return toast(splitError, 1);
     var btn = this; btn.disabled = true;
     var all = $('#pmAll', m) && $('#pmAll', m).checked ? siblings : [];
     // บันทึกทีละแถว ให้กลุ่มเรียนร่วมใช้ครูและห้องชุดเดียวกัน
     all.reduce(function (chain, x) {
-      return chain.then(function () { return api('saveRow', S.token, 'Plans', { id: x.id, group_id: x.group_id, semester_id: x.semester_id, teacher_ids: row.teacher_ids, room_id: row.room_id, periods: row.periods, split: row.split, hour_type: row.hour_type }); });
+      return chain.then(function () { return api('saveRow', S.token, 'Plans', { id: x.id, group_id: x.group_id, semester_id: x.semester_id, teacher_ids: row.teacher_ids, room_id: row.room_id, periods: row.periods, split: row.split }); });
     }, api('saveRow', S.token, 'Plans', row)).then(loadSchedule).then(function () {
       closeModal(); VIEWS.plans($('#content')); toast(all.length ? 'บันทึกแล้ว ' + (all.length + 1) + ' กลุ่มที่เรียนร่วม' : 'บันทึกแล้ว');
     }).catch(function () { btn.disabled = false; loadSchedule().then(function () { VIEWS.plans($('#content')); }); });
@@ -1449,21 +1603,22 @@ function mineHourTypes(el) {
   S.plans.forEach(function (p) {
     if (Sched.ids(p.teacher_ids).indexOf(String(me.id)) < 0) return;
     var g = IDX.Groups[p.group_id]; if (!g || String(g.department_id) === String(me.department_id)) return;
-    var k = p.joint_key ? 'J:' + p.joint_key : 'P:' + p.id;
+    var k = Sched.hourGroupKey(p, S.sessions);
     if (!byKey[k]) { byKey[k] = { plan: p, groups: [] }; rows.push(byKey[k]); }
     byKey[k].groups.push(groupCode(p.group_id));
   });
   if (!rows.length) return;
   rows = sortBy(rows, function (r) { return courseOf(r.plan.course_id).code + r.groups.join(); });
   var box = document.createElement('div'); box.className = 'card no-print';
-  box.innerHTML = '<h3 style="margin-top:0">คาบใน / คาบนอก ของวิชาที่สอนให้แผนกอื่น</h3><p class="small muted">ใช้นับยอดรวมใน/รวมนอกในตารางสอนของคุณ กลุ่มที่เรียนร่วมกันเปลี่ยนพร้อมกันทั้งชุด วิชาในแผนกของคุณเองให้วิชาการแผนกเป็นผู้ตั้ง</p>' +
+  box.innerHTML = '<h3 style="margin-top:0">คาบใน / คาบนอก ตามกลุ่มผู้เรียนที่สอนให้แผนกอื่น</h3><p class="small muted">แยกกำหนดตามกลุ่มหรือชุดกลุ่มที่เรียนร่วมเวลาเดียวกัน นับคาบสะสมทุกวันต่อกลุ่ม กลุ่มที่เรียนคนละเวลาแยกเป็นคนละรายการ วิชาในแผนกของคุณเองให้วิชาการแผนกเป็นผู้ตั้ง</p>' +
     '<div class="tablewrap"><table class="data"><thead><tr><th>รหัสวิชา</th><th>ชื่อวิชา</th><th>กลุ่มเรียน</th><th>แผนก</th><th>ประเภทคาบ</th></tr></thead><tbody>' +
     rows.map(function (r) {
       var p = r.plan, c = courseOf(p.course_id);
       return '<tr><td>' + esc(c.code) + '</td><td>' + esc(c.name) + (p.joint_key ? ' <span class="tag warn">เรียนร่วม</span>' : '') + '</td><td class="small">' + esc(r.groups.join(', ')) + '</td><td class="small">' + esc(deptName((IDX.Groups[p.group_id] || {}).department_id)) + '</td>' +
-        '<td><select data-ht="' + esc(p.id) + '" style="width:auto">' + [['', 'คาบใน'], ['out', 'คาบนอก'], ['none', 'ไม่นับ']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.hour_type || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></td></tr>';
+        '<td>' + hourTypeCell(p) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
   el.appendChild(box);
+  $$('[data-allocation]', box).forEach(function (b) { b.onclick = function () { hourAllocationModal(IDX.Plans[b.dataset.allocation], function () { VIEWS.mine(el); }); }; });
   $$('[data-ht]', box).forEach(function (s) {
     s.onchange = function () {
       s.disabled = true;

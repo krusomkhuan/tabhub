@@ -166,6 +166,7 @@ var Ot = (function () {
     };
     var b = blockedAt(D.blocked, date, day, p);
     if (b) it.blocked = b.name || b.label || 'ห้ามเบิก';
+    if (s.workplace === true || String(s.workplace) === 'true' || c.course_type === 'internship') it.no_claim = 'คาบสถานประกอบการ — นับภาระงานได้ แต่เบิกเงินไม่ได้';
     if (!sub) {
       var a = absentAt(D.absences, tid, date, p);
       if (a) it.absent = a.type || 'ลา';
@@ -221,6 +222,7 @@ var Ot = (function () {
       var B = res.byLevel[it.level];
       if (!it.absent) B.taught++;
       if (!v) return;
+      if (v === 'C' && it.no_claim) { res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.no_claim); return; }
       if (it.blocked) { res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.blocked + ' — เลือกไม่ได้'); return; }
       if (it.absent) { res.errors.push(it.date + ' คาบ ' + pno(it.period) + ': ' + it.absent + ' — ไม่นับเป็นชั่วโมงสอน'); return; }
       if (v === 'L') B.load++;
@@ -303,7 +305,7 @@ var Ot = (function () {
       var L = sch.levels[l]; if (!L.enabled) return;
       if (cnt[l].L < L.load && sch.cap_method !== 'free') return; // ภาระไม่ครบ เบิกไม่ได้
       usable.forEach(function (it) {
-        if (it.level !== l || sel[it.key] || it.pending) return;
+        if (it.level !== l || sel[it.key] || it.pending || it.no_claim) return;
         if (L.max && cnt[l].C >= L.max) return;
         if (total >= totalCap) return;
         sel[it.key] = 'C'; cnt[l].C++; total++;

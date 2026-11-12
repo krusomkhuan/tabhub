@@ -129,6 +129,7 @@ function ot_item(array $D, array $s, string $date, int $day, int $p, string $tid
   ];
   $b = ot_blocked_at($D['blocked'], $date, $day, $p);
   if ($b) $it['blocked'] = js_true($b['name'] ?? '') ? $b['name'] : (js_true($b['label'] ?? '') ? $b['label'] : 'ห้ามเบิก');
+  if (in_array($s['workplace'] ?? false, [true, 'true'], true) || ($c['course_type'] ?? '') === 'internship') $it['no_claim'] = 'คาบสถานประกอบการ — นับภาระงานได้ แต่เบิกเงินไม่ได้';
   if (!$sub) {
     $a = ot_absent_at($D['absences'], $tid, $date, $p);
     if ($a) $it['absent'] = js_true($a['type'] ?? '') ? $a['type'] : 'ลา';
@@ -230,6 +231,7 @@ function ot_eval_week(array $items, array $sel, array $ph, array $sch, $cap, arr
     $lv = $it['level'];
     if (!js_true($it['absent'])) $res['byLevel'][$lv]['taught']++;
     if (!js_true($v)) continue;
+    if ($v === 'C' && js_true($it['no_claim'] ?? '')) { $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['no_claim']; continue; }
     if (js_true($it['blocked'])) { $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['blocked'] . ' — เลือกไม่ได้'; continue; }
     if (js_true($it['absent'])) { $res['errors'][] = $it['date'] . ' คาบ ' . period_no($it['period']) . ': ' . $it['absent'] . ' — ไม่นับเป็นชั่วโมงสอน'; continue; }
     if ($v === 'L') $res['byLevel'][$lv]['load']++;

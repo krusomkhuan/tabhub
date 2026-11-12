@@ -10,6 +10,43 @@ function sched_ids($s): array {
   return $out;
 }
 
+/** ประเภทแต่ละคาบ รองรับก้อนคาบเดียวที่มีทั้งในและนอก */
+function sched_hour_types(array $s, array $p, array $ctx = []): array {
+  if (in_array($s['workplace'] ?? false, [true, 'true'], true) || (string)($p['workplace'] ?? '') === 'true' || ($p['course_type'] ?? '') === 'internship' || ($ctx['courses'][$p['course_id'] ?? '']['course_type'] ?? '') === 'internship') return array_fill(0, max(0, (int)num($s['length'] ?? 0)), 'in');
+  $types = json_decode((string)($s['hour_types'] ?? ''), true);
+  $len = (int)num($s['length'] ?? 0);
+  if (is_array($types) && count($types) === $len && !array_diff($types, ['in', 'out', 'none'])) return array_values($types);
+  return array_fill(0, max(0, $len), ($s['hour_type'] ?? '') ?: (($p['hour_type'] ?? '') ?: 'in'));
+}
+
+/** แยกชุดผู้เรียนจากคาบที่เรียนพร้อมกันจริง ไม่ใช้รหัสวิชาหรือรหัสเรียนร่วมอย่างเดียว */
+function sched_hour_group_key(array $p, array $sessions): string {
+  $slots = [];
+  foreach ($sessions as $s) if ((string)$s['plan_id'] === (string)$p['id']) {
+    for ($k = 0; $k < num($s['length']); $k++) $slots[] = num($s['day']) . ':' . (num($s['start']) + $k);
+  }
+  if (!$slots || empty($p['joint_key'])) return 'P:' . $p['id'];
+  sort($slots, SORT_STRING);
+  $teachers = sched_ids($p['teacher_ids'] ?? ''); sort($teachers, SORT_STRING);
+  return 'J:' . $p['joint_key'] . '|' . ($p['semester_id'] ?? '') . '|' . ($p['course_id'] ?? '') . '|' . implode(',', $teachers) . '|' . implode(',', $slots);
+}
+
+function sched_allocation_error(array $p, array $sessions, array $ctx): string {
+  if ((string)($p['hours_in'] ?? '') === '' && (string)($p['hours_out'] ?? '') === '') return '';
+  $a = (string)($p['hours_in'] ?? ''); $b = (string)($p['hours_out'] ?? '');
+  if (!preg_match('/^(0|[1-9][0-9]*)$/D', $a) || !preg_match('/^(0|[1-9][0-9]*)$/D', $b)) return 'จำนวนชั่วโมงในและนอกต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป';
+  if (num($a) + num($b) !== sched_plan_periods($p, $ctx)) return 'ชั่วโมงใน + นอก ต้องเท่ากับจำนวนคาบต่อสัปดาห์';
+  if (sched_is_workplace($p, $ctx) && num($b) !== 0) return 'คาบสอนในสถานประกอบการต้องเป็นคาบในทั้งหมด และนำมาเบิกไม่ได้';
+  $weeks = (string)($p['teaching_weeks'] ?? '');
+  if (!preg_match('/^[1-9][0-9]*$/D', $weeks) || num($weeks) > 52) return 'ระบุจำนวนสัปดาห์ตั้งแต่ 1 ถึง 52';
+  $used = ['in' => 0, 'out' => 0, 'none' => 0];
+  foreach ($sessions as $s) if ((string)$s['plan_id'] === (string)$p['id']) foreach (sched_hour_types($s, $p, $ctx) as $type) $used[$type]++;
+  if (array_sum($used) > sched_plan_periods($p, $ctx)) return 'จำนวนคาบที่ลงไว้รวมทุกวันเกินแผน (' . array_sum($used) . '/' . sched_plan_periods($p, $ctx) . ' คาบ)';
+  if ($used['none']) return 'คาบที่ลงแล้วต้องเลือกเป็นคาบในหรือคาบนอกให้ครบ';
+  if ($used['in'] > num($a) || $used['out'] > num($b)) return 'ประเภทของคาบที่ลงแล้วเกินจำนวนชั่วโมงใน/นอกที่กำหนด กรุณาเลือกประเภทแต่ละคาบให้ตรงกัน';
+  return '';
+}
+
 function sched_ctx(array $o): array {
   $s = $o['settings'];
   $days = $s['days'] ?? '';
@@ -134,6 +171,15 @@ function sched_plan_periods(array $p, array $ctx) {
   return $n;
 }
 
+/** ตรวจรูปแบบที่ผู้จัดระบุ ห้ามละทิ้งค่าผิดแล้วเปลี่ยนเป็นก้อนอัตโนมัติโดยไม่แจ้ง */
+function sched_split_error(array $p, array $ctx): string {
+  $split = trim((string)($p['split'] ?? ''));
+  if ($split === '') return '';
+  if (!preg_match('/^[1-9][0-9]*(\+[1-9][0-9]*)*$/D', $split)) return 'ระบุการแบ่งคาบเป็นจำนวนเต็มบวก เช่น 2+1';
+  if (array_sum(array_map('intval', explode('+', $split))) != sched_plan_periods($p, $ctx)) return 'ผลรวมการแบ่งคาบต้องเท่ากับจำนวนคาบต่อสัปดาห์';
+  return '';
+}
+
 /** แบ่งเป็นก้อน เช่น "2+2" หรืออัตโนมัติ (ก้อนละไม่เกิน 4 คาบ) */
 function sched_split(array $p, array $ctx): array {
   $n = sched_plan_periods($p, $ctx);
@@ -179,7 +225,15 @@ function sched_units(array $plans, array $sessions, array $ctx): array {
     $byKey[$key]->plans[] = $p;
   }
   $blocks = [];
-  foreach ($units as $u) foreach (sched_remaining($u->plans[0], $sessions, $ctx) as $len) $blocks[] = new SchedBlock($u, $len);
+  foreach ($units as $u) {
+    $pattern = null;
+    foreach ($u->plans as $p) {
+      $parts = sched_split($p, $ctx); sort($parts, SORT_NUMERIC);
+      if ($pattern !== null && $parts !== $pattern) throw new Exception('การแบ่งคาบของกลุ่มที่ใช้รหัสเรียนร่วมเดียวกันไม่ตรงกัน กรุณาตรวจแผนของทุกกลุ่มในชุดเรียนร่วมก่อนจัดอัตโนมัติ');
+      $pattern = $parts;
+    }
+    foreach (sched_remaining($u->plans[0], $sessions, $ctx) as $len) $blocks[] = new SchedBlock($u, $len);
+  }
   return $blocks;
 }
 
