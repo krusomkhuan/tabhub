@@ -450,6 +450,27 @@
   .sb-add .umenu small { display: block; color: var(--muted); }
   .cover-table { font-size: 12px; }
   .cover-table td, .cover-table th { padding: 3px 4px; }
+  /* ลายเซ็น 4 คนของงบหน้าเรียงเป็นแถวเดียว */
+  .cover-signs { flex-wrap: wrap; }
+  .cover-signs > div { flex: 1 1 200px; }
+  /* งบหน้าแผนกวิชา: พิมพ์ A4 แนวนอน ให้ครบทุกสัปดาห์ในความกว้าง 1 หน้า (ไม่ให้กล่องเลื่อนตัดคอลัมน์) */
+  @page coverland { size: A4 landscape; margin: 8mm; }
+  @media print {
+    .page.cover-page { page: coverland; width: auto; min-width: 0; padding: 0; margin: 0; font-size: 11px; }
+    .cover-page h2 { font-size: 15px; margin: 0 0 2px; }
+    .cover-page .sub { font-size: 11px; margin-bottom: 6px; }
+    .cover-page .cover-wrap { overflow: visible !important; }
+    .cover-page .cover-table { width: 100%; margin-bottom: 4px; font-size: 8.5px; line-height: 1.25; }
+    .cover-page .cover-table td, .cover-page .cover-table th { padding: 1px 2px; white-space: nowrap; }
+    .cover-page .cover-table td:nth-child(3) { white-space: normal; font-size: inherit; }
+    .cover-page p.small { margin: 2px 0 0; font-size: 10px; }
+    .cover-page .signs { margin-top: 14px; font-size: 11px; }
+    .cover-page .cover-signs { flex-wrap: nowrap; justify-content: space-between; gap: 6px; }
+    .cover-page .cover-signs > div { flex: 1 1 0; min-width: 0; }
+    /* ครูมากต่อหน้า 2 ได้: หัวตารางพิมพ์ซ้ำทุกหน้า ไม่ตัดกลางแถว และไม่แยกช่องลงชื่อ */
+    .cover-page .cover-table thead { display: table-header-group; }
+    .cover-page .cover-table tr, .cover-page .cover-signs { break-inside: avoid; page-break-inside: avoid; }
+  }
   /* หลักฐานการเบิก: พิมพ์ฟอร์มแทนหน้าจอเลือกชั่วโมงรายสัปดาห์ */
   .ot-receipt { page: otclaim; color: #000; background: #fff; font-size: 10px; line-height: 1.3; }
   .receipt-draft { width: 60%; margin: 0 auto 3px; border: 1px solid #d33a3a; padding: 2px 5px; text-align: center; color: #d33a3a; font-size: 9px; }
