@@ -267,7 +267,12 @@ var Office = (function () {
   function col(n) { var s = ''; n++; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
   function toXlsx(pages, opts) {
     pages = Array.prototype.slice.call(pages);
-    var rows = [], merges = [], xfs = ['0|0|0|0'], ncol = 1, colW = [];
+    var xfs = ['0|0|0|0'];
+    // opts.sheets = ชื่อชีตของแต่ละหน้า (หนึ่งหน้าต่อหนึ่งชีต) ไม่ระบุ = ทุกหน้าต่อกันในชีตเดียวตามเดิม
+    var groups = opts && opts.sheets ? pages.map(function (p) { return [p]; }) : [pages];
+    var sheets = groups.map(function (g) { return sheetXml(g); });
+    function sheetXml(pages) {
+    var rows = [], merges = [], ncol = 1, colW = [];
     function xf(bold, align, border, wrap) { var k = (bold ? 1 : 0) + '|' + align + '|' + (border ? 1 : 0) + '|' + (wrap ? 1 : 0), i = xfs.indexOf(k); if (i < 0) { xfs.push(k); i = xfs.length - 1; } return i; }
     function alignOf(el) { var a = cs(el).textAlign; return a === 'center' ? 'center' : a === 'right' || a === 'end' ? 'right' : 'left'; }
     function cellText(el) { return (el.innerText || el.textContent || '').replace(/ /g, ' ').replace(/\n{3,}/g, '\n\n').trim(); }
@@ -317,11 +322,13 @@ var Office = (function () {
         Array.prototype.forEach.call(tr.cells, function (td) {
           while (taken[r + ':' + ci]) ci++; // ช่องที่ถูกรวมจากแถวบน (นับตามคอลัมน์ของตาราง)
           var c0 = start[ci], c1 = start[Math.min(n, ci + td.colSpan)] - 1, txt = cellText(td), a, b;
-          rows[r][c0] = { v: txt, s: xf(td.tagName === 'TH' || parseInt(cs(td).fontWeight, 10) >= 600, alignOf(td), true, true) };
+          // ตารางที่ไม่มีเส้น (เช่น รายการในแบบฟอร์ม) ไม่ใส่เส้นในไฟล์ Excel
+          var st = cs(td), lined = ['Top', 'Right', 'Bottom', 'Left'].some(function (d) { return st['border' + d + 'Style'] !== 'none' && parseFloat(st['border' + d + 'Width']) > 0; });
+          rows[r][c0] = { v: txt, s: xf(td.tagName === 'TH' || parseInt(st.fontWeight, 10) >= 600, alignOf(td), lined, true) };
           for (a = 0; a < td.rowSpan; a++) {
             for (b = 0; b < td.colSpan; b++) taken[(r + a) + ':' + (ci + b)] = 1;
             rows[r + a] = rows[r + a] || [];
-            for (b = c0; b <= c1; b++) if (a || b !== c0) rows[r + a][b] = { v: '', s: xf(false, 'left', true, false) };
+            for (b = c0; b <= c1; b++) if (a || b !== c0) rows[r + a][b] = { v: '', s: xf(false, 'left', lined, false) };
           }
           if (td.rowSpan > 1 || c1 > c0) merges.push(col(c0) + (r + 1) + ':' + col(c1) + (r + td.rowSpan));
           var w = 0; for (b = c0; b <= c1; b++) w += colW[b] || 90;
@@ -345,14 +352,23 @@ var Office = (function () {
         return '<row r="' + (ri + 1) + '"' + (heights[ri] > 25 ? ' ht="' + heights[ri] + '" customHeight="1"' : '') + '>' + r.map(function (c, ci) { if (!c) return ''; var ref = col(ci) + (ri + 1); return c.v === '' ? '<c r="' + ref + '" s="' + c.s + '"/>' : '<c r="' + ref + '" s="' + c.s + '" t="inlineStr"><is><t xml:space="preserve">' + x(c.v) + '</t></is></c>'; }).join('') + '</row>';
       }).join('') + '</sheetData>' + (merges.length ? '<mergeCells count="' + merges.length + '">' + merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>' : '') +
       '<pageMargins left="0.7" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="' + (opts && opts.landscape ? 'landscape' : 'portrait') + '" fitToWidth="1" fitToHeight="0"/></worksheet>';
+    return sheet;
+    }
+    // ชื่อชีต: ไม่เกิน 31 ตัว ห้ามมี [ ] : * ? / \ และห้ามซ้ำกัน
+    var used = [], names = groups.map(function (g, i) {
+      var n = String(opts && opts.sheets && opts.sheets[i] || (groups.length > 1 ? 'หน้า ' + (i + 1) : 'เอกสาร')).replace(/[[\]:*?/\\]/g, ' ').slice(0, 31).trim() || 'หน้า ' + (i + 1);
+      if (used.indexOf(n) >= 0) n = n.slice(0, 26) + ' (' + (i + 1) + ')';
+      used.push(n);
+      return n;
+    });
     var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="16"/><name val="' + FONT + '"/></font><font><b/><sz val="16"/><name val="' + FONT + '"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
       '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' +
       xfs.map(function (k) { var p = k.split('|'); return '<xf numFmtId="0" fontId="' + p[0] + '" fillId="0" borderId="' + p[2] + '" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="' + (p[1] === '0' ? 'left' : p[1]) + '" vertical="center"' + (p[3] === '1' ? ' wrapText="1"' : '') + '/></xf>'; }).join('') + '</cellXfs></styleSheet>';
-    var wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="เอกสาร" sheetId="1" r:id="rId1"/></sheets></workbook>';
-    var wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
-    var types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
+    var wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + names.map(function (n, i) { return '<sheet name="' + x(n) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>';
+    var wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + sheets.map(function (_, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') + '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+    var types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + sheets.map(function (_, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
     var root = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
-    return Promise.resolve(zip([['[Content_Types].xml', types], ['_rels/.rels', root], ['xl/workbook.xml', wb], ['xl/_rels/workbook.xml.rels', wbRels], ['xl/worksheets/sheet1.xml', sheet], ['xl/styles.xml', styles]]));
+    return Promise.resolve(zip([['[Content_Types].xml', types], ['_rels/.rels', root], ['xl/workbook.xml', wb], ['xl/_rels/workbook.xml.rels', wbRels], ['xl/styles.xml', styles]].concat(sheets.map(function (sh, i) { return ['xl/worksheets/sheet' + (i + 1) + '.xml', sh]; }))));
   }
 
   /* ---------- Word → HTML ---------- */

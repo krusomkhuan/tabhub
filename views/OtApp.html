@@ -181,20 +181,29 @@ function claimPrintHtml(d, sch, evaluated) {
   var days = String(st.days || '0,1,2,3,4').split(',').map(Number);
   var weeks = evaluated.map(function (x) {
     var w = x.week, r = x.result, sel = OT.sel[w.index] || {};
-    // คาบติดกันของวิชา/กลุ่มเดียวกันในวันเดียวกัน = 1 แถว
-    var items = w.items.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.period - b.period; });
-    var rows = [];
+    // 1) คาบติดกันของวิชา/กลุ่มเดียวกันในวันเดียวกัน = 1 ช่วง
+    var cmp = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
+    var items = w.items.slice().sort(function (a, b) { return cmp(a.date, b.date) || cmp(String(a.course_id), String(b.course_id)) || cmp(String(a.group_id), String(b.group_id)) || cmp(a.sub, b.sub) || a.period - b.period; });
+    var runs = [];
     items.forEach(function (it) {
-      var last = rows[rows.length - 1];
-      if (last && last.date === it.date && last.course_id === it.course_id && last.group_id === it.group_id && last.to === it.period - 1 && last.sub === it.sub) { last.to = it.period; last.items.push(it); return; }
-      rows.push({ date: it.date, course_id: it.course_id, group_id: it.group_id, sub: it.sub, from: it.period, to: it.period, items: [it] });
+      var last = runs[runs.length - 1];
+      if (last && last.date === it.date && last.course_id === it.course_id && last.group_id === it.group_id && last.sub === it.sub && last.to === it.period - 1) { last.to = it.period; last.items.push(it); return; }
+      runs.push({ date: it.date, course_id: it.course_id, group_id: it.group_id, sub: it.sub, from: it.period, to: it.period, items: [it] });
     });
+    // 2) วิชาเดียวกัน วันและเวลาเดียวกัน (สอนหลายกลุ่มพร้อมกัน) ยุบเป็นแถวเดียว รวมกลุ่มและจำนวนนักเรียน
+    var rows = [], at = {};
+    runs.forEach(function (run) {
+      var k = run.date + '|' + run.course_id + '|' + run.from + '|' + run.to + '|' + run.sub, row = at[k];
+      if (!row) { row = at[k] = { date: run.date, course_id: run.course_id, sub: run.sub, from: run.from, to: run.to, groups: [], students: 0, items: [] }; rows.push(row); }
+      row.groups.push(run.group_id); row.students += Number(run.items[0].students) || 0; row.items = row.items.concat(run.items);
+    });
+    rows.sort(function (a, b) { return cmp(a.date, b.date) || a.from - b.from || cmp(String(a.course_id), String(b.course_id)); });
     var sum = { vc: 0, vs: 0, claim: 0, money: 0 }, taughtLv = {}, byDate = {};
     rows.forEach(function (row) { (byDate[row.date] = byDate[row.date] || []).push(row); });
     var body = w.dates.filter(function (date) { return days.indexOf(Ot.dow(Ot.parse(date))) >= 0 && byDate[date]; }).map(function (date) {
       var list = byDate[date];
       return list.map(function (row, i) {
-        var it0 = row.items[0], co = courseOf(row.course_id), load = { vc: 0, vs: 0 }, claim = 0, amount = 0, notes = [], rt = 0;
+        var co = courseOf(row.course_id), load = { vc: 0, vs: 0 }, claim = 0, amount = 0, notes = [], rt = 0;
         row.items.forEach(function (it) {
           var v = sel[it.key] || '';
           if (it.absent) { notes.push(it.absent); return; }
@@ -213,7 +222,7 @@ function claimPrintHtml(d, sch, evaluated) {
         var a = times[row.from - 1] || ['', ''], b = times[row.to - 1] || a;
         var uniq = notes.filter(function (n, k) { return notes.indexOf(n) === k; });
         return '<tr>' + (i ? '' : '<td rowspan="' + list.length + '" class="otf-day">' + esc(S.days[Ot.dow(Ot.parse(date))] || '') + '<br>' + thDate(date) + '</td>') +
-          '<td class="otf-left">' + esc(co.name) + '</td><td>' + esc(co.code) + '</td><td>' + esc(groupCode(row.group_id)) + '</td><td>' + dot(a[0]) + '-' + dot(b[1]) + '</td><td>' + (it0.students || '-') + '</td>' +
+          '<td class="otf-left">' + esc(co.name) + '</td><td>' + esc(co.code) + '</td><td>' + row.groups.map(function (g) { return esc(groupCode(g)); }).join('<br>') + '</td><td>' + dot(a[0]) + '-' + dot(b[1]) + '</td><td>' + (row.students || '-') + '</td>' +
           '<td>' + num(load.vc) + '</td><td>' + num(load.vs) + '</td><td>' + num(claim) + '</td><td>' + (claim ? num(rt) : '-') + '</td><td>' + (claim ? num(amount) : '-') + '</td><td class="otf-small">' + esc(uniq.join(', ')) + '</td></tr>';
       }).join('');
     }).join('');
@@ -278,9 +287,16 @@ function renderClaim() {
     '<div class="row" style="margin-top:12px"><b class="grow">รวมทั้งรอบ: เบิก ' + total.h + ' ชม. · ' + money(total.a) + ' บาท</b>' +
     (total.err ? '<span class="tag bad">ยังผิดกติกา ' + total.err + ' ข้อ</span>' : '<span class="tag ok">ผ่านกติกา</span>') +
     (canEdit ? '<button class="btn sm" id="oAuto">เลือกอัตโนมัติทุกสัปดาห์</button><button class="btn sm" id="oSave">บันทึก</button><button class="btn pri sm" id="oLock">ยืนยันและล็อกการเบิก</button>' : '') +
-    '<button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div>' +
+    '<button class="btn sm" id="oForm" title="ดูแบบสรุปและใบเบิกรายสัปดาห์ แก้ข้อความก่อนพิมพ์ หรือส่งออก Excel">📄 แบบฟอร์มใบเบิก</button><button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div>' +
     '<div class="small muted" style="margin-top:6px">คลิกชั่วโมงเพื่อสลับ: ไม่ใช้ → <span class="tag ok">ภาระ</span> → <span class="tag">เบิก</span> · สีเทา = ห้ามเบิก · ขีดฆ่า = ลา/ไปราชการ/หยุด (ภาระไม่ลดลง) · ⚠ = สอนชดเชยรอรายงาน · ชดเชย ✓ = รายงานผลแล้ว นับชั่วโมงที่คาบเดิม</div></div>' +
-    absenceCard(d, canEdit) + weeksHtml + '</div>' + claimPrintHtml(d, sch, evaluated);
+    absenceCard(d, canEdit) + weeksHtml + '</div>' +
+    // แถบของมุมมองแบบฟอร์ม (แสดงเมื่อกด แบบฟอร์มใบเบิก): แก้ข้อความบนแบบฟอร์มได้ก่อนพิมพ์/ส่งออก ข้อความที่แก้ไม่บันทึกลงระบบ
+    '<div class="card no-print ot-form-bar"><div class="row"><b class="grow">แบบฟอร์มใบเบิก · ' + esc(t.name) + '</b>' +
+    '<button class="btn sm" id="oFormBack">← กลับไปเลือกชั่วโมง</button><button class="btn sm" id="oFormEdit">✏️ แก้ไขข้อความ</button><button class="btn sm" id="oFormX">⬇️ Excel</button><button class="btn pri sm" onclick="window.print()">🖨 พิมพ์ / PDF</button></div>' +
+    '<div class="small muted" style="margin-top:6px">แก้ไขข้อความบนแบบฟอร์มได้โดยตรง (ใช้กับการพิมพ์และไฟล์ Excel ครั้งนี้ ไม่บันทึกลงระบบ — กลับไปเลือกชั่วโมงหรือโหลดหน้าใหม่ ข้อความจะกลับเป็นค่าจากระบบ)</div></div>' +
+    claimPrintHtml(d, sch, evaluated);
+  box.classList.toggle('show-form', !!OT.showForm);
+  bindClaimForm(d);
   if ($('#oS')) $('#oS').onchange = function () { OT.scheme = this.value; renderClaim(); };
   if ($('#oAuto')) $('#oAuto').onclick = function () { d.weeks.forEach(function (w) { OT.sel[w.index] = Ot.autoSelect(w.items, schemeObj(), d.cap); }); renderClaim(); };
   if ($('#oSave')) $('#oSave').onclick = function () { saveClaim(false); };
@@ -288,6 +304,29 @@ function renderClaim() {
   if ($('#oUnlock')) $('#oUnlock').onclick = function () { api('otUnlockClaim', S.token, OT.round, OT.teacher).then(loadClaim); };
   if (canEdit) bindClaim();
   bindAbsence();
+}
+
+/* มุมมองแบบฟอร์มใบเบิกบนหน้าจอ: แก้ข้อความ ส่งออก Excel (หนึ่งหน้าต่อหนึ่งชีต) และพิมพ์ */
+function bindClaimForm(d) {
+  var box = $('#oMain'), pages = function () { return box.querySelectorAll('.ot-form .otf-page'); };
+  function setEdit(on) {
+    Array.prototype.forEach.call(pages(), function (p) { p.setAttribute('contenteditable', on ? 'true' : 'false'); });
+    box.classList.toggle('form-editing', on);
+    if ($('#oFormEdit')) $('#oFormEdit').textContent = on ? '✔ เสร็จสิ้นการแก้ไข' : '✏️ แก้ไขข้อความ';
+  }
+  if ($('#oForm')) $('#oForm').onclick = function () { OT.showForm = true; box.classList.add('show-form'); window.scrollTo(0, 0); };
+  if ($('#oFormBack')) $('#oFormBack').onclick = function () { OT.showForm = false; setEdit(false); renderClaimKeepScroll(); };
+  if ($('#oFormEdit')) $('#oFormEdit').onclick = function () { setEdit(!box.classList.contains('form-editing')); };
+  if ($('#oFormX')) $('#oFormX').onclick = function () {
+    var btn = this, list = pages();
+    if (!list.length) return toast('ยังไม่มีแบบฟอร์ม', 1);
+    var names = Array.prototype.map.call(list, function (p, i) { return p.classList.contains('otf-summary') ? 'แบบสรุป' : 'สัปดาห์ที่ ' + ((d.weeks[i - 1] || {}).index || i); });
+    btn.disabled = true;
+    Office.toXlsx(list, { sheets: names }).then(function (blob) {
+      Office.save(blob, Office.safeName('ใบเบิก ' + d.teacher.name + ' ' + thDate(d.round.start_date) + '-' + thDate(d.round.end_date)) + '.xlsx');
+      toast('ดาวน์โหลดไฟล์ Excel แล้ว (ไม่รวมลายเซ็น)');
+    }).catch(function () { toast('สร้างไฟล์ไม่สำเร็จ', 1); }).then(function () { btn.disabled = false; });
+  };
 }
 
 function weekHtml(w, r, canEdit) {

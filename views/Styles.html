@@ -543,6 +543,8 @@
   .otf-right { display: flex; flex-direction: column; align-items: flex-end; margin: 6px 0 4px; }
   .otf-right .otf-sign, .otf-right .otf-date { width: 55%; text-align: center; }
   .otf-sign { text-align: center; margin-top: 8px; }
+  .otf-week .otf-sign { margin-top: 2px; }
+  .otf-week .cv-sig-body, .otf-week .cv-sig-label { line-height: 1.35; }
   .otf-date { text-align: center; }
   .otf-opinions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 6px 0; }
   .otf-opinions > div { min-width: 0; }
@@ -550,8 +552,8 @@
   .otf-one { display: flex; justify-content: center; }
   /* ตัดส่วนยื่นของ .cv-sig-under (margin ติดลบ) ที่ขอบกล่อง ไม่ให้หน้ากว้างเกินกระดาษจนเบราว์เซอร์ย่อทั้งหน้า */
   .otf-sign, .otf-two > *, .otf-one > *, .otf-opinions > div { overflow-x: clip; }
-  .otf-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 4px 0 2px; font-size: 12pt; line-height: 1.1; }
-  .otf-table th, .otf-table td { border: 1px solid #000; padding: 1px 3px; text-align: center; vertical-align: middle; overflow-wrap: anywhere; font-weight: 400; }
+  .otf-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 4px 0 2px; font-size: 11.5pt; line-height: 1.05; }
+  .otf-table th, .otf-table td { border: 1px solid #000; padding: 0 2px; text-align: center; vertical-align: middle; overflow-wrap: anywhere; font-weight: 400; }
   .otf-table thead th { font-weight: 700; font-size: 11pt; overflow-wrap: normal; word-break: keep-all; }
   .otf-table td.otf-left { text-align: left; }
   .otf-table td.otf-day { white-space: nowrap; }
@@ -560,6 +562,15 @@
   /* กรรมการตรวจสอบเอกสาร: ล่างสุดของแบบสรุป */
   .receipt-committee { display: flex; margin-top: 12px; }
   .receipt-committee > div { flex: 1 1 0; text-align: center; }
+  /* มุมมองแบบฟอร์มบนหน้าจอ (ปุ่ม แบบฟอร์มใบเบิก): ซ่อนหน้าเลือกชั่วโมง แสดงแบบฟอร์มเป็นแผ่น A4 */
+  .ot-form-bar { display: none; }
+  #oMain.show-form .ot-claim-editor { display: none; }
+  #oMain.show-form .ot-form-bar { display: block; }
+  @media screen {
+    #oMain.show-form .ot-form { display: block; overflow-x: auto; }
+    #oMain.show-form .otf-page { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 0 auto 16px; padding: 10mm 12mm; background: #fff; border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    #oMain.form-editing .otf-page { outline: 2px dashed #2563eb; outline-offset: 2px; }
+  }
   @page otform { size: A4 portrait; margin: 10mm 12mm; }
   @media print {
     body:has(.ot-form) > *:not(#root):not(.modal-bg) { display: none !important; } /* ไม่ให้องค์ประกอบอื่นนอกเอกสารดันขึ้นหน้าว่าง */
