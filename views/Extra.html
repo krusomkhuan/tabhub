@@ -1233,9 +1233,9 @@
   /* ลายเซ็นงบหน้า: ยศ "ว่าที่ร้อยโท" อยู่หลังคำว่าลงชื่อ ในวงเล็บเหลือเฉพาะชื่อ-สกุล (แบบเดียวกับแบบหลักฐานการเบิก) */
   function cvSign(name, role) {
     var person = typeof otSignatureName === 'function' ? otSignatureName(name) : { prefix: '', name: String(name || '') };
-    var label = 'ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) : '');
-    // ชื่อในวงเล็บอยู่กึ่งกลางเส้นลงชื่อ: เติมคำ "ลงชื่อ…" แบบมองไม่เห็นไว้หน้าชื่อ ให้ชื่อเลื่อนไปเท่ากับเส้นจุด (Excel ไม่นำข้อความที่ซ่อนไปด้วย)
-    return '<div>' + label + (window.Sig ? Sig.slot(name) : '') + '.................................<br><span class="sig-name-line"><span class="sig-pad" aria-hidden="true">' + label + '</span>(' + esc(person.name || '.................................') + ')</span><br>' + role + '</div>';
+    var dots = '..................................................';
+    // "ลงชื่อ" อยู่ซ้าย ส่วนเส้นจุด ชื่อ และตำแหน่งอยู่กึ่งกลางใต้เส้นจุด (inline-block จึงต่อเป็นบรรทัดเดียวกันในไฟล์ Excel)
+    return '<div><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) : '') + '&nbsp;</span><span class="cv-sig-body">' + (window.Sig ? Sig.slot(name) : '') + dots + '<span class="cv-sig-under">(' + esc(person.name || dots) + ')<br>' + role + '</span></span></span></div>';
   }
   VIEWS['ot-cover'] = function (el) {
     if (!CV.dept) CV.dept = S.me.department_id || (S.D.Departments[0] || {}).id;

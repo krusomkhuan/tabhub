@@ -465,8 +465,13 @@
   .cover-table td, .cover-table th { padding: 3px 4px; }
   /* ลายเซ็น 4 คนของงบหน้าเรียงเป็นแถวเดียว */
   .cover-signs { flex-wrap: wrap; }
-  .sig-name-line { white-space: nowrap; }
-  .sig-pad { visibility: hidden; }
+  /* ลายเซ็นงบหน้า: "ลงชื่อ" ทางซ้าย เส้นจุด/ชื่อ/ตำแหน่งกึ่งกลางใต้เส้นจุด */
+  .cv-sig { display: inline-block; white-space: nowrap; text-align: left; }
+  .cv-sig-label, .cv-sig-body { display: inline-block; vertical-align: top; }
+  .cv-sig-body { text-align: center; line-height: 1.6; }
+  .cv-sig-label { line-height: 1.6; }
+  /* ชื่อ/ตำแหน่งที่ยาวกว่าเส้นจุดล้นออกเท่ากันสองข้าง กล่องจึงกว้างเท่าเส้นจุด และ "ลงชื่อ" ชิดเส้นจุดเสมอ */
+  .cv-sig-under { display: block; margin: 0 -20em; }
   .cover-signs > div { flex: 1 1 200px; }
   /* งบหน้าประกอบการขออนุมัติเวลาทำงาน (12 ข้อ): พิมพ์ A4 แนวนอนตาม @page หลัก */
   .approval-page { font-size: 14px; line-height: 1.45; color: #000; }
