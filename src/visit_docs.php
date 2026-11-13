@@ -57,6 +57,7 @@ function visit_doc_assert(array $me, array $doc): void {
 function api_visitTeacherList($token = '', $semesterId = '', $teacherId = '') {
   $me = auth_user($token);
   if ($me['role'] === 'teacher' && (string)$me['teacher_id'] !== str($teacherId)) throw new Exception('ครูดูได้เฉพาะรายการนิเทศของตนเอง');
+  visit_sites_to_dept_once();
   return visit_teacher_rows($me, $semesterId, $teacherId);
 }
 

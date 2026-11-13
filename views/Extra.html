@@ -982,7 +982,7 @@
     var dates = list.map(function (v) { return String(v.visit_date || '').slice(0, 10); }).filter(Boolean).sort();
     var html = '<div class="page rp-page vr-page" data-pdf-width="760"><div class="rp-center"><b>' + esc(st.college_name || '') + '</b><br><b>แบบรายงานการนิเทศนักศึกษาฝึกอาชีพในสถานประกอบการ (รายสัปดาห์)</b><br><b>ภาคเรียนที่ ' + esc(thNum(semLabel(S.sem))) + '</b></div>' +
       '<p class="vr-head">ครูนิเทศก์ ชื่อ ' + esc(t.name || blank) + ' แผนกวิชา' + esc(deptName(dept).replace(/^แผนก(วิชา)?\s*/, '') || blank) + '<br>นิเทศสัปดาห์ที่ ' + (weeks.length ? esc(thNum(weeks.join(', '))) : '........') + ' ระหว่างวันที่ ' + (dates.length ? esc(thLongDate(dates[0])) : blank) + ' ถึงวันที่ ' + (dates.length ? esc(thLongDate(dates[dates.length - 1])) : blank) + '</p>' +
-      '<p class="vr-label"><b>ส่วนที่ 1 รายวิชาที่นิเทศในสัปดาห์นี้</b></p><table class="rp-table vr-table vr-courses"><thead><tr><th>ที่</th><th>รหัสวิชา / ชื่อวิชา</th><th>กลุ่มเรียน</th><th>วันที่ / เวลา</th><th>รูปแบบการนิเทศ</th><th>ชื่อสถานประกอบการ</th><th>สาขางาน</th><th>จำนวนผู้เรียน</th></tr></thead><tbody>';
+      '<p class="vr-label"><b>ส่วนที่ 1 รายวิชาที่นิเทศในสัปดาห์นี้</b></p><table class="rp-table vr-table vr-courses"><thead><tr><th>ที่</th><th>รหัสวิชา / ชื่อวิชา</th><th>กลุ่มเรียน</th><th>วันที่ / เวลา</th><th>รูปแบบการนิเทศ</th><th>ชื่อสถานประกอบการ</th><th>แผนกวิชา</th><th>จำนวนผู้เรียน</th></tr></thead><tbody>';
     list.forEach(function (v, i) {
       var c = courseOf(v.course_id), sites = visitSites(v), n = sites.length || 1;
       if (!sites.length) sites = [{}];
@@ -1105,7 +1105,7 @@
     }
     function visits(u) {
       var c = courseOf(u.course_id), groups = u.group_ids.map(function (g) { return IDX.Groups[g] || {}; });
-      var defaultMajor = uniq(groups.map(function (g) { return nm('Majors', g.major_id).replace(/\s*\((ปวช|ปวส)\.?\)\s*$/, ''); })).join(', ');
+      var defaultMajor = uniq(groups.map(function (g) { return deptName(g.department_id); }).filter(Boolean)).join(', ');
       var defaultStudents = groups.reduce(function (n, g) { return n + (Number(g.students) || 0); }, 0) || '';
       var m = modal('<h3>บันทึกนิเทศ: ' + esc(c.code + ' ' + c.name) + '</h3><p class="small muted mb-2">' + esc(groupsOf(u)) + ' · ครูผู้สอน ' + esc(teachersOf(u) || '-') + ' · บันทึกทีละรายวิชา แล้วรวมเป็นแบบรายงานการนิเทศได้จากปุ่ม "📄 รายงานการนิเทศ" ของครูนิเทศก์</p><div id="vList" class="mb-3"></div><hr>' +
         '<h3 id="vTitle" class="h6">เพิ่มการนิเทศ</h3><div class="form-grid"><div><label class="form-label mb-1">วันที่ *</label><input id="vD" type="date" class="form-control"></div>' +
@@ -1114,7 +1114,7 @@
         '<div><label class="form-label mb-1">สถานะ</label><select id="vS" class="form-select"><option value="done">นิเทศแล้ว</option><option value="planned">นัดหมาย</option></select></div>' +
         '<div><label class="form-label mb-1">ลิงก์ประชุมออนไลน์</label><input id="vM" type="url" class="form-control" placeholder="https://"></div>' +
         '<div><label class="form-label mb-1">นิเทศครั้งถัดไป</label><input id="vN" type="date" class="form-control"></div></div>' +
-        '<label class="form-label mb-1 mt-2">สถานประกอบการที่นิเทศ</label><div class="table-responsive" data-nofilter><table class="table table-sm align-middle mb-1 v-sites"><thead><tr><th>รูปแบบการนิเทศ</th><th>ชื่อ - สถานประกอบการ</th><th>สาขางาน</th><th style="width:96px">จำนวนผู้เรียน</th><th></th></tr></thead><tbody id="vSites"></tbody></table></div>' +
+        '<label class="form-label mb-1 mt-2">สถานประกอบการที่นิเทศ</label><div class="table-responsive" data-nofilter><table class="table table-sm align-middle mb-1 v-sites"><thead><tr><th>รูปแบบการนิเทศ</th><th>ชื่อ - สถานประกอบการ</th><th>แผนกวิชา</th><th style="width:96px">จำนวนผู้เรียน</th><th></th></tr></thead><tbody id="vSites"></tbody></table></div>' +
         '<button type="button" class="btn sm mb-2" id="vSiteAdd">+ เพิ่มสถานประกอบการ</button>' +
         '<label class="form-label mb-1 d-block">หัวข้อ</label><input id="vT" class="form-control mb-2">' +
         '<div class="form-grid"><div><label class="form-label mb-1">งานที่นักเรียนนักศึกษาได้ปฏิบัติ *</label><textarea id="vF" class="form-control" rows="4"></textarea></div><div><label class="form-label mb-1">งานที่ครูมอบหมายเพิ่มเติม</label><textarea id="vA" class="form-control" rows="4"></textarea></div></div>' +
@@ -1230,6 +1230,11 @@
   var CV_LEVEL_FULL = { vc: 'ระดับประกาศนียบัตรวิชาชีพ (ปวช.)', vs: 'ระดับประกาศนียบัตรวิชาชีพชั้นสูง (ปวส.)', bd: 'ระดับปริญญาตรี' };
   var CV_DEFAULT_WEEKS = { vc: 18, vs: 15 };
   var CV_LEVELS = { vc: 'ปวช.', vs: 'ปวส.' };
+  /* ลายเซ็นงบหน้า: ยศ "ว่าที่ร้อยโท" อยู่หลังคำว่าลงชื่อ ในวงเล็บเหลือเฉพาะชื่อ-สกุล (แบบเดียวกับแบบหลักฐานการเบิก) */
+  function cvSign(name, role) {
+    var person = typeof otSignatureName === 'function' ? otSignatureName(name) : { prefix: '', name: String(name || '') };
+    return '<div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) : '') + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(person.name || '.................................') + ')<br>' + role + '</div>';
+  }
   VIEWS['ot-cover'] = function (el) {
     if (!CV.dept) CV.dept = S.me.department_id || (S.D.Departments[0] || {}).id;
     var levelOpts = Object.keys(CV_LEVELS).map(function (k) { return '<option value="' + k + '"' + (k === CV.level ? ' selected' : '') + '>ระดับ ' + CV_LEVELS[k] + '</option>'; }).join('');
@@ -1242,7 +1247,20 @@
     var modeSel = !canSim ? '<input type="hidden" id="cvM" value="real"><input type="hidden" id="cvF" value="week">' : '<select id="cvM" class="form-select form-select-sm w-auto" title="แหล่งข้อมูลของงบหน้า"><option value="real"' + (CV.mode === 'real' ? ' selected' : '') + '>ข้อมูลจริง (ใบเบิกที่ล็อกแล้ว)</option><option value="sim"' + (CV.mode === 'sim' ? ' selected' : '') + '>ข้อมูลประมาณการ</option></select>' +
       // แบบฟอร์มของข้อมูลประมาณการ: รายสัปดาห์ หรือ งบหน้าประกอบการขออนุมัติเวลาทำงาน 12 ข้อ (แบบที่งานหลักสูตรฯ ใช้)
       '<select id="cvF" class="form-select form-select-sm w-auto" title="แบบฟอร์มงบหน้า"><option value="week"' + (CV.form === 'week' ? ' selected' : '') + '>แบบรายสัปดาห์</option><option value="approval"' + (CV.form === 'approval' ? ' selected' : '') + '>แบบขออนุมัติเวลาทำงาน (12 ข้อ)</option></select>';
-    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' + modeSel + deptSelect('cvD', CV.dept) + '<select id="cvL" class="form-select form-select-sm w-auto">' + levelOpts + '</select><select id="cvW" class="form-select form-select-sm w-auto" title="จำนวนสัปดาห์ของงบหน้า">' + weekOpts + '</select><span class="grow"></span><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' + modeSel + deptSelect('cvD', CV.dept) + '<select id="cvL" class="form-select form-select-sm w-auto">' + levelOpts + '</select><select id="cvW" class="form-select form-select-sm w-auto" title="จำนวนสัปดาห์ของงบหน้า">' + weekOpts + '</select><span class="grow"></span><button class="btn sm" id="cvX" type="button" title="ดาวน์โหลดงบหน้าที่แสดงอยู่เป็นไฟล์ Excel">⬇️ Excel</button><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div></div><div id="cvOut" class="muted">กำลังโหลด…</div>');
+    // ดาวน์โหลด Excel ได้ทั้งแบบรายสัปดาห์ (แนวนอน) และแบบขออนุมัติเวลาทำงาน 12 ข้อ (แนวนอนเหมือนกัน) จากเอกสารที่แสดงอยู่
+    $j('#cvX').on('click', function () {
+      var pg = document.querySelectorAll('#cvOut .page'), btn = this;
+      if (!pg.length) return toast('ยังไม่มีงบหน้าให้ดาวน์โหลด', 1);
+      var appr = pg[0].classList.contains('approval-page'), dept = CV.dept === '__all' ? 'ทุกแผนกวิชา' : deptName(CV.dept);
+      var name = appr ? 'งบหน้าขออนุมัติเวลาทำงาน ' + dept + ' ' + semLabel(S.sem)
+        : 'งบหน้า' + (CV.mode === 'sim' ? 'ประมาณการ' : '') + ' ' + CV_LEVELS[CV.level] + ' ' + dept + ' ' + semLabel(S.sem);
+      btn.disabled = true;
+      Office.toXlsx(pg, { landscape: true }).then(function (blob) {
+        Office.save(blob, Office.safeName(name) + '.xlsx');
+        toast('ดาวน์โหลดไฟล์ Excel แล้ว (ไม่รวมลายเซ็น)');
+      }).catch(function () { toast('สร้างไฟล์ไม่สำเร็จ', 1); }).then(function () { btn.disabled = false; });
+    });
     // งานพัฒนาหลักสูตรฯ/ผู้ดูแล: ข้อมูลประมาณการเลือก "ทุกแผนกวิชา" เพื่อสรุปรวมทั้งวิทยาลัยได้
     function allOpt() {
       var sel = $j('select#cvD');
@@ -1268,8 +1286,9 @@
         if (r.noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่ได้ตั้งวันเปิดภาคเรียนของภาคเรียนนี้ — งบหน้านับสัปดาห์จากวันเปิดภาคเรียน กำหนดได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
         var s = S.settings, sem = r.semester, lv = CV_LEVELS[r.level];
         var head = all ? null : Grid.deptHead(S.D.Teachers, CV.dept);
-        var sign = function (name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
-        var num = function (v) { return '<td class="text-end">' + (v ? money(v) : '') + '</td>'; };
+        var sign = cvSign;
+        // ไม่แสดงทศนิยมเมื่อเป็นจำนวนเต็มบาท (ตัวเลขสั้นลง ตัวอักษรในตารางจึงใหญ่ขึ้นได้)
+        var num = function (v) { return '<td class="text-end">' + (v ? Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '') + '</td>'; };
         var last = r.weeks[r.weeks.length - 1];
         $j('#cvOut').removeClass('muted').html('<div class="page cover-page"><h2 class="text-center">' + (sim ? 'งบหน้าประมาณการค่าสอนเกินภาระงาน' : 'งบหน้าการเบิกค่าสอนเกินภาระงาน') + ' ระดับ ' + lv + (sim ? ' (ข้อมูลประมาณการ)' : '') + '</h2><div class="sub text-center">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(CV.dept))) + '<br>ภาคเรียนที่ ' + esc(semLabel(S.sem)) + ' จำนวน ' + r.weeks.length + ' สัปดาห์ (' + thDate(r.weeks[0].from) + ' – ' + thDate(last.to) + ')</div>' +
           (r.startSet ? '' : '<div class="alert alert-warning no-print py-2 small">ยังไม่ได้ตั้งวันเปิดภาคเรียน จึงนับสัปดาห์จากรอบการเบิกแรกไปก่อน — ตั้งค่าได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>') +
@@ -1312,7 +1331,7 @@
           '</div><div id="cvDoc"></div>');
         var n = function (v) { return Number(v || 0).toLocaleString('th-TH'); };
         var pct = function (v, t) { return t ? (Math.round(v * 10000 / t) / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'; };
-        var sign = function (name, role) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')<br>' + role + '</div>'; };
+        var sign = cvSign;
         var list = function (arr) { return '<table class="appr-list">' + arr.map(function (x, i) { return '<tr><td class="appr-no">' + (i + 1) + '.</td><td>' + esc(x.name) + '</td><td>' + esc(x.pos || '') + '</td></tr>'; }).join('') + '</table>'; };
         function draw() {
           var execs = String(val('#cvExec') || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) { var p = l.split('|'); return { name: p[0].trim(), pos: (p[1] || '').trim() }; });
@@ -1336,7 +1355,7 @@
             }).join('') +
             '<p>7. หลักสูตรที่เปิดสอน</p><table class="appr-list">' + r.levels.map(function (l, i) { return '<tr><td class="appr-no">' + (i + 1) + '.</td><td>' + esc(CV_LEVEL_FULL[l.level] || l.label) + '</td><td class="text-end">' + l.rooms + ' ห้อง</td><td class="text-end">' + n(l.students) + ' คน</td></tr>'; }).join('') + '</table>' +
             '<p>8. รายละเอียดเกี่ยวกับชั่วโมงสอน</p><table class="appr-list">' +
-            [['ชั่วโมงภายในเวลาราชการ', t.inside], ['ชั่วโมงภายนอกเวลาราชการ', t.extra], ['ชั่วโมงรวมทั้งหมด', t.taught]].map(function (x) { return '<tr><td class="appr-no"></td><td>' + x[0] + '</td><td class="text-end">' + x[1] + ' ชั่วโมง</td><td class="text-end">คิดเป็น ' + pct(x[1], t.taught) + ' เปอร์เซ็นต์</td></tr>'; }).join('') + '</table>' +
+            [['ชั่วโมงภายในเวลาราชการ', t.inside], ['ชั่วโมงภายนอกเวลาราชการ', t.extra], ['ชั่วโมงรวมทั้งหมด', t.taught]].map(function (x) { return '<tr><td class="appr-no"></td><td>' + x[0] + '</td><td class="text-end">' + x[1] + ' ชั่วโมง</td><td>คิดเป็น</td><td class="text-end">' + pct(x[1], t.taught) + '</td><td>เปอร์เซ็นต์</td></tr>'; }).join('') + '</table>' +
             '<p>9. ค่าใช้จ่ายในการสอนสถานศึกษา</p><table class="appr-table"><thead><tr><th>ระดับ</th><th>รายการ</th><th>ชม.</th><th>เงิน</th><th>สป.</th><th>ภาคเรียนนี้</th></tr></thead><tbody>' +
             (r.costs.length ? r.costs.map(function (c, i) { return '<tr><td class="text-start">9.' + (i + 1) + ' ' + esc(CV_LEVEL_FULL[c.level] || c.level) + '</td><td class="text-start">อัตราชั่วโมงละ ' + n(c.rate) + ' บาท เป็นเงิน</td><td>' + c.hours + '</td><td>' + n(c.rate) + '</td><td>' + c.weeks + '</td><td class="text-end">' + n(c.amount) + '</td></tr>'; }).join('') : '<tr><td colspan="6">ไม่มีชั่วโมงสอนพิเศษ</td></tr>') +
             '<tr class="fw-bold"><td colspan="5" class="text-end">รวมทั้งสิ้น</td><td class="text-end">' + n(t.amount) + '</td></tr><tr><td colspan="6">(' + esc(r.totalText) + ')</td></tr></tbody></table>' +
@@ -1345,8 +1364,8 @@
             '<p>12. ขอจัดส่งเอกสารเพื่อประกอบการพิจารณา ดังนี้<br>' + ['งบหน้ารายละเอียดประกอบการขออนุมัติ', 'บัญชีรายชั่วโมงสอนครู - อาจารย์ทั้งหมด', 'ตารางสอนส่วนบุคคล', 'ตารางการใช้ห้องเรียนทฤษฎี', 'ตารางการใช้ห้องเรียนปฏิบัติการต่าง ๆ'].map(function (x, i) { return '<span class="appr-in">12.' + (i + 1) + ' ' + x + '</span>'; }).join('<br>') + '</p>' +
             '<div class="appr-end"><p class="appr-in">คณะกรรมการจัดทำตารางสอน ขอรับรองว่าข้อความ 1 ถึง 12 ถูกต้อง</p>' +
             '<div class="signs">' + sign(head && head.name, esc(Grid.deptHeadTitle(r.department.name)) + '<br>กรรมการจัดทำตารางสอน') + sign(s.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</div>' +
-            '<div class="appr-approve"><div><b>ความคิดเห็นรองผู้อำนวยการฝ่ายวิชาการ</b><br>.......................................................................<br>.......................................................................' + sign(s.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div>' +
-            '<div><b>หัวหน้าสถานศึกษา</b><br>(&nbsp;&nbsp;&nbsp;) อนุมัติ<br>(&nbsp;&nbsp;&nbsp;) ไม่อนุมัติ' + sign(s.signer_director, 'ผู้อำนวยการ' + esc(s.college_name || '')) + '</div></div></div></div>';
+            '<div class="appr-approve"><div><b class="appr-head">ความคิดเห็นรองผู้อำนวยการฝ่ายวิชาการ</b><div class="appr-body">............................................................<br>............................................................</div>' + sign(s.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div>' +
+            '<div><b class="appr-head">หัวหน้าสถานศึกษา</b><div class="appr-body"><span class="appr-opt">(&nbsp;&nbsp;&nbsp;&nbsp;) อนุมัติ<br>(&nbsp;&nbsp;&nbsp;&nbsp;) ไม่อนุมัติ</span></div>' + sign(s.signer_director, 'ผู้อำนวยการ' + esc(s.college_name || '')) + '</div></div></div></div>';
           $j('#cvDoc').html(html);
         }
         $j('#cvExec,#cvTime').on('input change', draw);

@@ -1,7 +1,7 @@
 <script>
 /* ===================== ไฟล์ Word / Excel ของเอกสาร =====================
    ทำงานในเบราว์เซอร์ทั้งหมด ไม่ใช้ไลบรารีภายนอก
-   - toDocx(pages) / toXlsx(pages): สร้างไฟล์จากเอกสารที่แสดงอยู่บนหน้าจอ (อ่านรูปแบบจากที่เบราว์เซอร์จัดแล้ว)
+   - toDocx(pages) / toXlsx(pages, opts): สร้างไฟล์จากเอกสารที่แสดงอยู่บนหน้าจอ (อ่านรูปแบบจากที่เบราว์เซอร์จัดแล้ว) opts.landscape = ตั้งหน้ากระดาษแนวนอน
    - fromFile(file): อ่าน .docx/.xlsx กลับเป็น HTML ของเอกสาร (หน้า .rp-page) เพื่อแก้ต่อบนเว็บหรือดูตัวอย่าง
    ลายเซ็นในไฟล์ Word ติดป้าย sig:<ชื่อ> ไว้ เมื่ออัปกลับจึงกลายเป็นช่องลายเซ็นของระบบตามเดิม */
 var Office = (function () {
@@ -263,7 +263,7 @@ var Office = (function () {
 
   /* ---------- HTML → Excel: ทุกหน้าต่อกันในชีตเดียว ตารางลงช่องตรงกัน ข้อความอื่นเป็นแถวที่รวมช่องเต็มความกว้าง ---------- */
   function col(n) { var s = ''; n++; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
-  function toXlsx(pages) {
+  function toXlsx(pages, opts) {
     pages = Array.prototype.slice.call(pages);
     var rows = [], merges = [], xfs = ['0|0|0|0'], ncol = 1, colW = [];
     function xf(bold, align, border, wrap) { var k = (bold ? 1 : 0) + '|' + align + '|' + (border ? 1 : 0) + '|' + (wrap ? 1 : 0), i = xfs.indexOf(k); if (i < 0) { xfs.push(k); i = xfs.length - 1; } return i; }
@@ -274,7 +274,27 @@ var Office = (function () {
     var totalW = 0; for (var wi = 0; wi < ncol; wi++) totalW += colW[wi] || 90;
     var heights = []; // ความสูงแถว: แถวที่รวมช่องไม่ขยายเอง จึงประมาณจากจำนวนบรรทัด
     function lines(t, widthPx) { return t.split('\n').reduce(function (n, l) { return n + Math.max(1, Math.ceil(l.length * 11 / Math.max(60, widthPx))); }, 0); }
+    // กล่องลงชื่อหลายคนที่วางเคียงกัน (ข้อความหลายบรรทัดในแต่ละกล่อง) ให้แต่ละคนอยู่ช่องของตัวเองเรียงแนวนอนเหมือนบนหน้าจอ
+    function sideBySide(el) {
+      if (!/flex|grid/.test(cs(el).display) || /column/.test(cs(el).flexDirection) || el.children.length < 2) return false;
+      var kids = Array.prototype.filter.call(el.children, function (c) { return cs(c).display !== 'none' && !c.classList.contains('no-print'); });
+      var texts = kids.map(cellText);
+      if (kids.length < 2 || !texts.some(function (t) { return /\n/.test(t); })) return false;
+      var r = rows.length, n = kids.length, maxLines = 1; rows.push([]);
+      kids.forEach(function (k, i) {
+        var c0 = Math.round(i * ncol / n), c1 = Math.max(c0, Math.round((i + 1) * ncol / n) - 1), w = 0, b;
+        rows[r][c0] = { v: texts[i], s: xf(false, alignOf(k), false, true) };
+        for (b = c0 + 1; b <= c1; b++) rows[r][b] = { v: '', s: xf(false, 'left', false, false) };
+        if (c1 > c0) merges.push(col(c0) + (r + 1) + ':' + col(c1) + (r + 1));
+        for (b = c0; b <= c1; b++) w += colW[b] || 90;
+        maxLines = Math.max(maxLines, lines(texts[i], w));
+      });
+      heights[r] = maxLines * 25;
+      rows.push([]);
+      return true;
+    }
     function textRow(el) {
+      if (sideBySide(el)) return;
       // กล่องที่เรียงแนวนอน (หัวข้อ: ค่า) ให้อยู่บรรทัดเดียวกัน
       var t = /flex|grid/.test(cs(el).display) && el.children.length ? Array.prototype.map.call(el.children, cellText).filter(Boolean).join('    ') : cellText(el);
       if (!t) return;
@@ -322,7 +342,7 @@ var Office = (function () {
       rows.map(function (r, ri) {
         return '<row r="' + (ri + 1) + '"' + (heights[ri] > 25 ? ' ht="' + heights[ri] + '" customHeight="1"' : '') + '>' + r.map(function (c, ci) { if (!c) return ''; var ref = col(ci) + (ri + 1); return c.v === '' ? '<c r="' + ref + '" s="' + c.s + '"/>' : '<c r="' + ref + '" s="' + c.s + '" t="inlineStr"><is><t xml:space="preserve">' + x(c.v) + '</t></is></c>'; }).join('') + '</row>';
       }).join('') + '</sheetData>' + (merges.length ? '<mergeCells count="' + merges.length + '">' + merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>' : '') +
-      '<pageMargins left="0.7" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/></worksheet>';
+      '<pageMargins left="0.7" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="' + (opts && opts.landscape ? 'landscape' : 'portrait') + '" fitToWidth="1" fitToHeight="0"/></worksheet>';
     var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="16"/><name val="' + FONT + '"/></font><font><b/><sz val="16"/><name val="' + FONT + '"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
       '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' +
       xfs.map(function (k) { var p = k.split('|'); return '<xf numFmtId="0" fontId="' + p[0] + '" fillId="0" borderId="' + p[2] + '" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="' + (p[1] === '0' ? 'left' : p[1]) + '" vertical="center"' + (p[3] === '1' ? ' wrapText="1"' : '') + '/></xf>'; }).join('') + '</cellXfs></styleSheet>';

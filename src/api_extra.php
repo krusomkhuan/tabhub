@@ -411,6 +411,7 @@ function supervise_unit(array $me, $semesterId, $key): array {
 
 function api_superviseList($token = '', $semesterId = '') {
   $me = auth_user($token);
+  visit_sites_to_dept_once();
   $counts = [];
   foreach (readTable('SupervisionVisits') as $v) {
     if ((string)$v['semester_id'] !== str($semesterId)) continue;
@@ -489,10 +490,49 @@ function api_visitImageDelete($token = '', $id = '', $name = '') {
 
 function api_visitList($token = '', $semesterId = '', $key = '') {
   $me = auth_user($token);
+  visit_sites_to_dept_once();
   supervise_unit($me, $semesterId, $key);
   $rows = array_values(array_filter(readTable('SupervisionVisits'), fn($v) => (string)$v['semester_id'] === str($semesterId) && (string)$v['unit_key'] === str($key)));
   stable_usort($rows, fn($a, $b) => strcmp($b['visit_date'], $a['visit_date']));
   return $rows;
+}
+
+/** ชื่อแผนกวิชาของกลุ่มเรียนในวิชาที่นิเทศ (ใช้ในช่อง "แผนกวิชา" ของตารางสถานประกอบการ) */
+function supervise_dept_names(array $u): string {
+  $groups = idx_table('Groups'); $depts = idx_table('Departments'); $names = [];
+  foreach ($u['group_ids'] as $g) {
+    $n = trim(str($depts[$groups[$g]['department_id'] ?? '']['name'] ?? ''));
+    if ($n !== '' && !in_array($n, $names, true)) $names[] = $n;
+  }
+  return implode(', ', $names);
+}
+
+/** ครั้งเดียว: เปลี่ยนช่อง "สาขางาน" ที่ครูกรอกไว้แล้ว ให้เป็นชื่อแผนกวิชาตามแบบฟอร์ม */
+function visit_sites_to_dept_once(): void {
+  $flag = 'migrate:visit_sites_dept';
+  if (kvGet($flag) !== null) return;
+  with_lock(function () use ($flag) {
+    if (kvGet($flag) !== null) return;
+    $rows = readTable('SupervisionVisits'); $units = []; $changed = false;
+    foreach ($rows as &$v) {
+      $sem = str($v['semester_id']);
+      $units[$sem] ??= supervise_units($sem);
+      $u = $units[$sem][str($v['unit_key'])] ?? null;
+      if (!$u || ($dept = supervise_dept_names($u)) === '') continue;
+      $sites = json_decode(str($v['sites'] ?? ''), true);
+      if (!is_array($sites) || !$sites) {
+        if (str($v['company_name'] ?? '') === '') continue;
+        $sites = [['type' => $v['visit_type'] === 'onsite' ? 'onsite' : 'online', 'company' => $v['company_name'], 'major' => '', 'students' => '']];
+      }
+      foreach ($sites as &$x) if (is_array($x)) $x['major'] = $dept;
+      unset($x);
+      $json = json_encode(array_values($sites), JSON_UNESCAPED_UNICODE);
+      if ($json !== str($v['sites'] ?? '')) { $v['sites'] = $json; $changed = true; }
+    }
+    unset($v);
+    if ($changed) writeTable('SupervisionVisits', $rows);
+    kvPut($flag, date('c'));
+  });
 }
 
 /** ตารางสถานประกอบการในแบบรายงานนิเทศ: [{type: onsite|online, company, major, students}] */
