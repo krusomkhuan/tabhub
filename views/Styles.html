@@ -545,6 +545,19 @@
   .receipt-signatures td.receipt-grand-total { background: #c4c7cb; text-align: left; padding: 7px; }
   .ot-receipt { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @page otclaim { size: A4 landscape; margin: 5mm; }
+  /* กรรมการตรวจสอบเอกสาร ใต้ตารางลงนามของหลักฐานการเบิก */
+  .receipt-committee { display: flex; justify-content: space-around; margin-top: 16px; font-size: 14px; }
+  /* รายละเอียดทั้งรอบ: ตารางเลือกชั่วโมงสัปดาห์ละหน้า ต่อจากหลักฐานการเบิก */
+  .ot-print-weeks { page: otclaim; color: #000; }
+  .ot-print-head { margin-bottom: 6px; font-size: 13px; }
+  .ot-print-draft { color: #d33a3a; font-weight: 700; }
+  .ot-print-week input[type=checkbox] { width: auto; }
+  @media print {
+    .ot-print-weeks { break-before: page; page-break-before: always; }
+    .ot-print-week .tt-wrap { overflow: visible; }
+    .ot-print-week table.tt td.cell { height: auto; }
+    .ot-print-week .ss { min-height: 0 !important; }
+  }
   @media print {
     .ot-receipt { display: block; break-inside: avoid; margin: 0; padding: 0; }
     .ot-receipt thead { display: table-header-group; }
