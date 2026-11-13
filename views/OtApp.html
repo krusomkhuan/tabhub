@@ -155,23 +155,7 @@ function claimPrintHtml(d, sch, evaluated) {
     '<div class="receipt-committee">' + ['ประธานกรรมการ', 'เลขานุการ'].map(function (role) {
       var line = '..............................................';
       return '<div><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ&nbsp;</span><span class="cv-sig-body">' + line + '<span class="cv-sig-under">(' + line + ')<br>' + role + '</span></span></span></div>';
-    }).join('') + '</div></section>' + claimWeeksPrintHtml(d, evaluated, draft);
-}
-
-/* พิมพ์รายละเอียดครบทั้งรอบการเบิก ต่อจากหลักฐานการเบิก (หน้า 1): ตารางเลือกชั่วโมงทุกสัปดาห์ สัปดาห์ละหน้า และวันหยุด/ไปราชการ/ลา */
-function claimWeeksPrintHtml(d, evaluated, draft) {
-  var t = d.teacher;
-  var head = '<div class="ot-print-head"><b>รายละเอียดการเลือกชั่วโมงเบิก</b> · ' + esc(t.name) + ' · แผนกวิชา' + esc(deptName(t.department_id)) +
-    ' · รอบ ' + thDate(d.round.start_date) + ' – ' + thDate(d.round.end_date) + (draft ? ' · <span class="ot-print-draft">ฉบับร่าง</span>' : '') +
-    '<div class="small">สีเขียว = ภาระงาน · สีน้ำเงิน = เบิก · สีเทา = ห้ามเบิก · ขีดฆ่า = ลา/ไปราชการ/หยุด · ชดเชย ✓ = สอนชดเชยและรายงานผลแล้ว</div></div>';
-  var weeks = evaluated.map(function (x) {
-    return weekHtml(x.week, x.result, false).replace('<div class="card page">', '<div class="card page ot-print-week">' + head);
-  }).join('');
-  var rows = d.absences.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-  var abs = rows.length ? '<div class="card page ot-print-week">' + head + '<h3 style="margin:6px 0">วันหยุด / ไปราชการ / ลา</h3><table class="data small"><tr><th>วันที่</th><th>คาบ</th><th>ประเภท</th><th>หมายเหตุ</th></tr>' + rows.map(function (a) {
-    return '<tr><td>' + thDate(a.date) + '</td><td>' + (a.period_from ? Grid.periodNo(S.settings, a.period_from) + '–' + Grid.periodNo(S.settings, a.period_to || a.period_from) : 'ทั้งวัน') + '</td><td>' + esc(a.type) + (a.teacher_id === '*' ? ' (ทั้งวิทยาลัย)' : '') + '</td><td>' + esc(a.note || '') + '</td></tr>';
-  }).join('') + '</table></div>' : '';
-  return '<section class="print-only ot-print-weeks">' + weeks + abs + '</section>';
+    }).join('') + '</div></section>';
 }
 
 function renderClaim() {
