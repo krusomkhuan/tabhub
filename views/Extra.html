@@ -1233,7 +1233,9 @@
   /* ลายเซ็นงบหน้า: ยศ "ว่าที่ร้อยโท" อยู่หลังคำว่าลงชื่อ ในวงเล็บเหลือเฉพาะชื่อ-สกุล (แบบเดียวกับแบบหลักฐานการเบิก) */
   function cvSign(name, role) {
     var person = typeof otSignatureName === 'function' ? otSignatureName(name) : { prefix: '', name: String(name || '') };
-    return '<div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) : '') + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(person.name || '.................................') + ')<br>' + role + '</div>';
+    var label = 'ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) : '');
+    // ชื่อในวงเล็บอยู่กึ่งกลางเส้นลงชื่อ: เติมคำ "ลงชื่อ…" แบบมองไม่เห็นไว้หน้าชื่อ ให้ชื่อเลื่อนไปเท่ากับเส้นจุด (Excel ไม่นำข้อความที่ซ่อนไปด้วย)
+    return '<div>' + label + (window.Sig ? Sig.slot(name) : '') + '.................................<br><span class="sig-name-line"><span class="sig-pad" aria-hidden="true">' + label + '</span>(' + esc(person.name || '.................................') + ')</span><br>' + role + '</div>';
   }
   VIEWS['ot-cover'] = function (el) {
     if (!CV.dept) CV.dept = S.me.department_id || (S.D.Departments[0] || {}).id;
@@ -1290,7 +1292,12 @@
         // ไม่แสดงทศนิยมเมื่อเป็นจำนวนเต็มบาท (ตัวเลขสั้นลง ตัวอักษรในตารางจึงใหญ่ขึ้นได้)
         var num = function (v) { return '<td class="text-end">' + (v ? Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '') + '</td>'; };
         var last = r.weeks[r.weeks.length - 1];
-        $j('#cvOut').removeClass('muted').html('<div class="page cover-page"><h2 class="text-center">' + (sim ? 'งบหน้าประมาณการค่าสอนเกินภาระงาน' : 'งบหน้าการเบิกค่าสอนเกินภาระงาน') + ' ระดับ ' + lv + (sim ? ' (ข้อมูลประมาณการ)' : '') + '</h2><div class="sub text-center">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(CV.dept))) + '<br>ภาคเรียนที่ ' + esc(semLabel(S.sem)) + ' จำนวน ' + r.weeks.length + ' สัปดาห์ (' + thDate(r.weeks[0].from) + ' – ' + thDate(last.to) + ')</div>' +
+        // ใบเบิกจริง: ถ้ารอบการเบิกยังไม่ครบทุกสัปดาห์ (เช่น รอบสัปดาห์ที่ 1–4) ให้หัวรายงานแสดงสัปดาห์และวันที่ตามรอบนั้น
+        var rw = !sim && r.roundWeeks ? r.weeks.filter(function (w) { return w.index >= r.roundWeeks[0] && w.index <= r.roundWeeks[1]; }) : [];
+        var period = rw.length && rw.length < r.weeks.length
+          ? 'รอบการเบิกสัปดาห์ที่ ' + rw[0].index + (rw.length > 1 ? '–' + rw[rw.length - 1].index : '') + ' (' + thDate(rw[0].from) + ' – ' + thDate(rw[rw.length - 1].to) + ')'
+          : 'จำนวน ' + r.weeks.length + ' สัปดาห์ (' + thDate(r.weeks[0].from) + ' – ' + thDate(last.to) + ')';
+        $j('#cvOut').removeClass('muted').html('<div class="page cover-page"><h2 class="text-center">' + (sim ? 'งบหน้าประมาณการค่าสอนเกินภาระงาน' : 'งบหน้าการเบิกค่าสอนเกินภาระงาน') + ' ระดับ ' + lv + (sim ? ' (ข้อมูลประมาณการ)' : '') + '</h2><div class="sub text-center">' + esc(s.college_name) + ' · ' + (all ? 'ทุกแผนกวิชา' : 'แผนกวิชา' + esc(deptName(CV.dept))) + '<br>ภาคเรียนที่ ' + esc(semLabel(S.sem)) + ' ' + period + '</div>' +
           (r.startSet ? '' : '<div class="alert alert-warning no-print py-2 small">ยังไม่ได้ตั้งวันเปิดภาคเรียน จึงนับสัปดาห์จากรอบการเบิกแรกไปก่อน — ตั้งค่าได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>') +
           (sim ? '<div class="alert alert-info no-print py-2 small">ข้อมูลประมาณการสำหรับทำแผนการใช้เงิน: คำนวณจากตารางสอนและแบบการเบิกที่กำหนดให้ครู โดยเลือกชั่วโมงเบิกเต็มสิทธิ์ทุกสัปดาห์ ไม่หักวันหยุด/วันลา/สอนแทน และไม่คิดเบิกรายหัว — ไม่ใช่ยอดเบิกจริง และไม่บันทึกลงระบบ</div>' : '') +
           (sim && r.noScheme && r.noScheme.length ? '<div class="alert alert-warning no-print py-2 small">ยังไม่ได้กำหนดแบบการเบิก (ไม่นับในงบหน้าประมาณการ): ' + esc(r.noScheme.join(', ')) + '</div>' : '') +

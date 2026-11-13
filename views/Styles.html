@@ -186,6 +186,16 @@
   /* พิมพ์ */
   .print-only { display: none; }
   .page { background: #fff; padding: 18px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 10px; }
+  /* เอกสารรายงานทุกแบบใช้ TH SarabunPSK (ไฟล์ Word/Excel ที่ดาวน์โหลดก็ใช้ฟอนต์นี้)
+     - THSarabunPSK: ขนาดจริงแบบเอกสารราชการ ใช้กับหน้าที่ตั้งขนาดไว้สำหรับ TH Sarabun (บันทึกข้อความ, นิเทศ, งบหน้า)
+     - PSKWeb: ขยายตัวอักษร 1.4 เท่า ใช้กับหน้าที่ตั้งขนาดไว้สำหรับฟอนต์ Sarabun บนเว็บ ตัวอักษรจึงใหญ่เท่าเดิม (ไฟล์ Word ขยาย 1.4 เท่าเช่นเดียวกัน) */
+  @font-face { font-family: 'THSarabunPSK'; src: local('TH SarabunPSK'), url('assets/THSarabunPSK-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
+  @font-face { font-family: 'THSarabunPSK'; src: local('TH SarabunPSK Bold'), local('THSarabunPSK-Bold'), url('assets/THSarabunPSK-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
+  @font-face { font-family: 'PSKWeb'; src: url('assets/THSarabunPSK-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; size-adjust: 140%; }
+  @font-face { font-family: 'PSKWeb'; src: url('assets/THSarabunPSK-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; size-adjust: 140%; }
+  .page, .rp-page, .ot-receipt { font-family: 'PSKWeb', 'TH SarabunPSK', serif; }
+  :is(.page, .rp-page, .ot-receipt) * { font-family: inherit; }
+  :is(.page, .rp-page, .ot-receipt) .no-print { font-family: 'Sarabun', system-ui, sans-serif; } /* ปุ่ม/คำแนะนำบนหน้าจอ ไม่ใช่เนื้อเอกสาร */
   .page h2 { text-align: center; margin: 0; font-size: 18px; } .page .sub { text-align: center; margin: 2px 0 10px; }
   .signs { display: flex; justify-content: space-around; margin-top: 28px; text-align: center; font-size: 13px; gap: 10px; }
   .signs div { min-width: 150px; }
@@ -264,15 +274,10 @@
   .rp-page { width: 760px; min-width: 760px; padding: 26px 40px; margin: 0 auto 18px; color: #000; font-size: 15px; line-height: 1.55; border-radius: 0; }
   .rp-memo-head { position: relative; height: 84px; }
   .rp-memo-head img { position: absolute; left: 0; top: 0; width: 66px; height: 76px; }
-  /* TH SarabunIT๙ วาดเลข 0-9 เป็นเลขไทย จึงใช้ฟอนต์นี้กับทุกตัวอักษรยกเว้นตัวเลข และใช้ TH Sarabun New (แบบเดียวกัน) วาดเลขอารบิค */
-  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunIT9-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; unicode-range: U+0000-002F, U+003A-10FFFF; }
-  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunIT9-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; unicode-range: U+0000-002F, U+003A-10FFFF; }
-  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunNew-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; unicode-range: U+0030-0039; }
-  @font-face { font-family: 'MemoSarabun'; src: url('assets/THSarabunNew-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; unicode-range: U+0030-0039; }
-  .rp-page.rp-parent-letter { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'MemoSarabun', 'TH Sarabun New', serif; font-size: 16pt; line-height: 1.15; }
+  .rp-page.rp-parent-letter { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'THSarabunPSK', 'TH SarabunPSK', serif; font-size: 16pt; line-height: 1.15; }
   .rp-page.rp-parent-letter h3 { font-size: 16pt; }
   .rp-memo-head h1 { margin: 0; padding-top: 12mm; text-align: center; font-size: 29pt; font-weight: 700; line-height: 30pt; }
-  .rp-page.rp-memo { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'MemoSarabun', 'TH Sarabun New', serif; font-size: 16pt; line-height: 1.15; }
+  .rp-page.rp-memo { box-sizing: border-box; width: 210mm; min-width: 210mm; padding: 15mm 20mm 15mm 30mm; font-family: 'THSarabunPSK', 'TH SarabunPSK', serif; font-size: 16pt; line-height: 1.15; }
   .rp-memo .rp-memo-head { height: 24mm; }
   /* ครุฑสูง 1.5 ซม. วางระดับเดียวกับคำว่า "บันทึกข้อความ" ตามแบบบันทึกข้อความงานสารบรรณ */
   .rp-memo .rp-memo-head img { top: 8mm; width: 15mm; height: 15mm; }
@@ -318,9 +323,7 @@
   .vr-week { margin: 8px 0; padding: 6px 12px 8px; border: 1px solid var(--line); border-radius: 10px; }
   .vr-week legend { float: none; width: auto; margin: 0; padding: 0 6px; font-size: 15px; font-weight: 700; }
   .v-sites td { min-width: 90px; }
-  @font-face { font-family: 'VisitSarabun'; src: url('assets/THSarabunNew-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
-  @font-face { font-family: 'VisitSarabun'; src: url('assets/THSarabunNew-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
-  .rp-page.vr-page { font-family: 'VisitSarabun', 'TH Sarabun New', serif; font-size: 15pt; line-height: 1.3; }
+  .rp-page.vr-page { font-family: 'THSarabunPSK', 'TH SarabunPSK', serif; font-size: 15pt; line-height: 1.3; }
   .vr-page table.rp-table { font-size: 14pt; }
   .vr-page .rp-center { line-height: 1.5; }
   .vr-course { margin-top: 10px; break-inside: avoid; }
@@ -462,6 +465,8 @@
   .cover-table td, .cover-table th { padding: 3px 4px; }
   /* ลายเซ็น 4 คนของงบหน้าเรียงเป็นแถวเดียว */
   .cover-signs { flex-wrap: wrap; }
+  .sig-name-line { white-space: nowrap; }
+  .sig-pad { visibility: hidden; }
   .cover-signs > div { flex: 1 1 200px; }
   /* งบหน้าประกอบการขออนุมัติเวลาทำงาน (12 ข้อ): พิมพ์ A4 แนวนอนตาม @page หลัก */
   .approval-page { font-size: 14px; line-height: 1.45; color: #000; }
@@ -749,9 +754,7 @@
     .ha-number > input { width: 75px; }
   }
   /* งบหน้าแผนกวิชา + งบหน้าขออนุมัติ: ใช้ฟอนต์ TH Sarabun New (ตัวเล็กกว่า Sarabun ที่ขนาดเดียวกัน จึงขยายตัวอักษรราว 1.3 เท่าและลดระยะบรรทัด ให้หน้ากระดาษเท่าเดิม) */
-  @font-face { font-family: 'THSarabunNew'; src: url('assets/THSarabunNew-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
-  @font-face { font-family: 'THSarabunNew'; src: url('assets/THSarabunNew-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
-  .page.cover-page, .page.approval-page { font-family: 'THSarabunNew', 'TH Sarabun New', serif; }
+  .page.cover-page, .page.approval-page { font-family: 'THSarabunPSK', 'TH SarabunPSK', serif; }
   .page.cover-page :is(h2, h3, th, td), .page.approval-page :is(h2, th, td) { font-family: inherit; }
   .page.cover-page { font-size: 18px; line-height: 1.2; }
   .page.cover-page .cover-table { font-size: 16px; }

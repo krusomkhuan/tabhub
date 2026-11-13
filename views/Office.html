@@ -6,7 +6,7 @@
    ลายเซ็นในไฟล์ Word ติดป้าย sig:<ชื่อ> ไว้ เมื่ออัปกลับจึงกลายเป็นช่องลายเซ็นของระบบตามเดิม */
 var Office = (function () {
   var enc = new TextEncoder(), dec = new TextDecoder('utf-8');
-  var FONT = 'TH Sarabun New';
+  var FONT = 'TH SarabunPSK';
   function x(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
   /* ---------- zip ---------- */
@@ -80,9 +80,11 @@ var Office = (function () {
     return el.tagName === 'TABLE' || el.tagName === 'BR' ? false : /^(block|flex|grid|list-item|table)$/.test(d);
   }
   function hasBlockChild(el) { return Array.prototype.some.call(el.children, function (c) { return isBlock(c) || c.tagName === 'TABLE'; }); }
-  /* ขนาดตัวอักษรบนเว็บ (ฟอนต์ Sarabun) ตัวใหญ่กว่า TH Sarabun New ที่ขนาดเดียวกัน จึงขยายให้ใกล้เคียงกัน */
+  /* หน้าที่ใช้ขนาดแบบ TH Sarabun (THSarabunPSK) แปลงตรงตัว ส่วนหน้าที่ตั้งขนาดไว้สำหรับฟอนต์ Sarabun บนเว็บ
+     (แสดงด้วย PSKWeb ที่ขยาย 1.4 เท่า) ขยาย 1.4 เท่าเหมือนบนหน้าจอ — ดูเฉพาะชื่อฟอนต์แรก */
   function ptOf(style) {
-    var px = parseFloat(style.fontSize) || 16, th = /TH Sarabun|MemoSarabun|SarabunIT/i.test(style.fontFamily);
+    var first = String(style.fontFamily || '').split(',')[0];
+    var px = parseFloat(style.fontSize) || 16, th = /TH ?Sarabun|MemoSarabun|SarabunIT/i.test(first);
     return Math.round(px * 0.75 * (th ? 1 : 1.4) * 2) / 2;
   }
   function DocxWriter(pages) {
@@ -94,7 +96,7 @@ var Office = (function () {
   }
   DocxWriter.prototype.tw = function (px) { return Math.round(px * this.k); };
   DocxWriter.prototype.runProps = function (el) {
-    // ใช้ TH Sarabun New ทุกเอกสาร (รวมบันทึกข้อความ) เพราะ TH SarabunIT๙ แสดงเลข 0-9 เป็นเลขไทย ระบบใช้เลขอารบิค
+    // ใช้ TH SarabunPSK ทุกเอกสาร (รวมบันทึกข้อความ) ตัวเลขเป็นเลขอารบิค
     var s = cs(el), f = FONT;
     var r = '<w:rPr><w:rFonts w:ascii="' + f + '" w:hAnsi="' + f + '" w:cs="' + f + '" w:eastAsia="' + f + '"/>';
     if (parseInt(s.fontWeight, 10) >= 600) r += '<w:b/><w:bCs/>';

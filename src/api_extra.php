@@ -730,9 +730,11 @@ function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 
   foreach ($weeks as $w) foreach ($w['dates'] as $d) $weekOf[$d] = $w['index'];
   $weekTotals = array_fill_keys(array_column($weeks, 'index'), 0);
 
-  $byTeacher = []; $notLocked = []; $outside = 0;
+  $byTeacher = []; $notLocked = []; $outside = 0; $covered = [];
   $claims = readTable('OtClaims');
   foreach ($rounds as $round) {
+    // สัปดาห์ของงบหน้าที่รอบการเบิกนี้ครอบคลุม (ใช้แสดงช่วงวันที่ของรอบในหัวรายงาน)
+    foreach (ot_weeks_of($round) as $w) foreach ($w['dates'] as $d) if (isset($weekOf[$d])) { $covered[$weekOf[$d]] = true; break; }
     $summary = [];
     foreach ($claims as $c) if ((string)$c['round_id'] === (string)$round['id']) $summary[$c['teacher_id']] ??= json_decode((string)$c['summary'], true) ?: [];
     foreach (ot_dept_summary($round['id'], $deptId)['rows'] as $r) {
@@ -760,6 +762,7 @@ function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 
     'weeks' => array_map(fn($w) => ['index' => $w['index'], 'from' => $w['dates'][0], 'to' => $w['dates'][count($w['dates']) - 1]], $weeks),
     'rows' => $rows, 'totals' => ['hours' => array_sum(array_column($rows, 'hours')), 'amount' => $total], 'weekTotals' => (object)$weekTotals,
     'totalText' => ot_baht_text($total), 'notLocked' => array_keys($notLocked), 'outside' => $outside,
+    'roundWeeks' => $covered ? [min(array_keys($covered)), max(array_keys($covered))] : null,
   ];
 }
 
