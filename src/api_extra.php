@@ -706,15 +706,14 @@ function api_windowDelete($token = '', $id = '') {
 // ======================= งบหน้าแผนกวิชา =======================
 /** งบหน้าค่าสอนเกินภาระงาน: นับเฉพาะใบเบิกที่ล็อกแล้ว แยกยอดรายสัปดาห์ */
 /** งบหน้าทำทั้งภาคเรียนแยกตามระดับ นับจากวันเปิดภาคเรียน ไม่ขึ้นกับช่วงของรอบการเบิก
- *  ค่าเริ่มต้น ปวช. 18 สัปดาห์ ปวส. 15 สัปดาห์ และเลือก 15 หรือ 18 สัปดาห์เองได้ทุกระดับ */
+ *  ปวช. สิ้นสุดที่สัปดาห์ที่ 18 ปวส. สิ้นสุดที่สัปดาห์ที่ 15 (กำหนดตายตัวตามระดับ) */
 const OT_COVER_WEEKS = ['vc' => 18, 'vs' => 15];
-const OT_COVER_WEEK_CHOICES = [15, 18];
 
 function api_otCoverSheet($token = '', $semesterId = '', $deptId = '', $level = 'vc', $weeks = '') {
   $me = auth_user($token, 'dept');
   if ($me['role'] === 'dept' && str($deptId) !== (string)$me['department_id']) throw new Exception('ดูงบหน้าได้เฉพาะแผนกตัวเอง');
   if (!isset(OT_COVER_WEEKS[str($level)])) throw new Exception('ระดับไม่ถูกต้อง');
-  $count = in_array((int)$weeks, OT_COVER_WEEK_CHOICES, true) ? (int)$weeks : OT_COVER_WEEKS[str($level)];
+  $count = OT_COVER_WEEKS[str($level)]; // ปวช. 18 / ปวส. 15 สัปดาห์ (ไม่รับค่าจำนวนสัปดาห์จากหน้าเว็บ)
   $sem = idx_table('Semesters')[str($semesterId)] ?? null;
   if (!$sem) throw new Exception('ไม่พบภาคเรียน');
   $rounds = array_values(array_filter(readTable('OtRounds'), fn($r) => (string)$r['semester_id'] === str($semesterId)));
@@ -865,7 +864,7 @@ function api_otCoverSim($token = '', $semesterId = '', $deptId = '', $level = 'v
   $all = str($deptId) === '__all';
   if ($me['role'] === 'dept' && ($all || str($deptId) !== (string)$me['department_id'])) throw new Exception('ดูงบหน้าได้เฉพาะแผนกตัวเอง');
   if (!isset(OT_COVER_WEEKS[str($level)])) throw new Exception('ระดับไม่ถูกต้อง');
-  $count = in_array((int)$weeks, OT_COVER_WEEK_CHOICES, true) ? (int)$weeks : OT_COVER_WEEKS[str($level)];
+  $count = OT_COVER_WEEKS[str($level)]; // ปวช. 18 / ปวส. 15 สัปดาห์ (ไม่รับค่าจำนวนสัปดาห์จากหน้าเว็บ)
   $sem = idx_table('Semesters')[str($semesterId)] ?? null;
   if (!$sem) throw new Exception('ไม่พบภาคเรียน');
   $start = substr((string)($sem['start_date'] ?? ''), 0, 10);

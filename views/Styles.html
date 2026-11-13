@@ -505,6 +505,7 @@
     /* ไม่ให้กล่องอื่นท้าย body (เช่นที่ส่วนขยายของเบราว์เซอร์แทรกไว้) ดันเป็นหน้าว่างต่อท้าย */
     body:has(.cover-page) > *:not(#root):not(.modal-bg) { display: none !important; }
     .page.cover-page { break-after: avoid; page-break-after: avoid; }
+    .page.cover-page + .page.cover-page { break-before: page; page-break-before: always; } /* ปวช. และ ปวส.: ระดับละหน้า */
     .cover-page h2 { font-size: 15px; margin: 0 0 2px; }
     .cover-page .sub { font-size: 11px; margin-bottom: 6px; }
     .cover-page .cover-wrap { overflow: visible !important; }
