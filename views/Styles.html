@@ -527,37 +527,53 @@
     .cover-page .cover-table thead { display: table-header-group; }
     .cover-page .cover-table tr, .cover-page .cover-signs { break-inside: avoid; page-break-inside: avoid; }
   }
-  /* หลักฐานการเบิก: พิมพ์ฟอร์มแทนหน้าจอเลือกชั่วโมงรายสัปดาห์ */
-  /* พิมพ์ A4 แนวนอนตาม @page หลัก (ไม่ตั้งชื่อหน้าเอง เพราะเปลี่ยนชนิดหน้าแล้วเบราว์เซอร์จะขึ้นหน้าว่างต่อท้าย) */
-  .ot-receipt { color: #000; background: #fff; font-size: 10px; line-height: 1.3; }
-  .receipt-draft { width: 60%; margin: 0 auto 3px; border: 1px solid #d33a3a; padding: 2px 5px; text-align: center; color: #d33a3a; font-size: 9px; }
-  .receipt-heading { position: relative; min-height: 94px; padding-top: 60px; text-align: center; }
-  .receipt-heading img { position: absolute; top: 6px; left: 0; width: 48px; height: 48px; object-fit: contain; }
-  .receipt-heading h2 { margin: 0 0 3px; font-size: 12px; font-weight: 600; }
-  .receipt-heading p { margin: 0 0 5px; font-size: 10px; }
-  .receipt-table, .receipt-signatures { border-collapse: collapse; table-layout: fixed; width: 100%; background: #fff; color: #000; }
-  .receipt-table th, .receipt-table td, .receipt-signatures td { border: 1px solid #000; padding: 2px 3px; text-align: center; overflow-wrap: anywhere; font-size: 9px; font-weight: 400; }
-  .receipt-table thead tr:first-child th { height: 64px; }
-  .receipt-table thead tr:nth-child(2) th { height: 54px; }
-  .receipt-table tbody td { height: 18px; }
-  .receipt-table td.receipt-name { text-align: left; }
-  .receipt-table td.receipt-number { text-align: right; font-variant-numeric: tabular-nums; }
-  .receipt-total { background: #e4e5e7; }
-  .receipt-signatures { margin-top: -1px; }
-  .receipt-signatures td { width: 33.333%; height: 76px; vertical-align: middle; }
-  .receipt-signatures td.receipt-grand-total { background: #c4c7cb; text-align: left; padding: 7px; }
-  .ot-receipt { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  /* กรรมการตรวจสอบเอกสาร ใต้ตารางลงนามของหลักฐานการเบิก */
-  .receipt-committee { display: flex; margin-top: 16px; font-size: 14px; }
+  /* แบบฟอร์มใบเบิก (พิมพ์จากหน้าเลือกชั่วโมงเบิก): แบบสรุปค่าสอนพิเศษ 1 หน้า + ใบเบิกสัปดาห์ที่ 1…n สัปดาห์ละหน้า — A4 แนวตั้ง ฟอนต์ TH SarabunPSK ขนาดจริง
+     หน้ากระดาษแนวตั้งตั้งชื่อ otform ให้ทั้ง #root (ทุกกล่องที่พิมพ์อยู่ชนิดหน้าเดียวกัน จึงไม่เกิดหน้าว่างต่อท้ายจากการสลับชนิดหน้า) */
+  .ot-form { color: #000; background: #fff; font-family: 'THSarabunPSK', 'TH SarabunPSK', serif; font-size: 15pt; line-height: 1.2; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ot-form h2 { margin: 0; text-align: center; font-size: 16pt; font-weight: 700; }
+  .ot-form p { margin: 0; }
+  .otf-ind { text-indent: 2.5em; }
+  .otf-row { display: flex; justify-content: space-between; margin-top: 4px; }
+  .otf-list { border-collapse: collapse; margin: 2px 0; }
+  .otf-list td { padding: 0 6px 0 0; vertical-align: top; }
+  .otf-list td.otf-lbl { width: 5.5em; }
+  .otf-list td.otf-n { min-width: 3.2em; padding-right: 6px; text-align: right; font-variant-numeric: tabular-nums; }
+  .otf-bold td, .otf-bold { font-weight: 700; }
+  .otf-note { font-size: 13pt; }
+  .otf-right { display: flex; flex-direction: column; align-items: flex-end; margin: 6px 0 4px; }
+  .otf-right .otf-sign, .otf-right .otf-date { width: 55%; text-align: center; }
+  .otf-sign { text-align: center; margin-top: 8px; }
+  .otf-date { text-align: center; }
+  .otf-opinions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 6px 0; }
+  .otf-opinions > div { min-width: 0; }
+  .otf-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  .otf-one { display: flex; justify-content: center; }
+  /* ตัดส่วนยื่นของ .cv-sig-under (margin ติดลบ) ที่ขอบกล่อง ไม่ให้หน้ากว้างเกินกระดาษจนเบราว์เซอร์ย่อทั้งหน้า */
+  .otf-sign, .otf-two > *, .otf-one > *, .otf-opinions > div { overflow-x: clip; }
+  .otf-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 4px 0 2px; font-size: 12pt; line-height: 1.1; }
+  .otf-table th, .otf-table td { border: 1px solid #000; padding: 1px 3px; text-align: center; vertical-align: middle; overflow-wrap: anywhere; font-weight: 400; }
+  .otf-table thead th { font-weight: 700; font-size: 11pt; overflow-wrap: normal; word-break: keep-all; }
+  .otf-table td.otf-left { text-align: left; }
+  .otf-table td.otf-day { white-space: nowrap; }
+  .otf-table td.otf-small { font-size: 10.5pt; }
+  .receipt-draft { width: 70%; margin: 0 auto 4px; border: 1px solid #d33a3a; padding: 1px 5px; text-align: center; color: #d33a3a; font-size: 12pt; }
+  /* กรรมการตรวจสอบเอกสาร: ล่างสุดของแบบสรุป */
+  .receipt-committee { display: flex; margin-top: 12px; }
   .receipt-committee > div { flex: 1 1 0; text-align: center; }
+  @page otform { size: A4 portrait; margin: 10mm 12mm; }
   @media print {
-    /* เต็มความสูงหน้า A4 แนวนอน (210 มม. − ขอบ 8 มม. บนล่าง = 194 มม. เผื่อไว้เล็กน้อยไม่ให้ล้นเป็นหน้าว่าง) ให้กรรมการตรวจสอบเอกสารอยู่ล่างสุดของหน้า
-       ใช้ .print-only.ot-receipt เพื่อชนะกฎ .print-only { display: block } ที่อยู่ท้ายไฟล์ */
-    body:has(.ot-receipt) > *:not(#root):not(.modal-bg) { display: none !important; } /* ไม่ให้องค์ประกอบอื่นนอกเอกสารดันขึ้นหน้าว่าง (แบบเดียวกับงบหน้า) */
-    .print-only.ot-receipt { display: flex; flex-direction: column; min-height: 190mm; break-inside: avoid; break-after: avoid; page-break-after: avoid; margin: 0; padding: 0; }
-    .ot-receipt .receipt-committee { margin-top: auto; padding-top: 16px; }
-    .ot-receipt thead { display: table-header-group; }
-    .ot-receipt tr { break-inside: avoid; }
+    body:has(.ot-form) > *:not(#root):not(.modal-bg) { display: none !important; } /* ไม่ให้องค์ประกอบอื่นนอกเอกสารดันขึ้นหน้าว่าง */
+    body:has(.ot-form) #root { page: otform; }
+    html:has(.ot-form), body:has(.ot-form), body:has(.ot-form) :is(#root, .shell, .main, .content) { background: #fff !important; }
+    /* .print-only.ot-form ชนะกฎ .print-only { display: block } ที่อยู่ท้ายไฟล์ */
+    .print-only.ot-form { display: block; margin: 0; padding: 0; }
+    .otf-page { break-after: page; page-break-after: always; }
+    .otf-page:last-child { break-after: auto; page-break-after: auto; }
+    /* แบบสรุปเต็มความสูงหน้า (297 − ขอบ 20 = 277 มม. เผื่อไว้) ให้กรรมการตรวจสอบเอกสารอยู่ล่างสุด */
+    .otf-summary { display: flex; flex-direction: column; min-height: 272mm; }
+    .otf-summary .receipt-committee { margin-top: auto; }
+    .otf-table thead { display: table-header-group; }
+    .otf-table tr { break-inside: avoid; }
   }
   @media (max-width: 760px) {
     .pub-hero { padding: 16px; gap: 12px; } .pub-hero img { width: 48px; height: 48px; } .pub-hero h1 { font-size: 20px; } .pub-hero p { font-size: 13px; }

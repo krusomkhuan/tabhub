@@ -96,26 +96,28 @@ function otSignatureName(name) {
   return { prefix: match ? 'ว่าที่ร้อยโท' : '', name: match ? text.slice(match[0].length).trim() : text };
 }
 
-/** แบบหลักฐานการเบิกสำหรับพิมพ์ ใช้ผลคำนวณชุดเดียวกับหน้าจอเลือกชั่วโมง */
+/** แบบฟอร์มใบเบิกสำหรับพิมพ์ (A4 แนวตั้ง) ใช้ผลคำนวณชุดเดียวกับหน้าจอเลือกชั่วโมง
+ *  หน้า 1 = แบบสรุปค่าสอนพิเศษและค่าตอบแทน (ทั้งรอบ) ต่อด้วยใบเบิกเงินค่าสอนพิเศษ สัปดาห์ที่ 1…n สัปดาห์ละหน้า */
 function claimPrintHtml(d, sch, evaluated) {
-  var st = S.settings, teacher = d.teacher, levels = ['vc', 'vs'];
-  if (evaluated.some(function (x) { var b = x.result.byLevel.bd; return b && (b.taught || b.claim || b.perhead); })) levels.push('bd');
-  var sums = {}, total = 0, errors = 0;
-  levels.forEach(function (l) { sums[l] = { taught: 0, hours: 0, perhead: 0, amount: 0, perHeadAmount: 0 }; });
-  evaluated.forEach(function (x) {
-    var r = x.result, w = x.week;
-    total += Number(r.amount) || 0; errors += r.errors.length;
-    levels.forEach(function (l) {
-      var b = r.byLevel[l] || {}, out = sums[l], hours = Number(r.paid[l]) || 0;
-      out.taught += Number(b.taught) || 0; out.hours += hours; out.perhead += Number(b.perhead) || 0;
-      out.amount += hours * Number(sch && sch.levels[l] && sch.levels[l].rate || 0);
-    });
-    w.items.forEach(function (it) {
-      if (!sums[it.level] || it.blocked || it.absent || (OT.sel[w.index] || {})[it.key] !== 'C' || !(OT.ph[w.index] || {})[it.course_id + '|' + it.group_id]) return;
-      var rule = Ot.perHeadRule(it, d.perHead, IDX.Courses[it.course_id]);
-      if (rule) sums[it.level].perHeadAmount += Number(rule.rate_per_head || 0); // ยอดต่อชั่วโมงของทั้งกลุ่ม ตรงกับ Ot.evalWeek
-    });
-  });
+  var st = S.settings, t = d.teacher, college = st.college_name || '';
+  var sem = IDX.Semesters[d.round.semester_id] || IDX.Semesters[S.sem] || {};
+  var semText = sem.term ? sem.term + '/' + sem.year : semLabel(S.sem);
+  var dept = deptName(t.department_id), head = Grid.deptHead(S.D.Teachers || [], t.department_id);
+  var months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  var longDate = function (date) { var p = String(date || '').slice(0, 10).split('-'); return p.length === 3 ? Number(p[2]) + ' ' + months[Number(p[1]) - 1] + ' ' + (Number(p[0]) + 543) : '........................'; };
+  var num = function (v) { return v ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : '-'; };
+  var rate = function (l) { return Number(sch && sch.levels[l] && sch.levels[l].rate || 0); };
+  var times = Grid.periodTimes(st), dot = function (x) { return String(x || '').replace(':', '.'); };
+  var line = '..............................................';
+  var dateLine = '<div class="otf-date">........./........../..........</div>';
+  // ลงชื่อแบบ "ลงชื่อ" ชิดเส้นจุด ชื่อ/ตำแหน่งกึ่งกลางใต้เส้นจุด (เหมือนงบหน้า)
+  var sign = function (name, role, tail) {
+    var p = otSignatureName(name);
+    return '<div class="otf-sign"><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ' + (p.prefix ? ' ' + esc(p.prefix) : '') + '&nbsp;</span><span class="cv-sig-body">' + (name && window.Sig ? Sig.slot(name) : '') + line + (tail ? ' ' + tail : '') +
+      '<span class="cv-sig-under">(' + esc(p.name || line) + ')' + (role ? '<br>' + role : '') + '</span></span></span></div>';
+  };
+  // ฉบับร่างเหมือนเดิม: ยังไม่ล็อก แก้หลังบันทึก หรือยังผิดกติกา
+  var errors = 0; evaluated.forEach(function (x) { errors += x.result.errors.length; });
   var changed = String(d.claim && d.claim.scheme_id || '') !== String(OT.scheme);
   if (d.claim) d.weeks.forEach(function (w) {
     var saved = (d.claim.weeks || {})[w.index] || {};
@@ -123,39 +125,126 @@ function claimPrintHtml(d, sch, evaluated) {
     if (!same(saved.sel, OT.sel[w.index]) || !same(saved.ph, OT.ph[w.index])) changed = true;
   });
   var draft = !d.claim || d.claim.status === 'draft' || changed || errors > 0;
-  var dateText = function (date) {
-    var p = String(date || '').slice(0, 10).split('-');
-    var months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-    return p.length === 3 ? Number(p[2]) + ' ' + months[Number(p[1]) - 1] + ' ' + (Number(p[0]) + 543) : '........................';
-  };
-  var cols = 7 + levels.length * 5;
-  var levelHeaders = function () { return levels.map(function (l) { return '<th>' + esc(LV[l]) + '</th>'; }).join(''); };
-  var amountCell = function (v) { return '<td class="receipt-number">' + (v ? money(v) : '–') + '</td>'; };
-  var numbers = function (field) { return levels.map(function (l) {
-    var v = sums[l][field];
-    return field === 'hours' || field === 'perhead' ? '<td class="receipt-number">' + (v ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : '–') + '</td>' : amountCell(v);
-  }).join(''); };
-  var marks = levels.map(function (l) { return '<td>' + (sums[l].taught || sums[l].hours || sums[l].perhead ? '✓' : '') + '</td>'; }).join('');
-  var signature = function (name, role, title) {
-    var person = otSignatureName(name);
-    return '<td><div>' + title + '</div><div>ลงชื่อ' + (person.prefix ? ' ' + esc(person.prefix) + ' ' : '') + (window.Sig ? Sig.slot(name) : '') + '................................................</div><div>(' + esc(person.name || '................................................') + ')</div><div>' + role + '</div><div>วันที่........เดือน................พ.ศ............</div></td>';
-  };
-  var blank = '<tr>' + new Array(cols + 1).join('<td>&nbsp;</td>') + '</tr>';
-  var widths = '<col style="width:3%"><col style="width:14%"><col style="width:6%">' + new Array(levels.length * 5 + 1).join('<col style="width:5%">') + '<col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:8%">';
-  return '<section class="print-only ot-receipt" aria-label="หลักฐานการเบิกค่าสอน">' +
-    (draft ? '<div class="receipt-draft">ฉบับร่าง — ยังไม่ได้ยืนยันล็อกการเบิก ตัวเลขอาจเปลี่ยนได้' + (errors ? ' · มีรายการที่ยังไม่ผ่านกติกา' : '') + '</div>' : '') +
-    '<div class="receipt-heading"><img src="assets/college-seal.png" alt="ตราวิทยาลัย"><h2>หลักฐานการเบิกจ่ายเงินค่าสอนพิเศษและค่าสอนเกินภาระงานสอนในสถานศึกษา</h2><p>' + esc(st.college_name || '') + ' แผนกวิชา' + esc(deptName(teacher.department_id)) + ' ระหว่างวันที่ ' + dateText(d.round.start_date) + ' ถึงวันที่ ' + dateText(d.round.end_date) + '</p></div>' +
-    '<table class="receipt-table"><colgroup>' + widths + '</colgroup><thead><tr><th rowspan="2">ลำดับ<br>ที่</th><th rowspan="2">ชื่อ - นามสกุล</th><th rowspan="2">ตำแหน่งผู้<br>ทำการ<br>สอนพิเศษ</th><th colspan="' + levels.length + '">ระดับการสอน</th><th colspan="' + levels.length + '">จำนวนหน่วย<br>ชั่วโมงทำการสอน<br>พิเศษและสอนเกิน<br>ภาระงานสอน</th><th colspan="' + levels.length + '">จำนวนหน่วย<br>ชั่วโมงทำการสอน<br>พิเศษและสอนเกิน<br>ภาระงานสอน<br>(รายหัว)</th><th colspan="' + levels.length + '">จำนวนเงิน</th><th colspan="' + levels.length + '">จำนวนเงิน<br>รายหัว</th><th rowspan="2">รวม<br>จำนวนเงิน</th><th rowspan="2">ลายมือชื่อ<br>ผู้รับเงิน</th><th rowspan="2">วัน/เดือน/ปี<br>ที่รับเงิน</th><th rowspan="2">หมายเหตุ</th></tr><tr>' +
-    levels.map(function (l) { return '<th>' + (l === 'vc' ? 'มัธยมศึกษาตอนต้นหรือมัธยมศึกษาตอนปลายหรือเทียบเท่า' : l === 'vs' ? 'สูงกว่ามัธยมศึกษาตอนปลายหรือเทียบเท่า' : 'ปริญญาตรี') + '</th>'; }).join('') + levelHeaders() + levelHeaders() + levelHeaders() + levelHeaders() + '</tr></thead><tbody><tr><td>1</td><td class="receipt-name">' + esc(teacher.name) + '</td><td>' + esc(teacher.position || '') + '</td>' + marks + numbers('hours') + numbers('perhead') + numbers('amount') + numbers('perHeadAmount') + amountCell(total) + '<td></td><td></td><td>' + (draft ? 'ฉบับร่าง' : '') + '</td></tr>' + blank + blank + blank +
-    '<tr class="receipt-total"><td></td><td><b>รวม</b></td><td></td>' + levels.map(function () { return '<td></td>'; }).join('') + numbers('hours') + numbers('perhead') + numbers('amount') + numbers('perHeadAmount') + amountCell(total) + '<td></td><td></td><td></td></tr></tbody></table>' +
-    '<table class="receipt-signatures"><tbody><tr><td class="receipt-grand-total">รวมจำนวนเงินค่าสอนพิเศษทั้งสิ้น ' + money(total) + ' บาท<br>(' + esc(Ot.bahtText(total)) + ')</td>' +
-    signature(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้', '') + signature(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ', 'ผู้รับรอง') + '</tr><tr>' +
-    signature(st.signer_finance, 'หัวหน้างานการเงิน', 'ผู้รับรอง') + signature(st.signer_admin_deputy, 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร', 'ผู้รับรอง') + signature(st.signer_director, 'ผู้อำนวยการ' + esc(st.college_name || ''), 'ผู้อนุมัติ') + '</tr></tbody></table>' +
-    // กรรมการตรวจสอบเอกสาร (เขียนชื่อด้วยมือ): "ลงชื่อ" ชิดเส้นจุด ชื่อและตำแหน่งกึ่งกลางใต้เส้นจุด
+  var draftBox = draft ? '<div class="receipt-draft">ฉบับร่าง — ยังไม่ได้ยืนยันล็อกการเบิก ตัวเลขอาจเปลี่ยนได้' + (errors ? ' · มีรายการที่ยังไม่ผ่านกติกา' : '') + '</div>' : '';
+  var phRule = function (w, it) { return (OT.ph[w.index] || {})[it.course_id + '|' + it.group_id] ? Ot.perHeadRule(it, d.perHead, IDX.Courses[it.course_id]) : null; };
+  var valid = function (it) { return !it.blocked && !it.absent; };
+  var LEVEL_FULL = { vc: 'ประกาศนียบัตรวิชาชีพ (ปวช.)', vs: 'ประกาศนียบัตรวิชาชีพชั้นสูง (ปวส.)', bd: 'ปริญญาตรี' };
+
+  // ---------- แบบสรุป (ทั้งรอบ) ----------
+  var paid = {}, phHours = 0, phAmount = 0, total = 0, courses = {}, order = [];
+  Ot.LEVELS.forEach(function (l) { paid[l] = 0; });
+  evaluated.forEach(function (x) {
+    var r = x.result, w = x.week;
+    total += Number(r.amount) || 0; phAmount += Number(r.perHeadAmount) || 0;
+    Ot.LEVELS.forEach(function (l) { paid[l] += Number(r.paid[l]) || 0; phHours += Number((r.byLevel[l] || {}).perhead) || 0; });
+    w.items.forEach(function (it) {
+      if ((OT.sel[w.index] || {})[it.key] !== 'C' || !valid(it) || it.no_claim) return;
+      var c = courses[it.course_id];
+      if (!c) { c = courses[it.course_id] = { theory: 0, practice: 0 }; order.push(it.course_id); }
+      c[it.kind === 'practice' ? 'practice' : 'theory']++;
+    });
+  });
+  var levelsUsed = Ot.LEVELS.filter(function (l) { return paid[l] || (l !== 'bd' && sch && sch.levels[l] && sch.levels[l].enabled); });
+  var courseHours = order.reduce(function (a, id) { return a + courses[id].theory + courses[id].practice; }, 0);
+  var paidHours = Ot.LEVELS.reduce(function (a, l) { return a + paid[l]; }, 0) + phHours;
+
+  var summary = '<div class="otf-page otf-summary">' + draftBox +
+    '<h2>แบบสรุปค่าสอนพิเศษและค่าตอบแทน</h2><h2>ประจำภาคเรียน ' + esc(semText) + '</h2>' +
+    '<p>เรียน &nbsp;ผู้อำนวยการ' + esc(college) + '</p>' +
+    '<p class="otf-ind">ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || '.........................') + ' แผนกวิชา' + esc(dept) + ' ขอเบิกค่าสอนพิเศษและค่าตอบแทน ตั้งแต่วันที่ ' + longDate(d.round.start_date) + ' ถึงวันที่ ' + longDate(d.round.end_date) +
+    ' ในภาคเรียนที่ ' + esc(sem.term || '') + ' ปีการศึกษา ' + esc(sem.year || '') + ' ดังรายวิชาต่อไปนี้</p>' +
+    '<table class="otf-list">' + (order.length ? order.map(function (id, i) {
+      var c = courses[id], co = courseOf(id);
+      return '<tr><td class="otf-lbl">' + (i ? '' : 'ในรายวิชา') + '</td><td>' + esc(co.name) + '</td><td>ทฤษฎี</td><td class="otf-n">' + c.theory + '</td><td>ชั่วโมง</td><td>ปฏิบัติ</td><td class="otf-n">' + c.practice + '</td><td>ชั่วโมง</td></tr>';
+    }).join('') : '<tr><td class="otf-lbl">ในรายวิชา</td><td colspan="7">-</td></tr>') +
+    '<tr><td></td><td colspan="5" class="text-end">รวมจำนวนเบิก</td><td class="otf-n">' + courseHours + '</td><td>ชั่วโมง</td></tr></table>' +
+    '<table class="otf-list">' + levelsUsed.map(function (l) {
+      return '<tr><td>เบิกระดับ ' + LEVEL_FULL[l] + ' จำนวน</td><td class="otf-n">' + num(paid[l]) + '</td><td>ชั่วโมง อัตราชั่วโมงละ</td><td class="otf-n">' + num(rate(l)) + '</td><td>บาท =</td><td class="otf-n">' + money(paid[l] * rate(l)) + '</td><td>บาท</td></tr>';
+    }).join('') +
+    (phHours ? '<tr><td>เบิกรายหัว จำนวน</td><td class="otf-n">' + phHours + '</td><td colspan="3">ชั่วโมง</td><td class="otf-n">' + money(phAmount) + '</td><td>บาท</td></tr>' : '') +
+    '<tr class="otf-bold"><td colspan="5">รวมเป็นเงิน (' + esc(Ot.bahtText(total)) + ')</td><td class="otf-n">' + money(total) + '</td><td>บาท</td></tr></table>' +
+    (paidHours !== courseHours ? '<p class="otf-note">หมายเหตุ: ชั่วโมงที่จ่ายจริง ' + paidHours + ' ชั่วโมง (ตัดตามเพดาน/กติกาของแบบการเบิก)</p>' : '') +
+    '<div class="otf-right">' + sign(t.name, '', 'ผู้ขอเบิก') + dateLine + '</div>' +
+    '<div class="otf-opinions">' +
+    '<div><b>1. ความเห็นหัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้</b><div class="otf-ind">ได้ตรวจสอบแล้วมีความถูกต้องเห็นควรอนุมัติ</div>' + sign(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + dateLine + '</div>' +
+    '<div><b>2. ความเห็นรองผู้อำนวยการฝ่ายวิชาการ</b><div class="otf-ind">(&nbsp;&nbsp;&nbsp;) เห็นควรอนุมัติ &nbsp;&nbsp;(&nbsp;&nbsp;&nbsp;) ไม่เห็นควรอนุมัติ</div>' + sign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + dateLine + '</div>' +
+    '<div><b>3. รองผู้อำนวยการฝ่ายบริหารทรัพยากร</b><div class="otf-ind">(&nbsp;&nbsp;&nbsp;) เห็นควรอนุมัติ &nbsp;&nbsp;(&nbsp;&nbsp;&nbsp;) ไม่เห็นควรอนุมัติ</div>' + sign(st.signer_admin_deputy, 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร') + dateLine + '</div>' +
+    '<div><b>4. ผู้อนุมัติ</b><div class="otf-ind">(&nbsp;&nbsp;&nbsp;) อนุมัติ &nbsp;&nbsp;(&nbsp;&nbsp;&nbsp;) ไม่อนุมัติ</div>' + sign(st.signer_director, 'ผู้อำนวยการ' + esc(college)) + dateLine + '</div></div>' +
+    '<div class="otf-two"><div><p>ผู้รับเงิน ได้รับเงินค่าปฏิบัติการสอนพิเศษ รวมจำนวน ' + money(total) + ' บาท</p>' + sign(t.name, '', 'ผู้รับเงิน') + '</div>' +
+    '<div><p>ผู้จ่ายเงิน ได้จ่ายเงินถูกต้องแล้ว</p>' + sign(st.signer_finance, 'หัวหน้างานการเงิน') + dateLine + '</div></div>' +
+    // กรรมการตรวจสอบเอกสาร อยู่ล่างสุดของหน้าแรก
     '<div class="receipt-committee">' + ['ประธานกรรมการ', 'เลขานุการ'].map(function (role) {
-      var line = '..............................................';
       return '<div><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ&nbsp;</span><span class="cv-sig-body">' + line + '<span class="cv-sig-under">(' + line + ')<br>' + role + '</span></span></span></div>';
-    }).join('') + '</div></section>';
+    }).join('') + '</div></div>';
+
+  // ---------- ใบเบิกรายสัปดาห์ ----------
+  var days = String(st.days || '0,1,2,3,4').split(',').map(Number);
+  var weeks = evaluated.map(function (x) {
+    var w = x.week, r = x.result, sel = OT.sel[w.index] || {};
+    // คาบติดกันของวิชา/กลุ่มเดียวกันในวันเดียวกัน = 1 แถว
+    var items = w.items.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.period - b.period; });
+    var rows = [];
+    items.forEach(function (it) {
+      var last = rows[rows.length - 1];
+      if (last && last.date === it.date && last.course_id === it.course_id && last.group_id === it.group_id && last.to === it.period - 1 && last.sub === it.sub) { last.to = it.period; last.items.push(it); return; }
+      rows.push({ date: it.date, course_id: it.course_id, group_id: it.group_id, sub: it.sub, from: it.period, to: it.period, items: [it] });
+    });
+    var sum = { vc: 0, vs: 0, claim: 0, money: 0 }, taughtLv = {}, byDate = {};
+    rows.forEach(function (row) { (byDate[row.date] = byDate[row.date] || []).push(row); });
+    var body = w.dates.filter(function (date) { return days.indexOf(Ot.dow(Ot.parse(date))) >= 0 && byDate[date]; }).map(function (date) {
+      var list = byDate[date];
+      return list.map(function (row, i) {
+        var it0 = row.items[0], co = courseOf(row.course_id), load = { vc: 0, vs: 0 }, claim = 0, amount = 0, notes = [], rt = 0;
+        row.items.forEach(function (it) {
+          var v = sel[it.key] || '';
+          if (it.absent) { notes.push(it.absent); return; }
+          taughtLv[it.level] = true;
+          if (it.blocked) notes.push('ห้ามเบิก: ' + it.blocked);
+          if (v === 'L' && !it.blocked) load[it.level === 'vc' ? 'vc' : 'vs']++;
+          if (v === 'C' && valid(it) && !it.no_claim) {
+            var ph = phRule(w, it);
+            claim++; rt = ph ? Number(ph.rate_per_head || 0) : rate(it.level); amount += rt;
+            if (ph) notes.push('รายหัว');
+          }
+        });
+        if (row.sub) notes.push(row.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย');
+        if (row.items.some(function (it) { return it.made_up; })) notes.push('ชดเชยแล้ว');
+        sum.vc += load.vc; sum.vs += load.vs; sum.claim += claim; sum.money += amount;
+        var a = times[row.from - 1] || ['', ''], b = times[row.to - 1] || a;
+        var uniq = notes.filter(function (n, k) { return notes.indexOf(n) === k; });
+        return '<tr>' + (i ? '' : '<td rowspan="' + list.length + '" class="otf-day">' + esc(S.days[Ot.dow(Ot.parse(date))] || '') + '<br>' + thDate(date) + '</td>') +
+          '<td class="otf-left">' + esc(co.name) + '</td><td>' + esc(co.code) + '</td><td>' + esc(groupCode(row.group_id)) + '</td><td>' + dot(a[0]) + '-' + dot(b[1]) + '</td><td>' + (it0.students || '-') + '</td>' +
+          '<td>' + num(load.vc) + '</td><td>' + num(load.vs) + '</td><td>' + num(claim) + '</td><td>' + (claim ? num(rt) : '-') + '</td><td>' + (claim ? num(amount) : '-') + '</td><td class="otf-small">' + esc(uniq.join(', ')) + '</td></tr>';
+      }).join('');
+    }).join('');
+    var mark = function (l) { return taughtLv[l] ? '√' : '&nbsp;&nbsp;&nbsp;'; };
+    var wLevels = Ot.LEVELS.filter(function (l) { return l !== 'bd' || r.paid.bd; });
+    var phH = Ot.LEVELS.reduce(function (a, l) { return a + ((r.byLevel[l] || {}).perhead || 0); }, 0);
+    return '<div class="otf-page otf-week">' + draftBox +
+      '<h2>ใบเบิกเงินค่าสอนพิเศษและค่าตอบแทน (หมวดค่าสอน)</h2><h2>ประจำภาคเรียนที่ ' + esc(semText) + '</h2>' +
+      '<div class="otf-row"><span>คำขอเบิก</span><span>สัปดาห์ที่ <b>' + w.index + '</b></span></div>' +
+      '<p class="otf-ind">ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || '') + ' ทำหน้าที่ ครูผู้สอนแผนกวิชา' + esc(dept) + ' สังกัด' + esc(college) +
+      ' ขอยื่นคำร้องขอเบิก-จ่ายค่าสอนพิเศษและค่าตอบแทน (หมวดค่าสอนพิเศษรายคาบ / ชั่วโมง) ยื่นต่อ ผู้อำนวยการ' + esc(college) + ' ดังรายละเอียดต่อไปนี้</p>' +
+      '<p>สอนระดับ &nbsp;(' + mark('vc') + ') ประกาศนียบัตรวิชาชีพ (ปวช.) &nbsp;&nbsp;(' + mark('vs') + ') ประกาศนียบัตรวิชาชีพชั้นสูง (ปวส.)</p>' +
+      '<p>สัปดาห์ที่ ' + w.index + ' &nbsp;ระหว่างวันที่ ' + longDate(w.dates[0]) + ' ถึงวันที่ ' + longDate(w.dates[w.dates.length - 1]) + '</p>' +
+      '<table class="otf-table"><colgroup><col style="width:10%"><col style="width:18%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:7%"><col style="width:8%"></colgroup>' +
+      '<thead><tr><th rowspan="2">วัน</th><th rowspan="2">ชื่อรายวิชา</th><th rowspan="2">รหัสวิชา</th><th>สาขาวิชา</th><th rowspan="2">เวลา</th><th>จำนวน</th><th colspan="2">จำนวนคาบสอน</th><th>จำนวน</th><th>จำนวน</th><th>รวม</th><th rowspan="2">หมายเหตุ</th></tr>' +
+      '<tr><th>ระดับชั้นปี</th><th>นร./นศ.</th><th>ปวช.</th><th>ปวส.</th><th>คาบ</th><th>เงิน</th><th>เงิน</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="12">ไม่มีชั่วโมงสอนในสัปดาห์นี้</td></tr>') +
+      '<tr class="otf-bold"><td colspan="6">รวมคาบสอน</td><td>' + num(sum.vc) + '</td><td>' + num(sum.vs) + '</td><td>' + num(sum.claim) + '</td><td></td><td>' + num(sum.money) + '</td><td></td></tr>' +
+      '<tr class="otf-bold"><td colspan="6">รวมคาบสอนทั้งหมด</td><td colspan="3">' + (sum.vc + sum.vs + sum.claim) + '</td><td></td><td>' + num(sum.money) + '</td><td></td></tr></tbody></table>' +
+      '<div class="otf-right">' + sign(t.name, 'ตำแหน่ง ' + esc(t.position || '')) + '</div>' +
+      '<p class="otf-ind">ข้าพเจ้า ขออนุมัติเบิก - จ่ายค่าสอนพิเศษและค่าตอบแทน</p>' +
+      '<table class="otf-list">' + wLevels.map(function (l) {
+        return '<tr><td>จำนวนชั่วโมงสอนที่ขอเบิก ' + LV[l] + '</td><td class="otf-n">' + num(r.paid[l]) + '</td><td>ชั่วโมง อัตราชั่วโมงละ</td><td class="otf-n">' + num(rate(l)) + '</td><td>บาท รวมเป็นจำนวนเงินทั้งสิ้น</td><td class="otf-n">' + money((r.paid[l] || 0) * rate(l)) + '</td><td>บาท</td></tr>';
+      }).join('') +
+      (r.perHeadAmount ? '<tr><td>เบิกรายหัว</td><td class="otf-n">' + phH + '</td><td colspan="3">ชั่วโมง</td><td class="otf-n">' + money(r.perHeadAmount) + '</td><td>บาท</td></tr>' : '') +
+      '<tr class="otf-bold"><td colspan="5">(' + esc(Ot.bahtText(r.amount)) + ')</td><td class="otf-n">' + money(r.amount) + '</td><td>บาท</td></tr></table>' +
+      '<p class="otf-ind">ได้ตรวจสอบแล้วรับรองว่าข้อมูลถูกต้อง และเป็นความจริง</p>' +
+      '<div class="otf-two">' + sign(head && head.name, esc(Grid.deptHeadTitle(dept))) + sign(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</div>' +
+      '<div class="otf-one">' + sign(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '</div></div>';
+  }).join('');
+  return '<section class="print-only ot-receipt ot-form">' + summary + weeks + '</section>';
 }
 
 function renderClaim() {
