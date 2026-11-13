@@ -574,7 +574,8 @@
   @page otform { size: A4 portrait; margin: 10mm 12mm; }
   @media print {
     body:has(.ot-form) > *:not(#root):not(.modal-bg) { display: none !important; } /* ไม่ให้องค์ประกอบอื่นนอกเอกสารดันขึ้นหน้าว่าง */
-    body:has(.ot-form) #root { page: otform; }
+    /* ทั้งเอกสาร (html/body/#root) ใช้หน้าแนวตั้ง otform: กล่องว่างที่หลงอยู่นอกแบบฟอร์มจะไม่เปลี่ยนชนิดหน้า จึงไม่เกิดหน้าว่างแนวนอนต่อท้าย */
+    html:has(.ot-form), body:has(.ot-form), body:has(.ot-form) #root { page: otform; }
     html:has(.ot-form), body:has(.ot-form), body:has(.ot-form) :is(#root, .shell, .main, .content) { background: #fff !important; }
     /* .print-only.ot-form ชนะกฎ .print-only { display: block } ที่อยู่ท้ายไฟล์ */
     .print-only.ot-form { display: block; margin: 0; padding: 0; }
