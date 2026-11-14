@@ -173,7 +173,7 @@ function claimPrintHtml(d, sch, evaluated) {
     '<div class="otf-two"><div><p>ผู้รับเงิน ได้รับเงินค่าปฏิบัติการสอนพิเศษ รวมจำนวน ' + money(total) + ' บาท</p>' + sign(t.name, '', 'ผู้รับเงิน') + '</div>' +
     '<div><p>ผู้จ่ายเงิน ได้จ่ายเงินถูกต้องแล้ว</p>' + sign(st.signer_finance, 'หัวหน้างานการเงิน') + dateLine + '</div></div>' +
     // กรรมการตรวจสอบเอกสาร อยู่ล่างสุดของหน้าแรก
-    '<div class="receipt-committee">' + ['ประธานกรรมการ', 'เลขานุการ'].map(function (role) {
+    '<div class="receipt-committee">' + ['ประธานกรรมการตรวจ', 'กรรมการตรวจ'].map(function (role) {
       return '<div><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ&nbsp;</span><span class="cv-sig-body">' + line + '<span class="cv-sig-under">(' + line + ')<br>' + role + '</span></span></span></div>';
     }).join('') + '</div></div>';
 
