@@ -81,11 +81,29 @@ function deptName(id) { return nm('Departments', id); }
 function sortBy(arr, f) { return arr.slice().sort(function (a, b) { return String(f(a)).localeCompare(String(f(b)), 'th', { numeric: true }); }); }
 
 /* ===================== เข้าระบบ ===================== */
+/* ฟันเฟือง 3 ตัวบนหน้าเข้าสู่ระบบ (วาดด้วย SVG) ขบกันจริง: ตัวติดกันหมุนสวนทาง ความเร็วตามจำนวนฟัน */
+function loginGears() {
+  function gear(n, r) { // ฟัน n ซี่ รัศมีพิตช์ r → path รอบนอก + รูกลาง
+    var ro = r + 3.2, rr = r - 3, step = 2 * Math.PI / n, d = '', pt = function (rad, a) { return (rad * Math.cos(a)).toFixed(2) + ' ' + (rad * Math.sin(a)).toFixed(2); };
+    for (var i = 0; i < n; i++) {
+      var b = i * step;
+      d += (i ? 'L' : 'M') + pt(rr, b) + 'L' + pt(rr, b + step * .18) + 'L' + pt(ro, b + step * .3) + 'L' + pt(ro, b + step * .58) + 'L' + pt(rr, b + step * .7);
+    }
+    var h = r * .32;
+    return d + 'Z M' + h + ' 0 A' + h + ' ' + h + ' 0 1 0 ' + (-h) + ' 0 A' + h + ' ' + h + ' 0 1 0 ' + h + ' 0Z';
+  }
+  // [ฟัน, รัศมีพิตช์, x, y, มุมเริ่ม] ระยะศูนย์กลาง = ผลรวมรัศมีพิตช์ ฟันจึงสบกัน
+  var gs = [[12, 20, 24, 32, -6.25], [9, 15, 56.2, 18.3, -0.65], [7, 11.5, 80.2, 29.3, -7.8]];
+  return '<svg class="login-gears" viewBox="0 0 100 56" aria-hidden="true">' + gs.map(function (g, i) {
+    return '<g transform="translate(' + g[2] + ' ' + g[3] + ') rotate(' + g[4] + ')"><path class="gear g' + (i + 1) + '" fill-rule="evenodd" d="' + gear(g[0], g[1]) + '"/></g>';
+  }).join('') + '</svg>';
+}
+
 function renderLogin() {
   document.getElementById('root').innerHTML =
     '<div class="login-wrap"><div class="login-head"><h1>ระบบจัดตารางเรียน–ตารางสอน</h1>' +
     '<div class="login-college"><div class="logo sm">ตร</div><b>' + esc(S.settings.college_name || 'วิทยาลัยการอาชีพโพนทอง') + '</b></div></div>' +
-    '<div class="login card">' +
+    '<div class="login card"><div class="login-top"><b>เข้าสู่ระบบ</b>' + loginGears() + '</div>' +
     '<form id="lf"><label class="f">ชื่อผู้ใช้</label><input id="lu" autocomplete="username" required placeholder="ชื่อผู้ใช้ของคุณ">' +
     '<label class="f">รหัสผ่าน</label><div class="pw-wrap"><input id="lp" type="password" autocomplete="current-password" required>' +
     '<button type="button" class="pw-eye" id="pwEye" aria-label="แสดงรหัสผ่าน" aria-pressed="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button></div>' +
@@ -98,12 +116,17 @@ function renderLogin() {
     this.setAttribute('aria-pressed', show ? 'true' : 'false');
     this.setAttribute('aria-label', show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
   };
+  // ฟันเฟืองหมุนขณะพิมพ์ชื่อผู้ใช้/รหัสผ่าน หยุดเมื่อเลิกพิมพ์ราว 1 วินาที และหมุนต่อเนื่องระหว่างกำลังเข้าสู่ระบบ
+  var gears = $('.login-gears'), idle = null, busy = false;
+  function spin(on) { if (gears) gears.classList.toggle('on', on || busy); }
+  ['#lu', '#lp'].forEach(function (id) { $(id).addEventListener('input', function () { spin(true); clearTimeout(idle); idle = setTimeout(function () { spin(false); }, 1000); }); });
   $('#lf').onsubmit = function (e) {
     e.preventDefault();
     var btn = $('#lf .login-submit'); btn.disabled = true; btn.textContent = 'กำลังเข้าสู่ระบบ…';
+    busy = true; spin(true);
     api('login', $('#lu').value, $('#lp').value).then(function (r) {
       S.token = r.token; store('tt_token', r.token); S.sel = { mode: 'group' }; start();
-    }).catch(function () { btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ'; });
+    }).catch(function () { btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ'; busy = false; spin(false); });
   };
 }
 

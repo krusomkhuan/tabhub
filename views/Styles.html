@@ -77,6 +77,19 @@
   .login-college .logo.sm { background: #235789; box-shadow: none; border-radius: 50%; }
   .login-wrap .login { width: min(420px, 100%); margin: 0; padding: 16px 16px 18px; border: 1px solid #d3dbe2; border-radius: 12px; }
   .login-wrap label.f { font-size: 13px; }
+  /* ฟันเฟือง 3 ตัว: หมุนเมื่อมีคลาส .on (กำลังพิมพ์/กำลังเข้าสู่ระบบ) ตัวติดกันหมุนสวนทาง เวลาต่อรอบตามจำนวนฟัน (12 : 9 : 7) */
+  .login-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+  .login-top b { font-size: 20px; color: #235789; }
+  .login-gears { width: 132px; height: 74px; flex-shrink: 0; overflow: visible; }
+  .login-gears .gear { transform-box: fill-box; transform-origin: center; animation: gear-cw 4.8s linear infinite paused; }
+  .login-gears .g1 { fill: #235789; }
+  .login-gears .g2 { fill: #e0a526; animation-name: gear-ccw; animation-duration: 3.6s; }
+  .login-gears .g3 { fill: #7f9bb8; animation-duration: 2.8s; }
+  .login-gears.on .gear { animation-play-state: running; }
+  @keyframes gear-cw { to { transform: rotate(360deg); } }
+  @keyframes gear-ccw { to { transform: rotate(-360deg); } }
+  @media (prefers-reduced-motion: reduce) { .login-gears .gear { animation: none; } }
+  html[data-theme="dark"] .login-top b { color: #8fb4e3; }
   .login-wrap input { height: 42px; border: 1px solid #d3dbe2; border-radius: 7px; background: #fff; }
   .pw-wrap { position: relative; }
   .pw-wrap input { padding-right: 42px; }
