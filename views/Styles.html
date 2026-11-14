@@ -74,7 +74,18 @@
   .login-head { text-align: center; margin-bottom: 24px; }
   .login-head h1 { font-size: 20px; font-weight: 500; margin: 0 0 16px; }
   .login-college { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 15px; }
-  .login-college .logo.sm { background: #235789; box-shadow: none; border-radius: 50%; }
+  /* โลโก้ TabHub: เครื่องหมาย (SVG) + ตัวอักษร Tab สีน้ำเงิน Hub สีส้ม */
+  .tabhub-mark { display: block; flex-shrink: 0; border-radius: 22%; box-shadow: 0 4px 12px rgba(35,87,137,.22); }
+  .tabhub-word { font-weight: 800; letter-spacing: -.01em; }
+  .tabhub-word > span:first-child { color: #235789; }
+  .tabhub-word > span:last-child { color: #f0a12f; }
+  .login-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 12px; }
+  .login-brand .tabhub-word { font-size: 34px; line-height: 1; }
+  .login-seal { width: 34px; height: 34px; object-fit: contain; }
+  .side .brand .tabhub-word { display: block; font-size: 19px; line-height: 1.15; }
+  .side .brand .tabhub-word > span:first-child { color: #fff; }
+  .side .brand .tabhub-mark { box-shadow: none; }
+  html[data-theme="dark"] .login-brand .tabhub-word > span:first-child { color: #8fb4e3; }
   .login-wrap .login { width: min(420px, 100%); margin: 0; padding: 16px 16px 18px; border: 1px solid #d3dbe2; border-radius: 12px; }
   .login-wrap label.f { font-size: 13px; }
   /* ฟันเฟือง 3 ตัว: หมุนเมื่อมีคลาส .on (กำลังพิมพ์/กำลังเข้าสู่ระบบ) ตัวติดกันหมุนสวนทาง เวลาต่อรอบตามจำนวนฟัน (12 : 9 : 7) */

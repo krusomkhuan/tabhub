@@ -81,6 +81,15 @@ function deptName(id) { return nm('Departments', id); }
 function sortBy(arr, f) { return arr.slice().sort(function (a, b) { return String(f(a)).localeCompare(String(f(b)), 'th', { numeric: true }); }); }
 
 /* ===================== เข้าระบบ ===================== */
+/* โลโก้ TabHub แบบ "ตัว T จากช่องตาราง": กรอบน้ำเงินมุมมน ช่องคาบสีขาวเรียงเป็นตัว T ช่องสีส้ม = คาบที่เลือก วาดด้วย SVG ไม่ใช้ไฟล์รูป */
+function tabhubMark(size) {
+  var cell = function (x, y, c, o) { return '<rect x="' + x + '" y="' + y + '" width="12" height="11" rx="3" fill="' + c + '"' + (o ? ' opacity="' + o + '"' : '') + '/>'; };
+  return '<svg class="tabhub-mark" width="' + size + '" height="' + size + '" viewBox="0 0 64 64" role="img" aria-label="TabHub">' +
+    '<rect width="64" height="64" rx="15" fill="#235789"/>' +
+    cell(11, 13, '#fff') + cell(26, 13, '#fff') + cell(41, 13, '#f6ae3c') + cell(26, 27, '#fff') + cell(26, 41, '#fff', '.55') + '</svg>';
+}
+function tabhubWord() { return '<span class="tabhub-word"><span>Tab</span><span>Hub</span></span>'; }
+
 /* ฟันเฟือง 3 ตัวบนหน้าเข้าสู่ระบบ (วาดด้วย SVG) ขบกันจริง: ตัวติดกันหมุนสวนทาง ความเร็วตามจำนวนฟัน */
 function loginGears() {
   function gear(n, r) { // ฟัน n ซี่ รัศมีพิตช์ r → path รอบนอก + รูกลาง
@@ -101,8 +110,8 @@ function loginGears() {
 
 function renderLogin() {
   document.getElementById('root').innerHTML =
-    '<div class="login-wrap"><div class="login-head"><h1>ระบบจัดตารางเรียน–ตารางสอน</h1>' +
-    '<div class="login-college"><div class="logo sm">ตร</div><b>' + esc(S.settings.college_name || 'วิทยาลัยการอาชีพโพนทอง') + '</b></div></div>' +
+    '<div class="login-wrap"><div class="login-head"><div class="login-brand">' + tabhubMark(52) + tabhubWord() + '</div><h1>ระบบจัดตารางเรียน–ตารางสอน</h1>' +
+    '<div class="login-college"><img class="login-seal" src="assets/college-seal.png" alt=""><b>' + esc(S.settings.college_name || 'วิทยาลัยการอาชีพโพนทอง') + '</b></div></div>' +
     '<div class="login card"><div class="login-top"><b>เข้าสู่ระบบ</b>' + loginGears() + '</div>' +
     '<form id="lf"><label class="f">ชื่อผู้ใช้</label><input id="lu" autocomplete="username" required placeholder="ชื่อผู้ใช้ของคุณ">' +
     '<label class="f">รหัสผ่าน</label><div class="pw-wrap"><input id="lp" type="password" autocomplete="current-password" required>' +
@@ -214,7 +223,7 @@ function renderShell() {
   var baseRole = S.me.base_role || S.me.role, roleTh = ROLE_LABELS[baseRole] || baseRole;
   var initials = String(S.me.name || '?').replace(/^(นาย|นางสาว|นาง|ว่าที่\S*)/, '').trim().slice(0, 2);
   document.getElementById('root').innerHTML =
-    '<div class="shell"><div class="side-bg" id="sideBg"></div><aside class="side" id="side"><div class="brand"><div class="logo sm">ตร</div><div>ระบบจัดตารางเรียน<small>' + esc(S.settings.college_name || '') + '</small></div></div>' + nav +
+    '<div class="shell"><div class="side-bg" id="sideBg"></div><aside class="side" id="side"><div class="brand">' + tabhubMark(38) + '<div>' + tabhubWord() + '<small>ระบบจัดตารางเรียน · ' + esc(S.settings.college_name || '') + '</small></div></div>' + nav +
     '<div class="sec">อื่นๆ</div><a class="nav" href="?page=public" target="_blank"><span class="ic">🌐</span>หน้าเผยแพร่สาธารณะ ↗</a><a class="nav" href="?page=pdpa" target="_blank"><span class="ic">🔒</span>นโยบายข้อมูลส่วนบุคคล (PDPA) ↗</a>' +
     (PWA.installed() ? '' : '<a class="nav" href="javascript:void 0" onclick="PWA.add()"><span class="ic">📲</span>เพิ่มไอคอนลงมือถือ</a>') +
     '<p class="app-ver side-ver">เวอร์ชัน ' + esc(APP_VERSION) + '<br>ผู้พัฒนา: ' + esc(APP_DEVELOPERS) + '</p></aside>' +
