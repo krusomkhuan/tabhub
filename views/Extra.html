@@ -976,7 +976,12 @@
     var head = Grid.deptHead(S.D.Teachers, dept) || {};
     var box = function (on) { return on ? '☑' : '☐'; };
     var text = function (v) { return v ? esc(thNum(v)).replace(/\n/g, '<br>') : blank; };
-    var sign = function (name, role) { return '<div class="vr-sign">ลงชื่อ ' + (window.Sig ? Sig.slot(name) : '') + '.................................<br>(' + esc(name || '.................................') + ')' + (role ? '<br>' + role : '') + '</div>'; };
+    // ยศ (เช่น ว่าที่ ร้อยโท) อยู่ต่อคำว่า "ลงชื่อ" ในวงเล็บเหลือเฉพาะชื่อ-สกุล และชื่อ/ตำแหน่งอยู่กึ่งกลางใต้เส้นจุด (แบบเดียวกับงบหน้า)
+    var sign = function (name, role) {
+      var full = String(name || '').trim(), m = full.match(/^ว่าที่[ \t]*ร้อยโท/), rank = m ? m[0] : '', who = rank ? full.slice(rank.length).trim() : full, dots = '....................................';
+      return '<div class="vr-sign"><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ' + (rank ? ' ' + esc(rank) : '') + '&nbsp;</span><span class="cv-sig-body">' + (window.Sig ? Sig.slot(name) : '') + dots +
+        '<span class="cv-sig-under">(' + esc(who || dots) + ')' + (role ? '<br>' + role : '') + '</span></span></span></div>';
+    };
     // หนึ่งฉบับต่อหนึ่งสัปดาห์: ทุกรายวิชาที่นิเทศในสัปดาห์อยู่ในตารางเดียว ผลการนิเทศอ้างลำดับเดียวกัน
     var weeks = uniq(list.map(function (v) { return String(v.week_no || semWeek(v.visit_date) || ''); }));
     var dates = list.map(function (v) { return String(v.visit_date || '').slice(0, 10); }).filter(Boolean).sort();
