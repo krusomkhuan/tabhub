@@ -98,15 +98,15 @@
     var f = function (v, cls) { return '<span class="rp-f' + (cls ? ' ' + cls : '') + '">' + esc(thNum(v)) + '</span>'; };
     var numbered = function (text) { return '<ol class="rp-list">' + String(text || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(String).map(function (x, i) { return '<li><span>' + thNum(i + 1) + '.</span>' + esc(thNum(x)) + '</li>'; }).join('') + '</ol>'; };
     var dots = '.............................................';
-    var opinion = function (title, lines, name, role) { return '<td><b>' + title + '</b><div>เรียน ผู้อำนวยการ' + esc(college) + '</div>' + lines.map(function (l) { return '<div class="rp-ind">- ' + l + '</div>'; }).join('') + '<div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + dots + '<br>( ' + esc(name || dots) + ' )<br>' + esc(role) + '</div></td>'; };
-    var sign = function (name, role, suffix, own) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name, '', own) : '') + dots + (suffix || '') + '<br>( ' + esc(name || dots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
+    var opinion = function (title, lines, name, role) { return '<td><b>' + title + '</b><div>เรียน ผู้อำนวยการ' + esc(college) + '</div>' + lines.map(function (l) { return '<div class="rp-ind">- ' + l + '</div>'; }).join('') + '<div class="rp-sig">' + rpSigLine(name, esc(role), window.Sig ? Sig.slot(name) : '') + '</div></td>'; };
+    var sign = function (name, role, suffix, own) { return '<div>' + rpSigLine(name, role ? esc(role) : '', window.Sig ? Sig.slot(name, '', own) : '', suffix) + '</div>'; };
     var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('รายงานการสอนออนไลน์', r.memo_no, r.memo_date || r.date) +
       '<p class="rp-para">' + esc(thNum(r.memo_reason || memoTemplate(r.date))) + '</p>' +
       '<p class="rp-para">ในการนี้ ข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(rank) + ' แผนกวิชา' + esc(dept) + ' ได้ดำเนินการจัดการเรียนการสอนออนไลน์ ในช่วงเวลาดังกล่าวเสร็จสิ้นเป็นที่เรียบร้อยแล้ว จึงขออนุญาตรายงานผลการจัดการเรียนการสอนดังกล่าว ดังรายละเอียดที่แนบมาพร้อมนี้</p>' +
       '<p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและพิจารณา</p><div class="rp-sign-one">' + sign(t.name, 'ตำแหน่ง ' + rank, 'ครูผู้สอน') + '</div>' +
       '<table class="rp-opinions"><tr>' + opinion('ความเห็นของหัวหน้าแผนกวิชา', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], head.name, Grid.deptHeadTitle(dept)) + opinion('ความเห็นของหัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้', ['เพื่อโปรดทราบและพิจารณาอนุญาต'], st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</tr><tr>' +
       opinion('ความเห็นของรองผู้อำนวยการฝ่ายวิชาการ', ['เพื่อโปรดทราบ', 'เพื่อโปรดพิจารณาอนุญาต'], st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') +
-      '<td><b>ความเห็นของผู้อำนวยการ</b><div class="rp-check"><span>(   ) ทราบ</span><span>(   ) อนุญาต</span><span>(   ) ไม่อนุญาต</span><span>(   ) อื่น ๆ ..............</span></div><div class="rp-sig">ลงชื่อ' + (window.Sig ? Sig.slot(st.signer_director) : '') + dots + '<br>( ' + esc(st.signer_director || dots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div></td></tr></table></div>';
+      '<td><b>ความเห็นของผู้อำนวยการ</b><div class="rp-check"><span>(   ) ทราบ</span><span>(   ) อนุญาต</span><span>(   ) ไม่อนุญาต</span><span>(   ) อื่น ๆ ..............</span></div><div class="rp-sig">' + rpSigLine(st.signer_director, 'ผู้อำนวยการ' + esc(college), window.Sig ? Sig.slot(st.signer_director) : '') + '</div></td></tr></table></div>';
     var detailHead = '<h2 class="rp-title">รายงานการสอนออนไลน์</h2><div class="rp-line">ชื่อวิชา' + f(c.name, 'grow') + 'รหัสวิชา' + f(c.code) + '</div><div class="rp-line">ระดับชั้น' + f(levels) + 'กลุ่มชั้นเรียน/ห้อง' + '<span class="rp-f grow">' + esc(gids.map(groupCode).join(' , ')) + '</span>' + 'สาขาวิชา' + f(majors, 'grow') + '</div>' +
       '<div class="rp-line">วัน' + f(dayName, 'grow') + 'ที่' + f(d.day) + 'เดือน' + f(d.month, 'grow') + 'พ.ศ.' + f(d.year) + 'เวลา' + '<span class="rp-f">' + clock(from[0]) + ' - ' + clock(to[1]) + '</span>น.</div><hr class="rp-dash">';
     var pics = images.length ? '<div class="rp-pics rp-pics-' + Math.min(images.length, 4) + '">' + images.map(function (x) { return '<img src="' + x.url + '" alt="รูปประกอบการเรียนการสอน">'; }).join('') + '</div>' : '<p class="rp-empty">ไม่มีรูปประกอบ</p>';
@@ -134,7 +134,17 @@
   var shortDate = function (date) { var p = String(date || '').slice(0, 10).split('-'); return p[0] ? thNum(Number(p[2]) + ' ' + TH_MONTHS_SHORT[Number(p[1]) - 1] + ' ' + String(Number(p[0]) + 543).slice(-2)) : ''; };
   var timeRange = function (start, len) { var t = Grid.periodTimes(S.settings), a = t[Number(start) - 1] || ['', ''], b = t[Number(start) + Number(len) - 2] || a; return thNum(String(a[0]).replace(':', '.') + '-' + String(b[1]).replace(':', '.')); };
   var rpDots = '.............................................';
-  var rpSign = function (name, role, suffix) { return '<div>ลงชื่อ' + (window.Sig ? Sig.slot(name) : '') + rpDots + (suffix || '') + '<br>( ' + esc(name || rpDots) + ' )' + (role ? '<br>' + esc(role) : '') + '</div>'; };
+  /* ช่องลงชื่อเอกสารสอนแทน/สอนชดเชย: ยศ (ว่าที่ ร้อยโท) อยู่ต่อคำว่า "ลงชื่อ" ในวงเล็บเหลือเฉพาะชื่อ-สกุล
+     ชื่อและตำแหน่งอยู่กึ่งกลางใต้เส้นจุด (แบบเดียวกับรายงานนิเทศและงบหน้า) */
+  var rpSigDots = '...................................'; // สั้นกว่า rpDots ให้ "ลงชื่อ ว่าที่ ร้อยโท" กับเส้นจุดอยู่บรรทัดเดียวในช่องครึ่งหน้า
+  /* word = คำนำหน้าเส้นจุด ไม่ระบุ = "ลงชื่อ" ส่วนท้ายหนังสือที่ไม่มีคำว่าลงชื่อ (เช่น หนังสือถึงผู้ปกครอง) ส่ง '' */
+  var rpSigLine = function (name, roleHtml, slot, suffix, word) {
+    var full = String(name || '').trim(), m = full.match(/^ว่าที่[ 	]*ร้อยโท/), rank = m ? m[0] : '', who = rank ? full.slice(rank.length).trim() : full;
+    var label = [word === undefined ? 'ลงชื่อ' : word, rank ? esc(rank) : ''].filter(Boolean).join(' ');
+    return '<span class="cv-sig">' + (label ? '<span class="cv-sig-label">' + label + '&nbsp;</span>' : '') + '<span class="cv-sig-body">' + slot + rpSigDots + (suffix || '') +
+      '<span class="cv-sig-under">( ' + esc(who || rpSigDots) + ' )' + (roleHtml ? '<br>' + roleHtml : '') + '</span></span></span>';
+  };
+  var rpSign = function (name, role, suffix) { return '<div>' + rpSigLine(name, role ? esc(role) : '', window.Sig ? Sig.slot(name) : '', suffix) + '</div>'; };
   var deptHead = function (t) { return Grid.deptHead(S.D.Teachers, t.department_id) || {}; };
   /* unit: หน่วยงานเจ้าของเรื่องต่อท้ายส่วนราชการ ตามแบบบันทึกข้อความงานสารบรรณ เช่น แผนกวิชา */
   var rpMemoHead = function (subject, no, date, unit) {
@@ -145,7 +155,7 @@
   /* ช่องเสนอตามสายงาน: หัวหน้าแผนกและงานหลักสูตรทางซ้าย รองฯ และผู้อำนวยการทางขวา */
   /* ผู้พิจารณายังไม่ได้อนุญาตตอนพิมพ์ จึงไม่ใส่ลายเซ็นในช่องนี้ ลายเซ็นขึ้นเฉพาะผู้ขออนุญาต */
   var rpApproval = function (t, want) {
-    var st = S.settings, dept = deptName(t.department_id), line = '<b>เรียน</b> ผู้อำนวยการฯ ' + want, sig = function (name, role) { return '<div class="rp-sig">ลงชื่อ' + rpDots + '<br>( ' + esc(name || rpDots) + ' )<br>' + esc(role) + '</div>'; };
+    var st = S.settings, dept = deptName(t.department_id), line = '<b>เรียน</b> ผู้อำนวยการฯ ' + want, sig = function (name, role) { return '<div class="rp-sig">' + rpSigLine(name, esc(role), '') + '</div>'; };
     return '<table class="rp-opinions"><tr><td>' + line + sig(deptHead(t).name, Grid.deptHeadTitle(dept)) + '<div class="rp-gap">' + line + '</div>' + sig(st.signer_curriculum, 'หัวหน้างานพัฒนาหลักสูตรและการจัดการเรียนรู้') + '</td><td>' + line + sig(st.signer_deputy, 'รองผู้อำนวยการฝ่ายวิชาการ') + '<div class="rp-check rp-gap"><span>(   ) อนุมัติ</span><span>(   ) ไม่อนุมัติ</span></div>' + sig(st.signer_director, 'ผู้อำนวยการ' + st.college_name) + '</td></tr></table>';
   };
   var splitClass = function (code) { var m = String(code).match(/^(.*?)\s*([0-9๐-๙]+\/[0-9๐-๙]+)$/); return m ? [m[1], m[2]] : [code, '']; };
@@ -220,9 +230,42 @@
         node.classList.remove('rp-selected-row', 'rp-img-picked');
       });
     })(tpl.content);
+    upgradeSigBlocks(tpl.content);
     // รูปลายเซ็นเติมใหม่ทุกครั้งที่เปิด จึงเป็นลายเซ็นล่าสุดและไม่บันทึกติดไปกับเอกสาร
     Array.prototype.forEach.call(tpl.content.querySelectorAll('.sig-slot img'), function (i) { i.remove(); });
     return tpl.innerHTML;
+  }
+
+  /* เอกสารที่บันทึกไว้ก่อนเปลี่ยนแบบช่องลงชื่อ: "ลงชื่อ....(ว่าที่ ร้อยโท ชื่อ)<br>ตำแหน่ง" แปลงเป็นแบบใหม่
+     (ยศต่อคำว่าลงชื่อ ชื่อ/ตำแหน่งกึ่งกลางใต้เส้นจุด) แปลงเฉพาะช่องที่ยังเป็นรูปแบบเดิมทุกส่วน ช่องที่ถูกแก้จนไม่ตรงแบบปล่อยไว้ */
+  function upgradeSigBlocks(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('.rp-page div'), function (div) {
+      var nodes = Array.prototype.filter.call(div.childNodes, function (n) { return !(n.nodeType === 3 && !n.nodeValue.trim()); });
+      var line = '', slot = '', i = 0;
+      for (; i < nodes.length && nodes[i].nodeName !== 'BR'; i++) {
+        var n = nodes[i];
+        if (n.nodeType === 3) line += n.nodeValue;
+        else if (n.nodeName === 'SPAN' && n.classList.contains('sig-slot') && !slot) slot = n.outerHTML;
+        else return;
+      }
+      var m = line.match(/^\s*ลงชื่อ\s*([^.]*?)\s*(\.{5,})\s*(.*?)\s*$/), nameNode = nodes[i + 1], nm2 = nameNode && nameNode.nodeType === 3 && nameNode.nodeValue.match(/^\s*\(\s*(.*?)\s*\)\s*$/);
+      // ท้ายหนังสือถึงผู้ปกครองแบบเดิม: "( ชื่อ )<br>ตำแหน่ง" ต่อจาก "ขอแสดงความนับถือ" ไม่มีคำว่าลงชื่อ
+      var close = !m && /ขอแสดงความนับถือ/.test((div.previousElementSibling || {}).textContent || '') && line.match(/^\s*\(\s*(.*?)\s*\)\s*$/);
+      if (close) {
+        var tail = nodes.slice(i + 1);
+        if (tail.some(function (n) { return n.nodeType !== 3 && n.nodeName !== 'BR'; })) return;
+        div.style.overflowX = 'clip';
+        div.innerHTML = rpSigLine(/^\.*$/.test(close[1]) ? '' : close[1], tail.map(function (n) { return n.nodeType === 3 ? esc(n.nodeValue.trim()) : '<br>'; }).join(''), slot, '', '');
+        return;
+      }
+      if (!m || !nm2) return;
+      var rest = nodes.slice(i + 2);
+      if (rest.length && rest[0].nodeName !== 'BR') return;
+      if (rest.some(function (n) { return n.nodeType !== 3 && n.nodeName !== 'BR'; })) return;
+      var roleHtml = rest.slice(1).map(function (n) { return n.nodeType === 3 ? esc(n.nodeValue.trim()) : '<br>'; }).join('');
+      var who = /^\.*$/.test(nm2[1]) ? '' : nm2[1], full = (m[1] && who ? m[1] + ' ' : '') + who;
+      div.innerHTML = rpSigLine(full, roleHtml, slot, m[3] ? esc(m[3]) : '');
+    });
   }
 
   /* save: function (html) คืน Promise เมื่อมีปุ่มบันทึกเก็บเอกสาร */
@@ -735,7 +778,7 @@
     var letter = '<div class="page rp-page rp-parent-letter" data-pdf-width="760"><div class="rp-letter-head"><div>ที่ ' + esc(thNum(String(f.parentNo || '').trim() || 'ศธ 0633.18/............')) + '</div><img src="assets/krut.png" alt="ตราครุฑ"><div class="rp-letter-addr">' + esc(college) + (st.college_address ? '<br>' + esc(thNum(st.college_address)) : '') + '</div></div><p class="rp-center">' + esc(thLongDate(f.date)) + '</p>' +
       '<p><b class="rp-memo-label">เรื่อง</b> ขออนุญาตให้นักศึกษามาเรียนชดเชย</p><p><b>เรียน</b> ผู้ปกครองนาย/นางสาว......................................... นักศึกษา ' + esc(groupsText) + '</p>' +
       '<p class="rp-para">ด้วย ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ' + esc(college) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + '</p><p class="rp-para">ในการนี้ ' + esc(college) + ' จึงขอความอนุเคราะห์ผู้ปกครองอนุญาตให้นักศึกษามาเรียนชดเชย ' + esc(from === to ? 'ในวันที่ ' + when : 'ระหว่างวันที่ ' + when) + (f.place ? ' ณ ' + esc(thNum(f.place)) : '') + (f.phone ? ' ทั้งนี้ ผู้ปกครองสามารถสอบถามการมาเรียนของนักศึกษาได้ที่ครู' + esc(String(t.name || '').replace(/^(นางสาว|นาย|นาง)/, '')) + ' หมายเลขโทรศัพท์ ' + esc(thNum(f.phone)) : '') + '</p><p class="rp-para">จึงเรียนมาเพื่อโปรดทราบและพิจารณาให้ความอนุเคราะห์ ขอขอบคุณมา ณ โอกาสนี้</p>' +
-      '<div class="rp-center" style="margin:14px 0 34px">ขอแสดงความนับถือ</div><div class="rp-center">' + (window.Sig ? Sig.slot(st.signer_director) : '') + '( ' + esc(st.signer_director || rpDots) + ' )<br>ผู้อำนวยการ' + esc(college) + '</div><hr class="rp-dash" style="margin:16px 0">' +
+      '<div class="rp-center" style="margin:14px 0 34px">ขอแสดงความนับถือ</div><div class="rp-center" style="overflow-x: clip">' + rpSigLine(st.signer_director, 'ผู้อำนวยการ' + esc(college), window.Sig ? Sig.slot(st.signer_director) : '', '', '') + '</div><hr class="rp-dash" style="margin:16px 0">' +
       '<h3 class="rp-center">ใบตอบรับจากผู้ปกครอง</h3><p>ข้าพเจ้านาย/นาง/นางสาว................................................................ ผู้ปกครองนาย/นางสาว................................................................ นักศึกษาสาขางาน........................................... ระดับ..................... ชั้นปีที่.......... กลุ่ม.......... มีความเห็นสมควรว่า</p><p class="rp-center">☐ อนุญาต &nbsp;&nbsp;&nbsp;&nbsp; ☐ ไม่อนุญาตเนื่องจาก..........................................</p><div class="rp-center" style="margin-top:18px">ลงชื่อ' + rpDots + '<br>(' + rpDots + ')<br>ผู้ปกครองนักศึกษา</div></div>';
     var title = 'ขออนุญาตสอนชดเชย ' + (t.name || '') + ' ' + thLongDate(f.date);
     docToolbar(el, memo + letter, title, view, true, docSaver(rows, 'makeup_request', '', title));

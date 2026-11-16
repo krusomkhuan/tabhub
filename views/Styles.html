@@ -329,7 +329,14 @@
   table.rp-opinions { width: 100%; border-collapse: collapse; table-layout: fixed; }
   table.rp-opinions td { width: 50%; padding: 6px 10px; border: 1px solid #000; vertical-align: top; font-size: 14px; }
   .rp-ind { padding-left: 26px; }
-  .rp-sig { margin-top: 14px; text-align: center; }
+  .rp-sig { margin-top: 14px; text-align: center; overflow-x: clip; }
+  .rp-sign-one > div, .rp-sign-three > div, .rp-sign-four > div { overflow-x: clip; } /* ตัดส่วนยื่นของ .cv-sig-under ที่ขอบช่อง */
+  /* ช่องแคบ (ช่องเสนอตามสายงาน ช่องลงชื่อ 3–4 คน): ชื่อและตำแหน่งกึ่งกลางช่องและตัดขึ้นบรรทัดใหม่ได้ ตำแหน่งยาว ๆ จึงอ่านได้ครบ */
+  .rp-sig .cv-sig, .rp-sign-three .cv-sig, .rp-sign-four .cv-sig { display: block; text-align: center; }
+  .rp-sig .cv-sig-label, .rp-sig .cv-sig-body, .rp-sign-three .cv-sig-label, .rp-sign-three .cv-sig-body, .rp-sign-four .cv-sig-label, .rp-sign-four .cv-sig-body { display: inline; }
+  .rp-sig .cv-sig-under, .rp-sign-three .cv-sig-under, .rp-sign-four .cv-sig-under { margin: 0; white-space: normal; }
+  /* บรรทัด "ลงชื่อ ....." เยื้องซ้ายจากกึ่งกลางช่อง 1em (ขอบซ้ายติดลบ 2em ทำให้บรรทัดที่จัดกึ่งกลางเลื่อนไปครึ่งหนึ่ง) */
+  .rp-sig .cv-sig-label, .rp-sign-three .cv-sig-label, .rp-sign-four .cv-sig-label { margin-left: -2em; }
   .rp-check { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; padding: 4px 0 22px 18px; }
   .rp-title { margin: 0 0 8px; text-align: center; font-size: 19px; font-weight: 700; }
   .rp-dash { margin: 8px 0; border: 0; border-top: 1px dashed #000; opacity: 1; }
