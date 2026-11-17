@@ -65,6 +65,21 @@ function loadClaim() {
     OT.sel = {}; OT.ph = {};
     var saved = d.claim && d.claim.weeks || {};
     d.weeks.forEach(function (w) { OT.sel[w.index] = (saved[w.index] && saved[w.index].sel) || {}; OT.ph[w.index] = (saved[w.index] && saved[w.index].ph) || {}; });
+    // คาบเรียนรวมยุบเป็นชั่วโมงเดียวแล้ว: การเลือกที่บันทึกไว้ทีละกลุ่ม (key เดิม) ย้ายมาที่ key ของชั่วโมงที่ยุบ
+    d.weeks.forEach(function (w) {
+      var m = OT.sel[w.index], ph = OT.ph[w.index];
+      w.items.forEach(function (it) {
+        (it.keys || []).forEach(function (k) {
+          if (k === it.key || !m[k]) return;
+          if (!m[it.key] || m[k] === 'C') m[it.key] = m[k]; // เลือกต่างกัน ใช้ "เบิก" ก่อน
+          delete m[k];
+        });
+        (it.group_ids || []).forEach(function (g) {
+          var k = it.course_id + '|' + g, k0 = it.course_id + '|' + it.group_id;
+          if (k !== k0 && ph[k]) { ph[k0] = true; delete ph[k]; }
+        });
+      });
+    });
     // ชั่วโมงที่ติดวันลา/ห้ามเบิก หรือไม่มีในตารางแล้ว ถูกเอาออกจากการเลือกอัตโนมัติ
     var removed = 0;
     d.weeks.forEach(function (w) {
@@ -195,7 +210,7 @@ function claimPrintHtml(d, sch, evaluated) {
     runs.forEach(function (run) {
       var k = run.date + '|' + run.course_id + '|' + run.from + '|' + run.to + '|' + run.sub, row = at[k];
       if (!row) { row = at[k] = { date: run.date, course_id: run.course_id, sub: run.sub, from: run.from, to: run.to, groups: [], students: 0, items: [] }; rows.push(row); }
-      row.groups.push(run.group_id); row.students += Number(run.items[0].students) || 0; row.items = row.items.concat(run.items);
+      row.groups = row.groups.concat(run.items[0].group_ids || [run.group_id]); row.students += Number(run.items[0].students) || 0; row.items = row.items.concat(run.items);
     });
     rows.sort(function (a, b) { return cmp(a.date, b.date) || a.from - b.from || cmp(String(a.course_id), String(b.course_id)); });
     var sum = { vc: 0, vs: 0, claim: 0, money: 0 }, taughtLv = {}, byDate = {};
@@ -357,9 +372,10 @@ function weekHtml(w, r, canEdit) {
         var bg = it.blocked ? '#eceef3' : it.absent ? '#fde8e8' : v === 'L' ? '#dff5e3' : v === 'C' ? '#2457d6' : '#fff';
         var fg = v === 'C' && !it.blocked && !it.absent ? '#fff' : '#1d2433';
         var c = courseOf(it.course_id);
-        var tip = c.code + ' ' + c.name + ' · ' + groupCode(it.group_id) + ' · ' + LV[it.level] + (it.blocked ? ' · ' + it.blocked : '') + (it.absent ? ' · ' + it.absent : '') + (it.sub ? ' · ' + (it.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย') : '') + (it.pending ? ' · ' + it.pending : '') + (it.no_claim ? ' · ' + it.no_claim : '') + (it.made_up ? ' · สอนชดเชยแล้ว ' + thDate(it.made_up) + ' (รายงานผลแล้ว) นับชั่วโมงที่คาบนี้' : '');
+        var gs = (it.group_ids || [it.group_id]).map(groupCode).join(', ');
+        var tip = c.code + ' ' + c.name + ' · ' + gs + ((it.group_ids || []).length > 1 ? ' (เรียนรวม นับ 1 ชม.)' : '') + ' · ' + LV[it.level] + (it.blocked ? ' · ' + it.blocked : '') + (it.absent ? ' · ' + it.absent : '') + (it.sub ? ' · ' + (it.sub === 'sub' ? 'สอนแทน' : 'สอนชดเชย') : '') + (it.pending ? ' · ' + it.pending : '') + (it.no_claim ? ' · ' + it.no_claim : '') + (it.made_up ? ' · สอนชดเชยแล้ว ' + thDate(it.made_up) + ' (รายงานผลแล้ว) นับชั่วโมงที่คาบนี้' : '');
         return '<div class="ss" data-w="' + w.index + '" data-key="' + esc(it.key) + '" title="' + esc(tip) + '" style="min-height:40px;cursor:' + (canEdit && !it.blocked && !it.absent ? 'pointer' : 'default') + ';background:' + bg + ';color:' + fg + ';border:1px solid #cfd5e2;' + (it.absent ? 'text-decoration:line-through;' : '') + '">' +
-          '<b>' + esc(c.code) + '</b><span>' + esc(groupCode(it.group_id)) + (it.sub ? ' · ' + (it.sub === 'sub' ? 'แทน' : 'ชดเชย') : '') + (it.made_up ? ' · ชดเชย ✓' : '') + (it.pending ? ' ⚠' : '') + (it.no_claim ? ' · ภาระงานเท่านั้น' : '') + '</span></div>';
+          '<b>' + esc(c.code) + '</b><span>' + esc(gs) + (it.sub ? ' · ' + (it.sub === 'sub' ? 'แทน' : 'ชดเชย') : '') + (it.made_up ? ' · ชดเชย ✓' : '') + (it.pending ? ' ⚠' : '') + (it.no_claim ? ' · ภาระงานเท่านั้น' : '') + '</span></div>';
       }).join('') + '</td>';
     }
     h += '</tr>';
@@ -372,7 +388,7 @@ function weekHtml(w, r, canEdit) {
   if (phKeys.length) h += '<div class="small" style="margin-top:6px"><b>เบิกรายหัว</b> (นักเรียนน้อยกว่าเกณฑ์): ' + phKeys.map(function (k) {
     var it = phCands[k], rule = Ot.perHeadRule(it, OT.data.perHead, IDX.Courses[it.course_id]);
     return '<label class="row" style="display:inline-flex;gap:4px;margin-right:12px"><input type="checkbox" style="width:auto" data-ph="' + w.index + '" data-phk="' + esc(k) + '"' + ((OT.ph[w.index] || {})[k] ? ' checked' : '') + (canEdit ? '' : ' disabled') + '>' +
-      esc(courseOf(it.course_id).code + ' ' + groupCode(it.group_id)) + ' (' + it.students + ' คน · ' + rule.rate_per_head + ' บ./ชม. ทั้งกลุ่ม)</label>';
+      esc(courseOf(it.course_id).code + ' ' + (it.group_ids || [it.group_id]).map(groupCode).join(', ')) + ' (' + it.students + ' คน · ' + rule.rate_per_head + ' บ./ชม. ทั้งกลุ่ม)</label>';
   }).join('') + '</div>';
   // สรุป
   var sch = schemeObj();

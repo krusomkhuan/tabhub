@@ -124,7 +124,7 @@ function ot_item(array $D, array $s, string $date, int $day, int $p, string $tid
   $g = $D['groups'][$s['group_id'] ?? ''] ?? []; $c = $D['courses'][$s['course_id'] ?? ''] ?? [];
   $it = [
     'key' => $date . '|' . $s['id'] . '|' . $p . ($sub ? '|' . $sub['id'] : ''), 'date' => $date, 'day' => $day, 'period' => $p, 'session_id' => $s['id'],
-    'group_id' => $s['group_id'], 'course_id' => $s['course_id'], 'level' => ot_level_of($g), 'kind' => ot_kind_of($c ?: null), 'course_type' => $c['course_type'] ?? '',
+    'group_id' => $s['group_id'], 'group_ids' => [$s['group_id']], 'room_id' => (string)($s['room_id'] ?? ''), 'course_id' => $s['course_id'], 'level' => ot_level_of($g), 'kind' => ot_kind_of($c ?: null), 'course_type' => $c['course_type'] ?? '',
     'students' => num($g['students'] ?? 0), 'blocked' => '', 'absent' => '', 'sub' => $sub ? $sub['type'] : '', 'sub_id' => $sub ? $sub['id'] : '',
   ];
   $b = ot_blocked_at($D['blocked'], $date, $day, $p);
@@ -173,6 +173,26 @@ function ot_makeup_reported(array $r, string $tid): bool {
     && (string)$r['original_teacher_id'] === $tid && (string)$r['teacher_id'] === $tid;
 }
 
+/** คาบเรียนรวม: หลายกลุ่มเรียนวิชาเดียวกัน ห้องเดียวกัน เวลาเดียวกัน = สอน 1 ชั่วโมง (เหมือนแบบฟอร์มตารางสอนครู)
+ *  ยุบเป็นชั่วโมงเดียว key = key ของกลุ่มแรก, keys = key เดิมของทุกกลุ่ม (ใช้แปลงการเลือกที่บันทึกไว้ก่อนยุบ)
+ *  จำนวนนักเรียนรวมทุกกลุ่ม (ใช้เทียบเกณฑ์เบิกรายหัว) ยุบเฉพาะชั่วโมงที่สถานะเหมือนกันทุกกลุ่ม ต้องตรงกับ Ot.mergeJoint */
+function ot_merge_joint(array $items): array {
+  $out = []; $at = [];
+  foreach ($items as $it) {
+    $k = implode('|', [$it['date'], $it['period'], $it['course_id'], $it['room_id'], $it['level'], $it['blocked'], $it['absent'], $it['no_claim'] ?? '', $it['made_up'] ?? '', $it['pending'] ?? '']);
+    if (isset($at[$k]) && !in_array($it['group_id'], $out[$at[$k]]['group_ids'], true)) {
+      $m = &$out[$at[$k]];
+      $m['group_ids'][] = $it['group_id']; $m['keys'][] = $it['key']; $m['session_ids'][] = $it['session_id'];
+      $m['students'] += $it['students'];
+      unset($m);
+      continue;
+    }
+    $it['keys'] = [$it['key']]; $it['session_ids'] = [$it['session_id']];
+    $at[$k] = count($out); $out[] = $it;
+  }
+  return $out;
+}
+
 /** ชั่วโมงสอนจริงของครูในรอบ (รวมสอนแทน/สอนชดเชย) */
 function ot_hours_for(array $D): array {
   $src = $D['settings']['days'] ?? '';
@@ -185,11 +205,13 @@ function ot_hours_for(array $D): array {
     foreach ($w['dates'] as $date) {
       $day = ot_dow(ot_parse($date));
       if (!in_array($day, $days, true)) continue;
+      $dayItems = [];
       foreach ($mine as $s) {
         if (num($s['day']) !== $day) continue;
         $st = num($s['start']); $len = num($s['length']);
-        for ($p = $st; $p < $st + $len; $p++) $w['items'][] = ot_item($D, $s, $date, $day, $p, $tid, null);
+        for ($p = $st; $p < $st + $len; $p++) $dayItems[] = ot_item($D, $s, $date, $day, $p, $tid, null);
       }
+      foreach (ot_merge_joint($dayItems) as $it) $w['items'][] = $it;
     }
     // สอนแทน / สอนชดเชย ที่ครูคนนี้เป็นผู้สอน
     foreach ($D['subs'] as $r) {

@@ -131,12 +131,14 @@ var Ot = (function () {
       w.dates.forEach(function (date) {
         var day = dow(parse(date));
         if (days.indexOf(day) < 0) return;
+        var dayItems = [];
         mine.forEach(function (s) {
           if (Number(s.day) !== day) return;
           for (var p = Number(s.start); p < Number(s.start) + Number(s.length); p++) {
-            w.items.push(item(D, s, date, day, p, tid, null));
+            dayItems.push(item(D, s, date, day, p, tid, null));
           }
         });
+        w.items = w.items.concat(mergeJoint(dayItems));
       });
       // สอนแทน / สอนชดเชย ที่ครูคนนี้เป็นผู้สอน
       (D.subs || []).forEach(function (r) {
@@ -151,6 +153,22 @@ var Ot = (function () {
     return weeks;
   }
 
+  /** คาบเรียนรวม (วิชา ห้อง เวลาเดียวกัน หลายกลุ่ม) = สอน 1 ชั่วโมง ยุบเป็นชั่วโมงเดียว นักเรียนรวมทุกกลุ่ม (ต้องตรงกับ ot_merge_joint) */
+  function mergeJoint(items) {
+    var out = [], at = {};
+    items.forEach(function (it) {
+      var k = [it.date, it.period, it.course_id, it.room_id, it.level, it.blocked, it.absent, it.no_claim || '', it.made_up || '', it.pending || ''].join('|');
+      var m = at[k] !== undefined ? out[at[k]] : null;
+      if (m && m.group_ids.indexOf(it.group_id) < 0) {
+        m.group_ids.push(it.group_id); m.keys.push(it.key); m.session_ids.push(it.session_id); m.students += it.students;
+        return;
+      }
+      it.keys = [it.key]; it.session_ids = [it.session_id];
+      at[k] = out.length; out.push(it);
+    });
+    return out;
+  }
+
   function ownSessionAt(sessions, tid, day, p, exceptId) {
     return (sessions || []).some(function (x) {
       return String(x.id) !== exceptId && n(x.day) === day && String(x.teacher_ids).split(',').indexOf(tid) >= 0 && p >= n(x.start) && p < n(x.start) + n(x.length);
@@ -161,7 +179,7 @@ var Ot = (function () {
     var g = D.groups[s.group_id] || {}, c = D.courses[s.course_id] || {};
     var it = {
       key: date + '|' + s.id + '|' + p + (sub ? '|' + sub.id : ''), date: date, day: day, period: p, session_id: s.id,
-      group_id: s.group_id, course_id: s.course_id, level: levelOf(g), kind: kindOf(c), course_type: c.course_type || '',
+      group_id: s.group_id, group_ids: [s.group_id], room_id: String(s.room_id || ''), course_id: s.course_id, level: levelOf(g), kind: kindOf(c), course_type: c.course_type || '',
       students: n(g.students), blocked: '', absent: '', sub: sub ? sub.type : '', sub_id: sub ? sub.id : ''
     };
     var b = blockedAt(D.blocked, date, day, p);
