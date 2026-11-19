@@ -164,13 +164,21 @@ function api_profileGet($token = '') {
   $users = readTable('users');
   $i = find_row($users, $me['id']);
   if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
-  return ['username' => $users[$i]['username'], 'name' => $users[$i]['name'], 'email' => $users[$i]['email'], 'avatar' => user_avatar($me['id'])];
+  // หน้าที่พิเศษเก็บในข้อมูลครู แสดงในแบบฟอร์มตารางสอน เฉพาะบัญชีที่ผูกกับครู
+  $tid = (string)($me['teacher_id'] ?? '');
+  $t = $tid !== '' ? (idx_table('Teachers')[$tid] ?? null) : null;
+  return ['username' => $users[$i]['username'], 'name' => $users[$i]['name'], 'email' => $users[$i]['email'], 'avatar' => user_avatar($me['id']),
+    'has_teacher' => $t !== null, 'special_duty' => $t['special_duty'] ?? ''];
 }
 
-/** $avatar: null = คงรูปเดิม, '' = ลบรูป, นอกนั้นเป็น base64 ของไฟล์รูป */
-function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
+/** $avatar: null = คงรูปเดิม, '' = ลบรูป, นอกนั้นเป็น base64 ของไฟล์รูป; $specialDuty: null = ไม่แก้ */
+function api_profileSave($token = '', $name = '', $email = '', $avatar = null, $specialDuty = null) {
   $me = auth_user($token);
   $name = trim(str($name)); $email = trim(str($email));
+  if ($specialDuty !== null) {
+    $specialDuty = trim(str($specialDuty));
+    if (mb_strlen($specialDuty) > 300) throw new Exception('หน้าที่พิเศษยาวเกินไป (ไม่เกิน 300 ตัวอักษร)');
+  }
   if ($name === '') throw new Exception('กรุณากรอกชื่อ-นามสกุล');
   if (mb_strlen($name) > 120) throw new Exception('ชื่อยาวเกินไป');
   if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('รูปแบบอีเมลไม่ถูกต้อง');
@@ -186,13 +194,22 @@ function api_profileSave($token = '', $name = '', $email = '', $avatar = null) {
       $uri = 'data:image/' . ($ext === 'jpg' ? 'jpeg' : 'png') . ';base64,' . base64_encode($bytes);
     }
   }
-  return with_lock(function () use ($me, $token, $name, $email, $uri) {
+  return with_lock(function () use ($me, $token, $name, $email, $uri, $specialDuty) {
     $users = readTable('users');
     $i = find_row($users, $me['id']);
     if ($i === null) throw new Exception('ไม่พบบัญชีผู้ใช้');
     $users[$i]['name'] = $name; $users[$i]['email'] = $email;
     if ($uri !== null) $users[$i]['avatar'] = $uri;
     writeTable('users', $users);
+    $tid = (string)($me['teacher_id'] ?? '');
+    if ($specialDuty !== null && $tid !== '') {
+      $teachers = readTable('Teachers');
+      $k = find_row($teachers, $tid);
+      if ($k !== null && (string)($teachers[$k]['special_duty'] ?? '') !== $specialDuty) {
+        $teachers[$k]['special_duty'] = $specialDuty;
+        writeTable('Teachers', $teachers);
+      }
+    }
     // ชื่อบนหน้าเว็บและในประวัติการแก้ไขอ่านจากข้อมูลการเข้าระบบ จึงต้องอัปเดตด้วย
     $me['name'] = $name;
     kvPut('cache:tok_' . $token, json_encode($me, JSON_UNESCAPED_UNICODE), 21600);
@@ -338,7 +355,8 @@ function api_bulkCreateTeacherUsers($token = '', $defaultPassword = '') {
 }
 
 // ======================= สิทธิ์อ่านข้อมูล =======================
-const TEACHER_PRIVATE = ['email', 'education', 'special_duty', 'award_note'];
+// วุฒิการศึกษาและหน้าที่พิเศษพิมพ์อยู่บนตารางสอน (หน้าเผยแพร่ก็แสดง) จึงไม่นับเป็นข้อมูลส่วนตัว
+const TEACHER_PRIVATE = ['email', 'award_note'];
 const TEACHER_OT_FIELDS = ['employment', 'service_start', 'award_bonus', 'ot_scheme_ids', 'ot_cap'];
 
 /** ตัดข้อมูลส่วนตัวของครูตามสิทธิ์ผู้ดู: แถวของตัวเองเห็นครบ, แผนกเห็นข้อมูลการเบิกเฉพาะครูในแผนก */

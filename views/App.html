@@ -706,6 +706,8 @@ function editProfile() {
       '<label class="f">ชื่อผู้ใช้สำหรับเข้าระบบ</label><input value="' + esc(u.username) + '" disabled>' +
       '<label class="f">ชื่อ-นามสกุล *</label><input id="pfN" maxlength="120" value="' + esc(u.name) + '">' +
       '<label class="f">อีเมล</label><input id="pfE" inputmode="email" autocomplete="email" maxlength="200" value="' + esc(u.email) + '">' +
+      (u.has_teacher ? '<label class="f">หน้าที่พิเศษ</label><input id="pfD" maxlength="300" placeholder="เช่น ครูที่ปรึกษา, หัวหน้างานทะเบียน" value="' + esc(u.special_duty) + '">' +
+        '<div class="small muted">แสดงในส่วนหัวของแบบฟอร์มตารางสอน</div>' : '') +
       '<p class="small muted">ชื่อนี้ใช้แสดงในบัญชีและประวัติการแก้ไข ส่วนชื่อที่พิมพ์ในตารางสอนแก้ได้ที่เมนูครูผู้สอน ถ้าต้องการเปลี่ยนชื่อผู้ใช้ให้แจ้งผู้ดูแลระบบ</p>' +
       '<div class="actions"><button class="btn" onclick="closeModal()">ยกเลิก</button><button class="btn pri" id="pfS">บันทึก</button></div>');
     function show(src) {
@@ -719,7 +721,11 @@ function editProfile() {
     };
     $('#pfX', m).onclick = function () { picked = ''; show(''); };
     $('#pfS', m).onclick = function () {
-      api('profileSave', S.token, $('#pfN', m).value, $('#pfE', m).value, picked === null ? null : picked.split(',')[1] || '').then(function (me) {
+      var duty = u.has_teacher ? $('#pfD', m).value : null;
+      api('profileSave', S.token, $('#pfN', m).value, $('#pfE', m).value, picked === null ? null : picked.split(',')[1] || '', duty).then(function (me) {
+        /* อัปเดตข้อมูลครูในหน้าเว็บทันที ไม่ต้องรีโหลดก็เห็นในตารางสอน */
+        var tr = duty !== null && IDX.Teachers && IDX.Teachers[me.teacher_id];
+        if (tr) tr.special_duty = duty.trim();
         S.me = me; closeModal(); toast('บันทึกโปรไฟล์แล้ว'); renderShell(); go(S.view);
       });
     };
@@ -1965,6 +1971,7 @@ var TABLES = {
   Departments: { title: 'แผนกวิชา', fields: [['name', 'ชื่อแผนกวิชา', 'text'], ['sort', 'ลำดับ', 'number']] },
   Majors: { title: 'สาขาวิชา', fields: [['department_id', 'แผนกวิชา', 'ref:Departments'], ['name', 'ชื่อสาขาวิชา', 'text'], ['level', 'ระดับ', 'text'], ['sort', 'ลำดับ', 'number']] },
   Teachers: { title: 'ครูผู้สอน', search: true, fields: [['code', 'รหัสครู', 'text'], ['name', 'ชื่อ-สกุล', 'text'], ['department_id', 'แผนกวิชา', 'ref:Departments'], ['position', 'ตำแหน่ง', 'text'],
+    ['education', 'วุฒิการศึกษา', 'text'], ['special_duty', 'หน้าที่พิเศษ', 'text'],
     ['employment', 'สถานะการจ้าง', 'enum:gov=ข้าราชการครู,civil=พนักงานราชการ,perm=ลูกจ้างประจำ,contract=ครูอัตราจ้าง,other=อื่นๆ'],
     ['is_dept_head', 'หัวหน้าแผนก', 'bool'], ['head_dept_ids', 'หัวหน้าแผนกวิชาเพิ่มเติม (แผนกอื่นนอกจากแผนกที่สังกัด)', 'multi:Departments'], ['is_dept_academic', 'วิชาการแผนกวิชา', 'bool'], ['is_unit_head', 'หัวหน้างาน', 'bool'], ['service_start', 'วันเริ่มงาน (อายุงานอัตราจ้าง)', 'date'],
     ['award_bonus', 'สิทธิ์เพิ่มชั่วโมงเบิก (รางวัลระดับชาติ ข้อ 5.6)', 'enum:=ไม่มี,1=เพิ่ม 1 ชม.,2=เพิ่ม 2 ชม.,3=เพิ่ม 3 ชม.'], ['ot_cap', 'เพดานคาบเบิกรายบุคคล (ชม./สัปดาห์ เว้นว่าง = คำนวณตามระเบียบ)', 'number'], ['award_note', 'หลักฐาน/มติคณะกรรมการสถานศึกษา', 'text'],
