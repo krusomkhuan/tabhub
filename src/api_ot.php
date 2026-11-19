@@ -160,8 +160,12 @@ function ot_weeks_json(array $weeks): string {
 }
 
 function api_otSaveClaim($token = '', $roundId = '', $teacherId = '', $payload = [], $lock = false) {
-  $me = auth_user($token, 'dept');
-  assert_ot_teacher($me, $teacherId);
+  $me = auth_user($token);
+  // ครูบันทึกและยืนยัน/ล็อกใบเบิกของตัวเองได้ วิชาการแผนกรวบรวมข้อมูลไปเสนอเบิก
+  if (!($me['role'] === 'teacher' && (string)$me['teacher_id'] === str($teacherId))) {
+    if (USER_ROLES[$me['role']] < USER_ROLES['dept']) throw new Exception('ไม่มีสิทธิ์ทำรายการนี้');
+    assert_ot_teacher($me, $teacherId);
+  }
   $payload = (array)$payload;
   return with_lock(function () use ($me, $roundId, $teacherId, $payload, $lock) {
     $data = ot_teacher_data($me, $roundId, $teacherId);
@@ -275,8 +279,8 @@ function api_otSaveSub($token = '', $rec = []) {
     $days = num(readSettings()['ot_makeup_report_days'] ?? 7) ?: 7;
     $due = '';
     if ($type === 'makeup') {
+      // สอนชดเชยทำได้ทั้งก่อนหรือหลังวันที่ขาดสอน (ไปราชการ)
       $due = ot_ymd(ot_parse($date)->modify('+' . $days . ' day'));
-      if ($date < $od) throw new Exception('วันสอนชดเชยต้องอยู่หลังวันที่ขาดสอน');
     }
     $rows = readTable('OtSubs');
     $i = js_true($recId) ? find_row($rows, $recId) : null;

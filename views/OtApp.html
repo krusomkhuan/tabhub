@@ -274,8 +274,11 @@ function claimPrintHtml(d, sch, evaluated) {
 function renderClaim() {
   var d = OT.data, box = $('#oMain'), sch = schemeObj();
   var locked = d.claim && d.claim.status !== 'draft';
-  var canEdit = !locked && can('dept');
   var t = d.teacher;
+  // ครูเลือกชั่วโมง บันทึก และยืนยัน/ล็อกใบเบิกของตัวเองได้ วิชาการแผนกรวบรวมข้อมูล (ข้อมูลลา/ไปราชการยังเป็นของแผนก)
+  var own = S.me.role === 'teacher' && String(S.me.teacher_id) === String(t.id);
+  var canEdit = !locked && (can('dept') || own);
+  var canAbs = !locked && can('dept');
   var comp = d.schemes.map(function (s) {
     var amt = 0; d.weeks.forEach(function (w) { var r = Ot.evalWeek(w.items, Ot.autoSelect(w.items, s, d.cap), {}, s, d.cap, { subQuota: w.subQuota, perHead: d.perHead, courses: IDX.Courses, refAmount: d.refAmount }); amt += r.errors.length ? 0 : r.amount; });
     return { s: s, amt: amt };
@@ -304,7 +307,7 @@ function renderClaim() {
     (canEdit ? '<button class="btn sm" id="oAuto">เลือกอัตโนมัติทุกสัปดาห์</button><button class="btn sm" id="oSave">บันทึก</button><button class="btn pri sm" id="oLock">ยืนยันและล็อกการเบิก</button>' : '') +
     '<button class="btn sm" id="oForm" title="ดูแบบสรุปและใบเบิกรายสัปดาห์ แก้ข้อความก่อนพิมพ์ หรือส่งออก Excel">📄 แบบฟอร์มใบเบิก</button><button class="btn sm" onclick="window.print()">🖨 พิมพ์</button></div>' +
     '<div class="small muted" style="margin-top:6px">คลิกชั่วโมงเพื่อสลับ: ไม่ใช้ → <span class="tag ok">ภาระ</span> → <span class="tag">เบิก</span> · สีเทา = ห้ามเบิก · ขีดฆ่า = ลา/ไปราชการ/หยุด (ภาระไม่ลดลง) · ⚠ = สอนชดเชยรอรายงาน · ชดเชย ✓ = รายงานผลแล้ว นับชั่วโมงที่คาบเดิม</div></div>' +
-    absenceCard(d, canEdit) + weeksHtml + '</div>' +
+    absenceCard(d, canAbs) + weeksHtml + '</div>' +
     // แถบของมุมมองแบบฟอร์ม (แสดงเมื่อกด แบบฟอร์มใบเบิก): แก้ข้อความบนแบบฟอร์มได้ก่อนพิมพ์/ส่งออก ข้อความที่แก้ไม่บันทึกลงระบบ
     '<div class="card no-print ot-form-bar"><div class="row"><b class="grow">แบบฟอร์มใบเบิก · ' + esc(t.name) + '</b>' +
     '<button class="btn sm" id="oFormBack">← กลับไปเลือกชั่วโมง</button><button class="btn sm" id="oFormEdit">✏️ แก้ไขข้อความ</button><button class="btn sm" id="oFormX">⬇️ Excel</button><button class="btn pri sm" onclick="window.print()">🖨 พิมพ์ / PDF</button></div>' +
@@ -315,7 +318,7 @@ function renderClaim() {
   if ($('#oS')) $('#oS').onchange = function () { OT.scheme = this.value; renderClaim(); };
   if ($('#oAuto')) $('#oAuto').onclick = function () { d.weeks.forEach(function (w) { OT.sel[w.index] = Ot.autoSelect(w.items, schemeObj(), d.cap); }); renderClaim(); };
   if ($('#oSave')) $('#oSave').onclick = function () { saveClaim(false); };
-  if ($('#oLock')) $('#oLock').onclick = function () { if (confirm('ยืนยันและล็อกใบเบิก? หลังล็อกจะแก้ไขไม่ได้ (ผู้ดูแลปลดล็อกได้)')) saveClaim(true); };
+  if ($('#oLock')) $('#oLock').onclick = function () { if (confirm('ยืนยันและล็อกใบเบิก? หลังล็อกจะแก้ไขไม่ได้ และวิชาการแผนกจะนำไปรวมในใบสรุปเสนอเบิก (ผู้ดูแลปลดล็อกได้)')) saveClaim(true); };
   if ($('#oUnlock')) $('#oUnlock').onclick = function () { api('otUnlockClaim', S.token, OT.round, OT.teacher).then(loadClaim); };
   if (canEdit) bindClaim();
   bindAbsence();
