@@ -41,6 +41,8 @@ const SCHEMA = [
                      'date', 'start', 'length', 'report_due', 'report_done', 'report_link', 'status', 'note', 'created_by', 'created_at'],
   'OtClaims'     => ['id', 'round_id', 'teacher_id', 'scheme_id', 'weeks', 'status', 'hours', 'amount', 'summary', 'updated_by', 'updated_at', 'locked_by', 'locked_at'],
   'OtSubmissions'=> ['id', 'round_id', 'department_id', 'status', 'note', 'snapshot', 'created_by', 'created_at'],
+  // การยืนยันส่งงบหน้าแผนกวิชารายภาคเรียน (status = confirmed | cancelled) ใช้ในรายงานติดตามการส่งงาน
+  'OtCovers'     => ['id', 'semester_id', 'department_id', 'status', 'note', 'created_by', 'created_at'],
   // ---- รายงานการสอนออนไลน์ ----
   'TeachReports' => ['id', 'semester_id', 'teacher_id', 'session_id', 'group_id', 'course_id', 'date', 'start', 'length', 'kind', 'topic', 'activity',
                      'students_present', 'students_absent', 'problems', 'attachment_link', 'status', 'created_at', 'submitted_at', 'reviewed_by', 'reviewed_at', 'review_note',
@@ -75,7 +77,7 @@ const DEFAULT_SETTINGS = [
   'days' => '0,1,2,3,4', // 0=จันทร์ ... 6=อาทิตย์
   'signer_curriculum' => 'นายปฏิภาณ พานทอง', 'signer_deputy' => '', 'signer_director' => '', 'default_semester_id' => '',
   'signer_finance' => '', 'signer_admin_deputy' => '', 'signer_dvt' => '', 'ot_max_cap' => '12',
-  'ot_contract_caps' => '0-3:6,4-6:7,7-9:8,10-99:8', 'ot_makeup_report_days' => '7', 'public_enabled' => 'true',
+  'ot_contract_caps' => '0-3:6,4-6:7,7-9:8,10-99:8', 'ot_makeup_report_days' => '7', 'public_enabled' => 'true', 'teach_report_enabled' => 'true',
   'color_default' => '#cfe2f3', 'color_workplace' => '#fb8ca6',
 ];
 

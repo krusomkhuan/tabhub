@@ -58,9 +58,12 @@ function menuOk(id) {
   // เมนูดูอย่างเดียวซ่อนเมื่อผู้ใช้มีเมนูเต็มของหน้าเดียวกันอยู่แล้ว
   var n = typeof NAV !== 'undefined' && NAV.filter(function (x) { return x.id === id; })[0];
   if (n && n.hideIf && m.indexOf(n.hideIf) >= 0) return false;
+  // แอดมินปิดรายงานการสอนออนไลน์: ซ่อนเมนูจากครูและแผนก แอดมิน/งานหลักสูตรยังเห็น (เซิร์ฟเวอร์กันการบันทึกซ้ำ)
+  if (id === 'teach-report' && !teachReportOpen() && !academicRole(S.me.base_role || S.me.role)) return false;
   return m.indexOf(id) >= 0;
 }
 
+function teachReportOpen() { return !S.settings || S.settings.teach_report_enabled !== 'false'; }
 function buildIndex() {
   IDX = {};
   Object.keys(S.D).forEach(function (k) { IDX[k] = {}; (S.D[k] || []).forEach(function (r) { IDX[k][r.id] = r; }); });
@@ -2469,6 +2472,7 @@ VIEWS.settings = function (el) {
     '</div><div class="grow">' + f('period_minutes', 'นาทีต่อคาบ', 'number') + '</div><div class="grow">' + f('lunch_period', 'ช่องเวลาที่เป็นพักเที่ยง นับจากช่องแรก ไม่นับเป็นเลขคาบ (คั่นด้วย , ได้)') + '</div></div>' +
     '<label class="f">วันที่ใช้จัดตาราง</label><div class="row">' + S.days.map(function (d, i) { return '<label class="row small" style="gap:4px"><input type="checkbox" data-day="' + i + '"' + (days.indexOf(String(i)) >= 0 ? ' checked' : '') + ' style="width:auto">' + d + '</label>'; }).join('') + '</div>' +
     '<label class="row small" style="margin-top:12px"><input type="checkbox" id="pubOn" style="width:auto"' + (s.public_enabled !== 'false' ? ' checked' : '') + '> เปิดหน้าเผยแพร่สาธารณะ (ครู/นักเรียนดูตารางได้โดยไม่ต้องเข้าระบบ)</label>' +
+    '<label class="row small" style="margin-top:6px"><input type="checkbox" id="trOn" style="width:auto"' + (s.teach_report_enabled !== 'false' ? ' checked' : '') + '> เปิดรายงานการสอนออนไลน์ (ปิดแล้วครูและแผนกไม่เห็นเมนู และบันทึก/ส่ง/ลบรายงานไม่ได้)</label>' +
     '<h3 style="margin-top:20px">ค่าสอนเกินภาระงาน</h3><div class="row"><div class="grow">' + f('ot_max_cap', 'เพดานสูงสุดของวิทยาลัย (ชม./สัปดาห์)', 'number') + '</div><div class="grow">' +
     f('ot_makeup_report_days', 'สอนชดเชย: ส่งรายงานภายใน (วัน)', 'number') + '</div></div>' +
     f('ot_contract_caps', 'เพดานครูอัตราจ้างตามอายุงาน (รูปแบบ ปี-ปี:ชม. คั่นด้วย ,) ระเบียบ: 0-3:6,4-6:7,7-9:8') +
@@ -2488,6 +2492,7 @@ VIEWS.settings = function (el) {
     $$('[data-s]', el).forEach(function (i) { o[i.dataset.s] = i.value; });
     o.days = $$('[data-day]', el).filter(function (c) { return c.checked; }).map(function (c) { return c.dataset.day; }).join(',');
     o.public_enabled = $('#pubOn').checked ? 'true' : 'false';
+    o.teach_report_enabled = $('#trOn').checked ? 'true' : 'false';
     if (o.periods_per_day !== s.periods_per_day || o.period_start !== s.period_start || o.period_minutes !== s.period_minutes) o.period_times = '';
     api('saveSettings', S.token, o).then(function (ns) { S.settings = ns; if (ns.site_url) S.url = ns.site_url; toast('บันทึกแล้ว'); Sig.load(); VIEWS.settings(el); });
   };

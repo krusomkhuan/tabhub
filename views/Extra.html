@@ -6,6 +6,7 @@
     { sec: 'รายงานการสอน' },
     { id: 'teach-report', label: 'รายงานการสอนออนไลน์', role: 'teacher' },
     { id: 'teach-review', label: 'ตรวจรายงานการสอน', role: 'dept' },
+    { id: 'teach-switch', label: 'ปิด-เปิดรายงานการสอนออนไลน์', role: 'admin' },
     { sec: 'นิเทศวิชาในสถานประกอบการ' },
     { id: 'intern', label: 'นิเทศออนไลน์', role: 'teacher' },
     { id: 'intern-summary', label: 'สรุปการนิเทศ', role: 'dept' }
@@ -15,7 +16,10 @@
   NAV_ICON.windows = '⏳';
   var at = NAV.map(function (n) { return n.id; }).indexOf('ot-summary');
   NAV.splice(at + 1, 0, { id: 'ot-cover', label: 'งบหน้าแผนกวิชา', role: 'dept' });
-  $j.extend(NAV_ICON, { 'teach-report': '📝', 'teach-review': '✅', intern: '🏭', 'intern-summary': '📊', 'ot-cover': '📄' });
+  // ติดตามการส่งงาน: ไว้บนสุดของกลุ่มรายงาน ให้ผู้บริหารเห็นก่อน
+  var fi = NAV.map(function (n) { return n.sec; }).indexOf('รายงานการสอน');
+  NAV.splice(fi, 0, { sec: 'ติดตามงาน' }, { id: 'followup', label: 'ติดตามการส่งงาน', role: 'dept' });
+  $j.extend(NAV_ICON, { 'teach-switch': '🔌', 'teach-report': '📝', 'teach-review': '✅', intern: '🏭', 'intern-summary': '📊', 'ot-cover': '📄', followup: '📋' });
 
   var STATUS = { draft: ['ร่าง', 'secondary'], submitted: ['รอตรวจ', 'warning'], approved: ['อนุมัติแล้ว', 'success'], returned: ['ส่งกลับแก้ไข', 'danger'] };
   var KIND = { normal: '', sub: 'สอนแทน', makeup: 'สอนชดเชย' };
@@ -139,7 +143,7 @@
   var rpSigDots = '...................................'; // สั้นกว่า rpDots ให้ "ลงชื่อ ว่าที่ ร้อยโท" กับเส้นจุดอยู่บรรทัดเดียวในช่องครึ่งหน้า
   /* word = คำนำหน้าเส้นจุด ไม่ระบุ = "ลงชื่อ" ส่วนท้ายหนังสือที่ไม่มีคำว่าลงชื่อ (เช่น หนังสือถึงผู้ปกครอง) ส่ง '' */
   var rpSigLine = function (name, roleHtml, slot, suffix, word) {
-    var full = String(name || '').trim(), m = full.match(/^ว่าที่[ 	]*ร้อยโท/), rank = m ? m[0] : '', who = rank ? full.slice(rank.length).trim() : full;
+    var full = String(name || '').trim(), m = full.match(/^ว่าที่[ 	]*(ร้อยตรี|ร้อยโท|ร้อยเอก)/), rank = m ? m[0] : '', who = rank ? full.slice(rank.length).trim() : full;
     var label = [word === undefined ? 'ลงชื่อ' : word, rank ? esc(rank) : ''].filter(Boolean).join(' ');
     return '<span class="cv-sig">' + (label ? '<span class="cv-sig-label">' + label + '&nbsp;</span>' : '') + '<span class="cv-sig-body">' + slot + rpSigDots + (suffix || '') +
       '<span class="cv-sig-under">( ' + esc(who || rpSigDots) + ' )' + (roleHtml ? '<br>' + roleHtml : '') + '</span></span></span>';
@@ -269,6 +273,32 @@
   }
 
   /* save: function (html) คืน Promise เมื่อมีปุ่มบันทึกเก็บเอกสาร */
+  /* บันทึกข้อความที่ต้องจบใน A4 หน้าเดียว (.rp-fit): ย่อตัวอักษรตารางและช่องเสนอความเห็นทีละ 0.5pt จนเนื้อหาสูงไม่เกิน 267 มม.
+     (A4 297 มม. หักขอบบน-ล่าง 15 มม.) ต่ำสุด 11pt ถ้ายังเกินให้ขึ้นหน้าใหม่ที่ขอบแถว ไม่ตัดข้อความ */
+  var A4_BODY_MM = 267, PX_PER_MM = 96 / 25.4;
+  function fitA4Pages(root) {
+    (root || document).querySelectorAll('.rp-page.rp-fit').forEach(function (pg) {
+      if (!pg.offsetParent) return;
+      var cs = getComputedStyle(pg), body = function () { return (pg.getBoundingClientRect().height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / PX_PER_MM; };
+      // ตารางหลายคอลัมน์ (รายงานผลการสอนชดเชย/สอนแทน) เริ่มที่ตัวเล็กกว่าและย่อได้ต่ำกว่า กำหนดผ่าน data-fit-max / data-fit-min
+      var size = Number(pg.dataset.fitMax) || 16, min = Number(pg.dataset.fitMin) || 11;
+      pg.style.setProperty('--fit', size + 'pt');
+      while (body() > A4_BODY_MM && size > min) { size -= 0.5; pg.style.setProperty('--fit', size + 'pt'); }
+    });
+  }
+  /* ภาพแนวตั้งในกลุ่มรูปประกอบ: ทุกภาพสูงเท่ากัน (ตามความสูงสูงสุดของกลุ่ม) สัดส่วน 3:4 ครอบตัดให้เต็มกรอบ ภาพแนวนอนคงเดิม */
+  function evenPortraits(root) {
+    root.querySelectorAll('.rp-pics img').forEach(function (img) {
+      var apply = function () {
+        if (!img.naturalWidth || img.naturalHeight <= img.naturalWidth) return;
+        var h = parseFloat(getComputedStyle(img).maxHeight);
+        if (!h) return;
+        img.classList.add('rp-portrait');
+        img.style.height = h + 'px'; img.style.width = Math.round(h * 3 / 4) + 'px';
+      };
+      if (img.complete) apply(); else img.addEventListener('load', apply);
+    });
+  }
   function docToolbar(el, html, title, view, editable, save) {
     el.innerHTML = '<div class="row no-print" style="margin-bottom:12px"><button class="btn" id="rdBack">‹ กลับ</button>' + (editable ? '<button class="btn" id="rdEdit">✏️ แก้ไขเอกสาร</button><button class="btn" id="rdReset">คืนค่าต้นฉบับ</button>' : '') + (save ? '<button class="btn ok" id="rdSave">💾 บันทึกเอกสาร</button>' : '') + '<button class="btn pri" id="rdShare">📤 แชร์ PDF</button><button class="btn" onclick="window.print()">🖨 พิมพ์</button>' +
       '<button class="btn" id="rdDocx" title="ดาวน์โหลดเป็นไฟล์ Word ไปแก้ไขในเครื่อง">⬇️ Word</button><button class="btn" id="rdXlsx" title="ดาวน์โหลดเป็นไฟล์ Excel ไปแก้ไขในเครื่อง">⬇️ Excel</button>' +
@@ -278,6 +308,18 @@
       (editable ? '<p class="small muted no-print">กดแก้ไขเอกสาร แล้วคลิกข้อความที่ต้องการแก้ รวมถึงข้อมูลในตารางและหนังสือผู้ปกครอง ใช้เครื่องมือเพิ่ม–ลบแถวหรือตารางด้านล่างได้ พิมพ์รหัสหรือชื่อวิชา/กลุ่มในช่องตารางเพื่อเลือกจากข้อมูลในระบบ ' +
         (save ? 'กด <b>บันทึกเอกสาร</b> เพื่อเก็บฉบับที่แก้ไว้ แล้วเปิดกลับมาพิมพ์หรือแก้ได้จากปุ่มเดิมที่ใช้สร้างเอกสารนี้' : 'การแก้ไขใช้สำหรับพิมพ์และแชร์ PDF ครั้งนี้ เมื่อออกจากหน้านี้จะไม่เก็บข้อความที่แก้ไข') + ' การแก้เอกสารไม่เปลี่ยนข้อมูลตารางสอน</p>' : '') + '<div class="rp-doc">' + html + '</div>';
     var dirty = false, saveNow = function () { return Promise.reject(new Error('readonly')); };
+    // ฉบับที่บันทึกไว้ก่อนมีการย่อให้พอดีหน้า: บันทึกขออนุญาตสอนชดเชยต้องจบใน A4 หน้าเดียวเช่นกัน
+    el.querySelectorAll('.rp-doc > .rp-memo:not(.rp-fit)').forEach(function (pg) {
+      var top = pg.textContent.slice(0, 400);
+      if (/ขออนุญาตจัดการเรียนการสอนชดเชย|ขออนุญาตให้ครูสอน/.test(top)) pg.classList.add('rp-fit');
+      if (/รายงานผลการสอน(ชดเชย|แทน)/.test(top)) { pg.classList.add('rp-fit', 'sr-memo'); pg.dataset.fitMax = '14'; pg.dataset.fitMin = '9'; }
+    });
+    var fitTimer = 0, refit = function () { clearTimeout(fitTimer); fitTimer = setTimeout(function () { fitA4Pages(el); }, 150); };
+    evenPortraits(el);
+    fitA4Pages(el);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { fitA4Pages(el); });
+    el.querySelector('.rp-doc').addEventListener('input', refit);
+    el.querySelectorAll('.rp-fit img').forEach(function (img) { if (!img.complete) img.addEventListener('load', refit); });
     document.getElementById('rdBack').onclick = function () {
       if (save && dirty && !confirm('ยังไม่ได้บันทึกเอกสารที่แก้ไข ออกจากหน้านี้หรือไม่?')) return;
       go(view);
@@ -720,7 +762,7 @@
     var intro = f.kind === 'sub'
       ? 'ตามที่' + who + ' ได้รับมอบหมายให้ปฏิบัติการสอนแทน ' + text(original.name) + ' ซึ่งไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + text(f.reason) + ' ' + esc(thNum(period)) + ' นั้น'
       : 'ตามที่' + who + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + text(f.reason) + ' ' + esc(thNum(period)) + ' และได้รับอนุญาตให้จัดการเรียนการสอนชดเชย นั้น';
-    var html = '<div class="page rp-page rp-memo sr-memo" data-pdf-width="760">' + rpMemoHead('รายงานผลการ' + kind, f.no, f.date, dept ? 'แผนกวิชา' + dept : '') + '<p class="rp-para">' + intro + '</p><p class="rp-para">บัดนี้ ข้าพเจ้าได้ดำเนินการ' + kind + 'และดูแลผู้เรียนเสร็จสิ้นเรียบร้อยแล้ว เพื่อให้การจัดการเรียนการสอนเป็นไปตามหลักสูตรและผู้เรียนได้รับความรู้ครบตามจำนวนชั่วโมงที่กำหนด จึงขอรายงานผลการ' + kind + ' ตามวัน เวลา และรายวิชา ดังนี้</p>' +
+    var html = '<div class="page rp-page rp-memo sr-memo rp-fit" data-fit-max="14" data-fit-min="9" data-pdf-width="760">' + rpMemoHead('รายงานผลการ' + kind, f.no, f.date, dept ? 'แผนกวิชา' + dept : '') + '<p class="rp-para">' + intro + '</p><p class="rp-para">บัดนี้ ข้าพเจ้าได้ดำเนินการ' + kind + 'และดูแลผู้เรียนเสร็จสิ้นเรียบร้อยแล้ว เพื่อให้การจัดการเรียนการสอนเป็นไปตามหลักสูตรและผู้เรียนได้รับความรู้ครบตามจำนวนชั่วโมงที่กำหนด จึงขอรายงานผลการ' + kind + ' ตามวัน เวลา และรายวิชา ดังนี้</p>' +
       '<table class="rp-table sr-table"><thead><tr><th rowspan="2">ว/ด/ป</th><th rowspan="2">ชื่อรายวิชา</th><th rowspan="2">รหัสวิชา</th><th rowspan="2">ชั้น</th><th rowspan="2">ห้อง</th><th rowspan="2">คาบสอน/เวลา<br>ทำการสอน</th><th colspan="2">จำนวน(คาบ)</th><th rowspan="2">ผู้รับ<br>มอบหมาย</th></tr><tr><th>ปกติ</th><th>พิเศษ</th></tr></thead><tbody>' +
       rows.map(function (r) {
         var c = courseOf(r.course_id), parts = splitClass(groupCode(r.group_id)), session = S.sessions.filter(function (x) { return String(x.id) === String(r.session_id); })[0] || {}, plan = (IDX.Plans || {})[session.plan_id] || {};
@@ -768,7 +810,7 @@
     var groupsText = rows.map(function (r) { return groupCode(r.group_id); }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).join(', ');
     var absent = rows.map(function (r) { return r.original_date; }).sort(), absentWhen = absent[0] === absent[absent.length - 1] ? 'ในวันที่ ' + thLongDate(absent[0]) : 'ระหว่างวันที่ ' + thLongDate(absent[0]) + ' ถึงวันที่ ' + thLongDate(absent[absent.length - 1]);
     // เรียงตามแบบบันทึกข้อความราชการ: เหตุที่มีหนังสือ (ด้วย...) จุดประสงค์ (จึง...) แล้วจึงรายละเอียด
-    var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('ขออนุญาตจัดการเรียนการสอนชดเชย', f.no, f.date, dept ? 'แผนกวิชา' + dept : '') +
+    var memo = '<div class="page rp-page rp-memo rp-fit" data-pdf-width="760">' + rpMemoHead('ขออนุญาตจัดการเรียนการสอนชดเชย', f.no, f.date, dept ? 'แผนกวิชา' + dept : '') +
       '<p class="rp-para">ด้วยข้าพเจ้า ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + ' ' + esc(thNum(absentWhen)) + '</p>' +
       '<p class="rp-para">เพื่อให้การจัดการเรียนการสอนเป็นไปตามหลักสูตร และผู้เรียนได้รับความรู้ครบตามจำนวนชั่วโมงที่กำหนด ข้าพเจ้าจึงขออนุญาตจัดการเรียนการสอนชดเชย โดยมีรายละเอียด ดังนี้</p>' +
       '<table class="rp-table"><thead><tr><th colspan="4">รายวิชาที่ไม่สามารถทำการสอนปกติได้</th><th colspan="3">รายละเอียดการสอนชดเชย</th></tr><tr><th>วัน/เดือน/ปี</th><th>เวลา</th><th>รหัส/วิชา</th><th>แผนก/ชั้นปี</th><th>วัน/เดือน/ปี</th><th>เวลา</th><th>หมายเหตุ</th></tr></thead><tbody>' +
@@ -809,7 +851,7 @@
     var el = document.getElementById('content'), view = S.view, first = rows[0], t = IDX.Teachers[first.original_teacher_id] || {}, by = IDX.Teachers[first.teacher_id] || {}, dept = deptName(t.department_id);
     var sessionOf = function (id) { return S.sessions.filter(function (s) { return String(s.id) === String(id); })[0] || {}; };
     var days = rows.map(function (r) { return r.original_date || r.date; }).sort(), when = days[0] === days[days.length - 1] ? 'ในวันที่ ' + thLongDate(days[0]) : 'ระหว่างวันที่ ' + thLongDate(days[0]) + ' ถึงวันที่ ' + thLongDate(days[days.length - 1]);
-    var memo = '<div class="page rp-page rp-memo" data-pdf-width="760">' + rpMemoHead('ขออนุญาตให้ครู' + f.kind, f.no, f.date, dept ? 'แผนกวิชา' + dept : '') +
+    var memo = '<div class="page rp-page rp-memo rp-fit" data-pdf-width="760">' + rpMemoHead('ขออนุญาตให้ครู' + f.kind, f.no, f.date, dept ? 'แผนกวิชา' + dept : '') +
       '<p class="rp-para">ด้วย ' + esc(t.name) + ' ตำแหน่ง ' + esc(t.position || 'ครู') + ' แผนกวิชา' + esc(dept) + ' ไม่สามารถปฏิบัติการสอนตามตารางสอนปกติได้ เนื่องจาก' + esc(thNum(f.reason)) + ' ' + esc(thNum(when)) + '</p>' +
       '<p class="rp-para">เพื่อไม่ให้การจัดการเรียนการสอนเกิดความเสียหาย และผู้เรียนได้รับการดูแลตามตารางเรียน ข้าพเจ้า ' + esc(by.name) + ' ตำแหน่ง ' + esc(by.position || 'ครู') + ' แผนกวิชา' + esc(deptName(by.department_id)) + ' จึงขออนุญาตเป็นผู้' + esc(f.kind) + ' โดยมีรายละเอียด ดังนี้</p>' +
       '<table class="rp-table"><thead><tr><th>วัน/เดือน/ปี</th><th>เวลา</th><th>รหัส/วิชา</th><th>แผนก/ชั้นปี</th><th>จำนวนคาบ</th><th>ผู้' + esc(f.kind) + '</th></tr></thead><tbody>' +
@@ -825,6 +867,26 @@
     docToolbar(el, memo + sheets, title, view, true, docSaver(rows, 'sub_request', '', title));
   }
 
+  /* ---------- ปิด-เปิดรายงานการสอนออนไลน์ (เมนูของแอดมิน) ---------- */
+  function trSwitchHtml() {
+    return teachReportOpen() ? '' : '<div class="alert alert-warning no-print">ผู้ดูแลระบบปิดรายงานการสอนออนไลน์ชั่วคราว ครูและแผนกไม่เห็นเมนูและบันทึก/ส่งรายงานไม่ได้' +
+      (menuOk('teach-switch') ? ' — เปิดอีกครั้งที่เมนู <a href="#teach-switch">ปิด-เปิดรายงานการสอนออนไลน์</a>' : '') + '</div>';
+  }
+  VIEWS['teach-switch'] = function (el) {
+    var on = teachReportOpen();
+    $j(el).html('<div class="card"><h3>รายงานการสอนออนไลน์</h3><div class="d-flex flex-wrap gap-2 align-items-center mb-2"><span>สถานะตอนนี้:</span>' +
+      (on ? '<span class="badge text-bg-success fs-6">เปิดอยู่</span>' : '<span class="badge text-bg-danger fs-6">ปิดอยู่</span>') + '</div>' +
+      '<p class="small muted">' + (on ? 'ครูและแผนกเห็นเมนูรายงานการสอนออนไลน์ และบันทึก/ส่งรายงานได้ตามปกติ'
+        : 'ครูและแผนกไม่เห็นเมนูรายงานการสอนออนไลน์ และบันทึก ส่ง ลบ หรือแนบรูปรายงานไม่ได้ แอดมินและงานหลักสูตรยังทำได้ เมนูตรวจรายงานการสอนยังใช้ได้ตามปกติ') + '</p>' +
+      '<div class="actions"><button class="btn ' + (on ? '' : 'pri') + '" id="trToggle">' + (on ? '⛔ ปิดรายงานการสอนออนไลน์' : '✅ เปิดรายงานการสอนออนไลน์') + '</button></div></div>');
+    $j('#trToggle', el).on('click', function () {
+      if (on && !confirm('ปิดรายงานการสอนออนไลน์? ครูและแผนกจะไม่เห็นเมนูและส่งรายงานไม่ได้จนกว่าจะเปิดอีกครั้ง')) return;
+      api('saveSettings', S.token, { teach_report_enabled: on ? 'false' : 'true' }).then(function (ns) {
+        S.settings = ns; toast(on ? 'ปิดรายงานการสอนออนไลน์แล้ว' : 'เปิดรายงานการสอนออนไลน์แล้ว'); VIEWS['teach-switch'](el);
+      });
+    });
+  };
+
   /* ---------- รายงานการสอนของฉัน ---------- */
   var TR = { date: todayStr(), teacher: '' };
   VIEWS['teach-report'] = function (el) {
@@ -837,7 +899,7 @@
     $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center">' +
       (S.me.role !== 'teacher' ? '<select id="trT" class="form-select form-select-sm w-auto">' + teacherOptions(list, TR.teacher) + '</select>' : '') +
       '<button class="btn sm" id="trPrev">‹ สัปดาห์ก่อน</button><input type="date" id="trD" class="form-control form-control-sm w-auto" value="' + esc(TR.date) + '"><button class="btn sm" id="trNext">สัปดาห์ถัดไป ›</button>' +
-      '<button class="btn sm" id="trNow">สัปดาห์นี้</button><span class="grow"></span><span id="trCount" class="small muted"></span></div></div><div id="trOut"></div>');
+      '<button class="btn sm" id="trNow">สัปดาห์นี้</button><span class="grow"></span><span id="trCount" class="small muted"></span></div></div>' + trSwitchHtml() + '<div id="trOut"></div>');
     var shift = function (n) { var d = new Date(TR.date + 'T00:00:00'); d.setDate(d.getDate() + n); TR.date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); $j('#trD').val(TR.date); load(); };
     function load() {
       if (!TR.teacher) { $j('#trOut').html('<div class="card muted">ยังไม่มีครูในแผนก</div>'); return; }
@@ -1021,7 +1083,7 @@
     var text = function (v) { return v ? esc(thNum(v)).replace(/\n/g, '<br>') : blank; };
     // ยศ (เช่น ว่าที่ ร้อยโท) อยู่ต่อคำว่า "ลงชื่อ" ในวงเล็บเหลือเฉพาะชื่อ-สกุล และชื่อ/ตำแหน่งอยู่กึ่งกลางใต้เส้นจุด (แบบเดียวกับงบหน้า)
     var sign = function (name, role) {
-      var full = String(name || '').trim(), m = full.match(/^ว่าที่[ \t]*ร้อยโท/), rank = m ? m[0] : '', who = rank ? full.slice(rank.length).trim() : full, dots = '....................................';
+      var full = String(name || '').trim(), m = full.match(/^ว่าที่[ \t]*(ร้อยตรี|ร้อยโท|ร้อยเอก)/), rank = m ? m[0] : '', who = rank ? full.slice(rank.length).trim() : full, dots = '....................................';
       return '<div class="vr-sign"><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ' + (rank ? ' ' + esc(rank) : '') + '&nbsp;</span><span class="cv-sig-body">' + (window.Sig ? Sig.slot(name) : '') + dots +
         '<span class="cv-sig-under">(' + esc(who || dots) + ')' + (role ? '<br>' + role : '') + '</span></span></span></div>';
     };
@@ -1338,8 +1400,30 @@
       })).then(function (list) {
         if (list[0].noDates) { $j('#cvOut').removeClass('muted').html('<div class="card">ยังไม่ได้ตั้งวันเปิดภาคเรียนของภาคเรียนนี้ — งบหน้านับสัปดาห์จากวันเปิดภาคเรียน กำหนดได้ที่เมนู <a href="#t-Semesters">ปีการศึกษา / ภาคเรียน</a></div>'); return; }
         // คำเตือนที่เหมือนกันทุกระดับ (เช่น ยังไม่ล็อกใบเบิก) แสดงครั้งเดียวที่หน้าแรก
-        $j('#cvOut').removeClass('muted').html(list.map(function (r, i) { return coverHtml(r, i > 0); }).join(''));
+        $j('#cvOut').removeClass('muted').html('<div id="cvConfirm" class="no-print"></div>' + list.map(function (r, i) { return coverHtml(r, i > 0); }).join(''));
+        if (!sim) coverConfirmBar(list[0].notLocked || []);
       });
+      // ยืนยันส่งงบหน้า (ข้อมูลจริง): ใช้ในรายงานติดตามการส่งงานของรองฯ ฝ่ายวิชาการ
+      function coverConfirmBar(notLocked) {
+        var dep = CV.dept, box = $j('#cvConfirm');
+        if (!dep || dep === '__all') return;
+        var canEdit = (S.me.base_role || S.me.role) !== 'executive';
+        api('otCoverStatus', S.token, S.sem, dep).then(function (st) {
+          if (dep !== CV.dept) return;
+          box.html(st.confirmed
+            ? '<div class="alert alert-success py-2 small d-flex flex-wrap gap-2 align-items-center">✅ แผนกวิชา' + esc(deptName(dep)) + ' ยืนยันส่งงบหน้าภาคเรียน ' + esc(semLabel(S.sem)) + ' แล้ว โดย ' + esc(st.by) + ' เมื่อ ' + esc(thDate(st.at) + ' ' + String(st.at).slice(11, 16)) + (st.note ? ' · ' + esc(st.note) : '') + '<span class="grow"></span>' + (canEdit ? '<button class="btn sm" id="cvUnconfirm" type="button">ยกเลิกการยืนยัน</button>' : '') + '</div>'
+            : '<div class="alert alert-warning py-2 small d-flex flex-wrap gap-2 align-items-center">ยังไม่ได้ยืนยันส่งงบหน้าของภาคเรียน ' + esc(semLabel(S.sem)) + ' — ตรวจงบหน้าให้ถูกต้องแล้วกดยืนยัน<span class="grow"></span>' + (canEdit ? '<button class="btn sm ok" id="cvDoConfirm" type="button">✅ ยืนยันส่งงบหน้า</button>' : '') + '</div>');
+          $j('#cvDoConfirm').on('click', function () {
+            if (notLocked.length && !confirm('ยังมีครูที่ไม่ล็อกใบเบิก ' + notLocked.length + ' คน (' + notLocked.join(', ') + ')\nงบหน้าจะไม่รวมยอดของครูเหล่านี้ ยืนยันส่งงบหน้าหรือไม่?')) return;
+            var note = prompt('หมายเหตุ (ถ้ามี เช่น เลขที่หนังสือ)', '');
+            if (note === null) return;
+            api('otCoverConfirm', S.token, S.sem, dep, note, false).then(function () { toast('ยืนยันส่งงบหน้าแล้ว'); coverConfirmBar(notLocked); });
+          });
+          $j('#cvUnconfirm').on('click', function () {
+            if (confirm('ยกเลิกการยืนยันส่งงบหน้า เพื่อแก้ไขแล้วส่งใหม่?')) api('otCoverConfirm', S.token, S.sem, dep, '', true).then(function () { toast('ยกเลิกการยืนยันแล้ว'); coverConfirmBar(notLocked); });
+          });
+        });
+      }
       function coverHtml(r, repeat) {
         var s = S.settings, sem = r.semester, lv = CV_LEVELS[r.level];
         var head = all ? null : Grid.deptHead(S.D.Teachers, CV.dept);
@@ -1495,5 +1579,129 @@
     $j('#wqAdd').on('click', function () { api('windowCreateMissing', S.token, WQ.sem).then(function (n) { toast(n ? 'สร้างคิวแล้ว ' + n + ' แผนก' : 'ทุกแผนกมีคิวแล้ว'); reload(); }); });
     load();
   };
+
+  /* ---------- ติดตามการส่งงาน (รองฯ ฝ่ายวิชาการ / งานพัฒนาหลักสูตรฯ) ---------- */
+  var FU = { round: '', dept: '', tab: 'overview', from: '', to: '', data: null, sem: '' };
+  var FU_TABS = [
+    ['overview', 'ภาพรวมรายแผนก'], ['claims', 'ยังไม่ทำเบิก'], ['subs', 'สอนแทน/สอนชดเชย'], ['visits', 'ยังไม่นิเทศ'],
+    ['covers', 'ยังไม่ส่งงบหน้า'], ['sigs', 'ยังไม่มีลายเซ็น']
+  ];
+  VIEWS.followup = function (el) {
+    if (FU.sem !== S.sem) { FU = { round: '', dept: '', tab: FU.tab, from: '', to: '', data: null, sem: S.sem }; }
+    $j(el).html('<div class="muted">กำลังโหลด…</div>');
+    api('followupReport', S.token, S.sem, FU.round).then(function (d) {
+      FU.data = d; FU.round = d.round_id;
+      if (d.my_dept) FU.dept = d.my_dept; // วิชาการแผนก/หัวหน้าแผนก: เฉพาะแผนกตัวเอง
+      fuDraw(el);
+    });
+  };
+  function fuDraw(el) {
+    var d = FU.data, dept = FU.dept;
+    var tName = function (id) { return nm('Teachers', id) || id; };
+    var tDept = function (id) { return String((IDX.Teachers[id] || {}).department_id || ''); };
+    var inDept = function (dep) { return !dept || String(dep) === String(dept); };
+    var course = function (id) { var c = courseOf(id); return esc(c.code + ' ' + c.name); };
+    var groups = function (ids) { return esc((ids || []).map(groupCode).join(', ')); };
+    var round = d.rounds.filter(function (r) { return r.id === d.round_id; })[0];
+    var roundText = round ? round.name + ' (' + thDate(round.start_date) + ' – ' + thDate(round.end_date) + ')' : 'ยังไม่มีรอบการเบิก';
+    var deptOf = function (ids, groupIds) { var t = (ids || []).map(tDept).filter(Boolean)[0]; return t || String(((IDX.Groups || {})[(groupIds || [])[0]] || {}).department_id || ''); };
+
+    // ข้อมูลแต่ละเรื่อง กรองตามแผนกที่เลือก
+    var L = {
+      claims: d.claims.filter(function (r) { return inDept(tDept(r.teacher_id)); }),
+      uncovered: d.uncovered.filter(function (r) { return inDept(tDept(r.teacher_id)); }),
+      reports: d.reports.filter(function (r) { return inDept(tDept(r.teacher_id)); }),
+      visits: [], covers: d.covers.filter(function (r) { return !r.confirmed && inDept(r.department_id); }),
+      sigs: d.signatures.teachers.filter(function (r) { return inDept(tDept(r.teacher_id)); })
+    };
+    // วิชาเรียนร่วมที่ครูหลายคนสอน แยกแถวตามครู เพื่อให้แต่ละคนเห็นรายการของตัวเอง
+    d.visits.rows.forEach(function (u) {
+      (u.teacher_ids.length ? u.teacher_ids : ['']).forEach(function (t) {
+        var dep = t ? tDept(t) : deptOf([], u.group_ids);
+        if (inDept(dep)) L.visits.push({ teacher_id: t, dep: dep, u: u });
+      });
+    });
+    var counts = { claims: L.claims.length, subs: L.uncovered.length + L.reports.length, visits: L.visits.length, covers: L.covers.length, sigs: L.sigs.length + (dept ? 0 : d.signatures.signers.length) };
+
+    var deptOpts = '<option value="">ทุกแผนกวิชา</option>' + sortBy(S.D.Departments, function (x) { return x.name; }).map(function (x) { return '<option value="' + esc(x.id) + '"' + (String(x.id) === String(dept) ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('');
+    var roundOpts = d.rounds.length ? d.rounds.map(function (r) { return '<option value="' + esc(r.id) + '"' + (r.id === d.round_id ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') : '<option value="">ยังไม่มีรอบการเบิก</option>';
+    var tabs = FU_TABS.map(function (t) {
+      var n = counts[t[0]];
+      return '<li class="nav-item"><button type="button" class="nav-link py-1 px-2' + (FU.tab === t[0] ? ' active' : '') + '" data-fu="' + t[0] + '">' + esc(t[1]) + (n !== undefined ? ' <span class="badge ' + (n ? 'text-bg-danger' : 'text-bg-success') + '">' + n + '</span>' : '') + '</button></li>';
+    }).join('');
+    var table = function (head, rows, empty) {
+      return '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0"><thead><tr>' + head.map(function (h) { return '<th' + (h.charAt(0) === '#' ? ' class="text-end"' : '') + '>' + esc(h.replace(/^#/, '')) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        (rows.length ? rows.join('') : '<tr><td colspan="' + head.length + '" class="text-success">' + esc(empty) + '</td></tr>') + '</tbody></table></div>';
+    };
+    var byName = function (list, f) { return sortBy(list, function (r) { return deptName(tDept(r.teacher_id)) + ' ' + tName(r.teacher_id) + ' ' + (f ? f(r) : ''); }); };
+    var no = function (i) { return '<td class="text-end">' + (i + 1) + '</td>'; };
+    var body = '';
+
+    if (FU.tab === 'overview') {
+      var deps = {};
+      var add = function (dep, k) { dep = String(dep || ''); (deps[dep] = deps[dep] || { claims: 0, subs: 0, visits: 0, covers: 0, sigs: 0 })[k]++; };
+      L.claims.forEach(function (r) { add(tDept(r.teacher_id), 'claims'); });
+      L.uncovered.concat(L.reports).forEach(function (r) { add(tDept(r.teacher_id), 'subs'); });
+      L.visits.forEach(function (r) { add(r.dep, 'visits'); });
+      L.covers.forEach(function (r) { add(r.department_id, 'covers'); });
+      L.sigs.forEach(function (r) { add(tDept(r.teacher_id), 'sigs'); });
+      var keys = ['claims', 'subs', 'visits', 'covers', 'sigs'], total = { claims: 0, subs: 0, visits: 0, covers: 0, sigs: 0 };
+      var cell = function (n) { return '<td class="text-end' + (n ? ' text-danger fw-bold' : ' text-success') + '">' + (n || '✓') + '</td>'; };
+      var list = sortBy(Object.keys(deps), function (k) { return k ? deptName(k) || k : 'ฮ'; });
+      body = '<p class="small muted mb-2">ตัวเลขคือจำนวนรายการที่ยังค้าง (✓ = ไม่มีค้าง) กดแท็บด้านบนเพื่อดูรายชื่อ</p>' +
+        table(['แผนกวิชา', '#ยังไม่ทำเบิก (คน)', '#สอนแทน/ชดเชยค้าง (รายการ)', '#ยังไม่นิเทศ (วิชาออกฝึกงาน)', '#ยังไม่ส่งงบหน้า', '#ยังไม่มีลายเซ็น (คน)'],
+          list.map(function (k) { keys.forEach(function (x) { total[x] += deps[k][x]; }); return '<tr><td>' + esc(k ? deptName(k) || k : 'ไม่ระบุแผนก') + '</td>' + keys.map(function (x) { return cell(deps[k][x]); }).join('') + '</tr>'; })
+            .concat(list.length ? ['<tr class="fw-bold"><td>รวม</td>' + keys.map(function (x) { return cell(total[x]); }).join('') + '</tr>'] : []),
+          'ทุกแผนกส่งงานครบแล้ว') +
+        (!dept && d.signatures.signers.length ? '<p class="small text-danger mt-2 mb-0">ผู้ลงนามในหน้าตั้งค่าที่ยังไม่มีลายเซ็น ' + d.signatures.signers.length + ' คน (ดูแท็บ "ยังไม่มีลายเซ็น")</p>' : '');
+    } else if (FU.tab === 'claims') {
+      body = '<p class="small muted mb-2">ครูที่เปิดสิทธิ์เบิกค่าสอน แต่ยังไม่ยืนยันล็อกใบเบิกใน' + esc(roundText) + '</p>' +
+        table(['#ที่', 'ชื่อ-สกุล', 'แผนกวิชา', 'สถานะ', 'บันทึกล่าสุด'], byName(L.claims).map(function (r, i) {
+          return '<tr>' + no(i) + '<td>' + esc(tName(r.teacher_id)) + '</td><td>' + esc(deptName(tDept(r.teacher_id))) + '</td><td>' + (r.status === 'draft' ? '<span class="badge text-bg-warning">บันทึกแล้ว ยังไม่ยืนยันล็อก</span>' : '<span class="badge text-bg-danger">ยังไม่เริ่มทำเบิก</span>') + '</td><td class="small">' + (r.updated_at ? esc(thDate(r.updated_at) + ' ' + r.updated_at.slice(11, 16)) : '-') + '</td></tr>';
+        }), 'ครูทุกคนยืนยันใบเบิกในรอบนี้แล้ว');
+    } else if (FU.tab === 'subs') {
+      var stateTag = { overdue: '<span class="badge text-bg-danger">เลยกำหนดส่ง</span>', waiting: '<span class="badge text-bg-warning">รอส่งรายงาน</span>', upcoming: '<span class="badge text-bg-secondary">ยังไม่ถึงวันสอนชดเชย</span>' };
+      body = '<h4 class="h6 mt-1">1) ลา/ไปราชการ แต่ยังไม่บันทึกสอนชดเชยหรือสอนแทน</h4><p class="small muted mb-2">คาบสอนตามตารางที่ตรงกับวันลา/ไปราชการที่บันทึกไว้ใน' + esc(roundText) + ' (ไม่นับวันหยุด)</p>' +
+        table(['#ที่', 'ชื่อ-สกุล', 'แผนกวิชา', 'วันที่', 'เหตุ', 'วิชา', 'กลุ่ม', 'คาบ'], byName(L.uncovered, function (r) { return r.date; }).map(function (r, i) {
+          return '<tr>' + no(i) + '<td>' + esc(tName(r.teacher_id)) + '</td><td>' + esc(deptName(tDept(r.teacher_id))) + '</td><td>' + esc(thDate(r.date)) + '</td><td>' + esc(r.type) + '</td><td>' + course(r.course_id) + '</td><td>' + groups(r.group_ids) + '</td><td>' + esc(r.periods.length > 1 ? r.periods[0] + '–' + r.periods[r.periods.length - 1] : String(r.periods[0])) + '</td></tr>';
+        }), 'ไม่มีคาบที่ค้างบันทึกสอนชดเชย/สอนแทน') +
+        '<h4 class="h6 mt-3">2) สอนชดเชยแล้ว แต่ยังไม่ส่งรายงานผลการสอนชดเชย</h4>' +
+        table(['#ที่', 'ชื่อ-สกุล', 'แผนกวิชา', 'วิชา', 'กลุ่ม', 'คาบเดิม', 'วันสอนชดเชย', 'กำหนดส่ง', 'สถานะ'], byName(L.reports, function (r) { return r.date; }).map(function (r, i) {
+          return '<tr>' + no(i) + '<td>' + esc(tName(r.teacher_id)) + '</td><td>' + esc(deptName(tDept(r.teacher_id))) + '</td><td>' + course(r.course_id) + '</td><td>' + groups([r.group_id]) + '</td><td>' + esc(r.original_date ? thDate(r.original_date) : '-') + '</td><td>' + esc(thDate(r.date)) + '</td><td>' + esc(r.due ? thDate(r.due) : '-') + '</td><td>' + (stateTag[r.state] || '') + '</td></tr>';
+        }), 'ส่งรายงานผลการสอนชดเชยครบแล้ว');
+    } else if (FU.tab === 'visits') {
+      body = '<p class="small muted mb-2">วิชาออกฝึกงาน (สอนในสถานประกอบการ) ที่ยังไม่มีบันทึกการนิเทศ (สถานะเสร็จแล้ว) ในภาคเรียน ' + esc(semLabel(S.sem)) + ' · ทั้งหมด ' + d.visits.total + ' วิชาออกฝึกงาน</p>' +
+        table(['#ที่', 'ครูผู้สอน', 'แผนกวิชา', 'วิชาออกฝึกงาน', 'กลุ่ม', '#ชั่วโมง/สัปดาห์'], sortBy(L.visits, function (r) { return deptName(r.dep) + ' ' + (r.teacher_id ? tName(r.teacher_id) : 'ฮ') + ' ' + courseOf(r.u.course_id).code; }).map(function (r, i) {
+          return '<tr>' + no(i) + '<td>' + (r.teacher_id ? esc(tName(r.teacher_id)) : '<span class="text-danger">ยังไม่กำหนดครู</span>') + '</td><td>' + esc(deptName(r.dep)) + '</td><td>' + course(r.u.course_id) + '</td><td>' + groups(r.u.group_ids) + '</td><td class="text-end">' + esc(r.u.hours) + '</td></tr>';
+        }), 'นิเทศครบทุกวิชาออกฝึกงานแล้ว');
+    } else if (FU.tab === 'covers') {
+      var all = d.covers.filter(function (r) { return inDept(r.department_id); });
+      body = '<p class="small muted mb-2">แผนกวิชาที่มีครูเปิดสิทธิ์เบิก ต้องกดปุ่ม "ยืนยันส่งงบหน้า" ในหน้างบหน้าแผนกวิชาของภาคเรียน ' + esc(semLabel(S.sem)) + '</p>' +
+        table(['#ที่', 'แผนกวิชา', 'สถานะ', 'ผู้ยืนยัน', 'วันเวลา', 'หมายเหตุ'], sortBy(all, function (r) { return (r.confirmed ? '1' : '0') + deptName(r.department_id); }).map(function (r, i) {
+          return '<tr>' + no(i) + '<td>' + esc(deptName(r.department_id)) + '</td><td>' + (r.confirmed ? '<span class="badge text-bg-success">ส่งแล้ว</span>' : '<span class="badge text-bg-danger">ยังไม่ส่ง</span>') + '</td><td>' + esc(r.by || '-') + '</td><td class="small">' + (r.at ? esc(thDate(r.at) + ' ' + r.at.slice(11, 16)) : '-') + '</td><td class="small">' + esc(r.note || '') + '</td></tr>';
+        }), 'ไม่มีแผนกที่ต้องส่งงบหน้า');
+    } else if (FU.tab === 'sigs') {
+      body = '<p class="small muted mb-2">ครูที่มีคาบสอนในภาคเรียนนี้แต่ยังไม่อัปโหลดลายเซ็นอิเล็กทรอนิกส์ (เมนูลายเซ็นของฉัน) เอกสารที่พิมพ์จะไม่มีลายเซ็น</p>' +
+        table(['#ที่', 'ชื่อ-สกุล', 'แผนกวิชา', 'หมายเหตุ'], byName(L.sigs).map(function (r, i) {
+          return '<tr>' + no(i) + '<td>' + esc(tName(r.teacher_id)) + '</td><td>' + esc(deptName(tDept(r.teacher_id))) + '</td><td class="small">' + (r.has_account ? '' : '<span class="text-danger">ยังไม่มีบัญชีผู้ใช้ — ผู้ดูแลระบบต้องสร้างบัญชีก่อน</span>') + '</td></tr>';
+        }), 'ครูทุกคนมีลายเซ็นแล้ว') +
+        (!dept ? '<h4 class="h6 mt-3">ผู้ลงนามในหน้าตั้งค่าที่ยังไม่มีลายเซ็น</h4>' + table(['#ที่', 'ชื่อ-สกุล', 'ตำแหน่งที่ลงนาม'], d.signatures.signers.map(function (s, i) {
+          var role = { signer_curriculum: 'หัวหน้างานพัฒนาหลักสูตรฯ', signer_deputy: 'รองผู้อำนวยการฝ่ายวิชาการ', signer_finance: 'หัวหน้างานการเงิน', signer_admin_deputy: 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร', signer_dvt: 'หัวหน้างานทวิภาคี', signer_director: 'ผู้อำนวยการ' }[s.key] || s.key;
+          return '<tr>' + no(i) + '<td>' + esc(s.name) + '</td><td>' + esc(role) + '</td></tr>';
+        }), 'ผู้ลงนามทุกคนมีลายเซ็นแล้ว') : '');
+    }
+
+    var title = (FU_TABS.filter(function (t) { return t[0] === FU.tab; })[0] || [])[1];
+    $j(el).html('<div class="card no-print"><div class="d-flex flex-wrap gap-2 align-items-center"><span class="small muted">ภาคเรียน ' + esc(semLabel(S.sem)) + '</span>' +
+      '<select id="fuR" class="form-select form-select-sm w-auto" title="รอบการเบิก (ใช้กับเรื่องการเบิกและสอนแทน/ชดเชย)">' + roundOpts + '</select>' +
+      (d.my_dept ? '<span class="small fw-bold">แผนกวิชา' + esc(deptName(d.my_dept)) + '</span>' : '<select id="fuD" class="form-select form-select-sm w-auto">' + deptOpts + '</select>') + '<span class="grow"></span>' +
+      '<button class="btn sm" id="fuReload" type="button">↻ โหลดใหม่</button><button class="btn sm pri" onclick="window.print()">🖨 พิมพ์ / PDF</button></div>' +
+      '<ul class="nav nav-pills flex-wrap gap-1 mt-2">' + tabs + '</ul></div>' +
+      '<div class="card"><h3 class="mb-1">รายงานติดตามการส่งงาน: ' + esc(title) + '</h3><p class="small muted mb-2">ภาคเรียน ' + esc(semLabel(S.sem)) + ' · ' + esc(roundText) + ' · ' + esc(dept ? 'แผนกวิชา' + deptName(dept) : 'ทุกแผนกวิชา') + ' · ข้อมูล ณ ' + esc(thDate(d.today)) + '</p>' + body + '</div>');
+    $j(el).find('[data-fu]').on('click', function () { FU.tab = $j(this).data('fu'); fuDraw(el); });
+    $j('#fuD').on('change', function () { FU.dept = this.value; fuDraw(el); });
+    $j('#fuR').on('change', function () { FU.round = this.value; VIEWS.followup(el); });
+    $j('#fuReload').on('click', function () { VIEWS.followup(el); });
+  }
 })(jQuery);
 </script>

@@ -13,6 +13,12 @@ function clean_link($v): string {
 
 function clean_text($v, int $max = 5000): string { return mb_substr(trim(str($v ?? '')), 0, $max); }
 
+/** แอดมินปิดรายงานการสอนออนไลน์ได้ที่ตั้งค่า (teach_report_enabled) ระหว่างปิด ครู/แผนกบันทึก ส่ง ลบ หรือแก้รูปไม่ได้ ยกเว้นแอดมินและงานหลักสูตร */
+function teach_report_open(): bool { return (readSettings()['teach_report_enabled'] ?? 'true') !== 'false'; }
+function assert_teach_report_open(array $me): void {
+  if (!teach_report_open() && !is_academic_manager($me)) throw new Exception('ผู้ดูแลระบบปิดรายงานการสอนออนไลน์ชั่วคราว');
+}
+
 /** ผู้ใช้ทำรายการแทนครูคนนี้ได้ไหม: แอดมินทุกคน, แผนกเฉพาะครูในแผนก, ครูเฉพาะตัวเอง */
 function assert_teacher_scope(array $me, $teacherId): array {
   $t = idx_table('Teachers')[str($teacherId)] ?? null;
@@ -103,6 +109,7 @@ function api_teachReportSlots($token = '', $semesterId = '', $teacherId = '', $a
 /** rec: {semester_id, teacher_id, session_id, date, start, topic, activity, media, evaluation, assignment, attendance:[{group_id,total,present,absent,numbers}], memo_no, memo_date, memo_reason, problems, attachment_link} */
 function api_teachReportSave($token = '', $rec = [], $submit = false) {
   $me = auth_user($token);
+  assert_teach_report_open($me);
   $rec = (array)$rec;
   $t = assert_teacher_scope($me, $rec['teacher_id'] ?? '');
   $tid = (string)$t['id'];
@@ -205,6 +212,7 @@ function api_teachReportReview($token = '', $id = '', $action = '', $note = '') 
 
 function api_teachReportDelete($token = '', $id = '') {
   $me = auth_user($token);
+  assert_teach_report_open($me);
   return with_lock(function () use ($me, $id) {
     $rows = readTable('TeachReports');
     $i = find_row($rows, str($id));
@@ -284,6 +292,7 @@ function report_row(array $me, $id, array &$rows, bool $forEdit): int {
 
 function api_teachReportImageAdd($token = '', $id = '', $base64 = '') {
   $me = auth_user($token);
+  assert_teach_report_open($me);
   $bytes = base64_decode(str($base64), true);
   if ($bytes === false || $bytes === '') throw new Exception('อ่านไฟล์รูปไม่สำเร็จ');
   if (strlen($bytes) > REPORT_MAX_IMAGE_BYTES) throw new Exception('รูปมีขนาดใหญ่เกิน 4 MB');
@@ -320,6 +329,7 @@ function api_teachReportImages($token = '', $id = '') {
 
 function api_teachReportImageDelete($token = '', $id = '', $name = '') {
   $me = auth_user($token);
+  assert_teach_report_open($me);
   return with_lock(function () use ($me, $id, $name) {
     $rows = [];
     $i = report_row($me, $id, $rows, true);
@@ -374,6 +384,8 @@ function supervise_units($semesterId): array {
   foreach (readTable('Plans') as $p) {
     if ((string)$p['semester_id'] !== str($semesterId)) continue;
     $sessions = $byPlan[$p['id']] ?? [];
+    // วิชาโครงงานไม่ใช่วิชาที่ออกไปเรียนในสถานประกอบการ ไม่ต้องนิเทศ แม้ตั้งห้อง/แผนเป็นสถานประกอบการไว้
+    if ((string)($ctx['courses'][$p['course_id']]['course_type'] ?? '') === 'project') continue;
     if (!supervise_is_workplace($p, $sessions, $ctx)) continue;
     $key = js_true($p['joint_key'] ?? '') ? 'J:' . $p['joint_key'] : 'P:' . $p['id'];
     $u = &$units[$key];

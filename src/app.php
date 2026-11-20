@@ -15,6 +15,7 @@ require_once __DIR__ . '/api_extra.php';
 require_once __DIR__ . '/signatures.php';
 require_once __DIR__ . '/doc_files.php';
 require_once __DIR__ . '/backup.php';
+require_once __DIR__ . '/api_followup.php';
 
 // เรียกจากเว็บได้เฉพาะรายการนี้เท่านั้น
 const API_ALLOW = [
@@ -23,10 +24,10 @@ const API_ALLOW = [
   'bootstrap', 'listTable', 'saveRow', 'deleteRow', 'bulkImport', 'saveSettings', 'copyPlans',
   'getSchedule', 'placeSession', 'removeSession', 'toggleLock', 'checkPlacement', 'runAutoSchedule', 'clearSchedule', 'getActivityLog',
   'teachingHours', 'progress', 'exportToSheet',
-  'otTeacherData', 'otSaveClaim', 'otUnlockClaim', 'otSaveSub', 'otSubReport', 'otCancelSub', 'otListSubs', 'subDocList', 'subDocGet', 'subDocSave', 'subDocDelete', 'otAlerts', 'otDeptSummary', 'otSubmit', 'otSuggestSchemes',
+  'otTeacherData', 'otSaveClaim', 'otUnlockClaim', 'otBulkLock', 'otSaveSub', 'otSubReport', 'otCancelSub', 'otListSubs', 'subDocList', 'subDocGet', 'subDocSave', 'subDocDelete', 'otAlerts', 'otDeptSummary', 'otSubmit', 'otSuggestSchemes',
   'importFromTAB', 'listTabSemesters',
   'teachReportImageAdd', 'teachReportImages', 'teachReportImageDelete', 'teachReportSlots', 'teachReportSave', 'teachReportList', 'teachReportReview', 'teachReportDelete', 'teachReportSummary',
-  'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet', 'otCoverSim', 'otCoverApproval',
+  'superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete', 'otCoverSheet', 'otCoverSim', 'otCoverApproval', 'otCoverConfirm', 'otCoverStatus', 'followupReport',
   'windowList', 'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',
   'signatureMap', 'signatureList', 'signatureSave', 'signatureDelete', 'signaturePrimary', 'signaturePlaceSave',
   'userPermList', 'userPermSave',

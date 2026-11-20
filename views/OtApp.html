@@ -44,7 +44,9 @@ VIEWS['ot-claims'] = function (el) {
   el.innerHTML = '<div class="card no-print"><div class="row"><select id="oR" style="width:auto">' + roundOptions() + '</select>' +
     (S.me.role !== 'teacher' ? '<select id="oD" style="width:auto">' + deptOptions(OT.dept) + '</select><select id="oT" style="width:auto;min-width:220px"><option value="">— เลือกครู —</option>' +
       tlist.map(function (t) { return '<option value="' + esc(t.id) + '"' + (String(t.id) === String(OT.teacher) ? ' selected' : '') + '>' + esc(t.name) + (String(t.ot_enabled) === 'true' ? '' : ' (ยังไม่เปิดเบิก)') + '</option>'; }).join('') + '</select>' : '') +
+    (canBulkLock() ? '<span class="grow"></span><button class="btn" id="oBulk" type="button" title="ล็อกหรือปลดล็อกใบเบิกของครูทุกคนหรือบางคนในรอบนี้ โดยไม่ต้องเปิดใบเบิกทีละคน">🔒 ล็อก/ปลดล็อกหลายคน</button>' : '') +
     '</div><div id="oAlerts" class="small" style="margin-top:8px"></div></div><div id="oMain"></div>';
+  if ($('#oBulk')) $('#oBulk').onclick = function () { bulkLockModal(function () { loadClaim(); }); };
   $('#oR').onchange = function () { OT.round = this.value; loadClaim(); };
   if ($('#oD')) $('#oD').onchange = function () { OT.dept = this.value; OT.teacher = ''; VIEWS['ot-claims'](el); };
   if ($('#oT')) $('#oT').onchange = function () { OT.teacher = this.value; loadClaim(); };
@@ -56,6 +58,54 @@ VIEWS['ot-claims'] = function (el) {
   });
   loadClaim();
 };
+
+/** ล็อก/ปลดล็อกหลายคน: งานพัฒนาหลักสูตรฯ และผู้ดูแลระบบ (ผู้บริหารดูอย่างเดียว) */
+function canBulkLock() { return ['curriculum', 'admin'].indexOf(S.me.base_role || S.me.role) >= 0; }
+function bulkLockModal(after) {
+  var BL = { dept: '', status: '', rows: [] };
+  var STATUS = { none: ['ยังไม่บันทึก', 'muted'], draft: ['ร่าง (ยังไม่ล็อก)', 'tag warn'], locked: ['ล็อกแล้ว', 'tag ok'] };
+  var roundName = ((S.D.OtRounds || []).filter(function (r) { return String(r.id) === String(OT.round); })[0] || {}).name || '';
+  var m = modal('<h3>ล็อก/ปลดล็อกใบเบิกหลายคน</h3><p class="small muted">รอบการเบิก ' + esc(roundName) + ' · ล็อก = ใช้ชั่วโมงที่ครูบันทึกไว้ ตรวจกติกาก่อนล็อก (ใบที่ยังไม่บันทึกหรือผิดกติกาจะข้าม) · ปลดล็อก = ครูกลับไปแก้ใบเบิกได้</p>' +
+    '<div class="row" style="gap:8px;margin-bottom:8px"><select id="blD" style="width:auto"><option value="">ทุกแผนกวิชา</option>' + sortBy(S.D.Departments, function (d) { return d.name; }).map(function (d) { return '<option value="' + esc(d.id) + '">' + esc(d.name) + '</option>'; }).join('') + '</select>' +
+    '<select id="blS" style="width:auto"><option value="">ทุกสถานะ</option><option value="draft">ร่าง (ยังไม่ล็อก)</option><option value="locked">ล็อกแล้ว</option><option value="none">ยังไม่บันทึก</option></select><span class="grow"></span><span id="blN" class="small muted"></span></div>' +
+    '<div id="blList" style="max-height:52vh;overflow:auto" class="muted">กำลังโหลด…</div><div id="blRes" class="small" style="margin-top:8px"></div>' +
+    '<div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="blLock" type="button">🔒 ล็อกที่เลือก</button><button class="btn" id="blUnlock" type="button">🔓 ปลดล็อกที่เลือก</button><span class="grow"></span><button class="btn" id="blClose" type="button">ปิด</button></div>', true);
+  function load() {
+    api('otDeptSummary', S.token, OT.round, '__all').then(function (r) { BL.rows = r.rows; draw(); });
+  }
+  function shown() { return BL.rows.filter(function (r) { return (!BL.dept || String(r.department_id) === String(BL.dept)) && (!BL.status || r.status === BL.status); }); }
+  function draw() {
+    var list = sortBy(shown(), function (r) { return (r.department_name || '') + ' ' + r.name; });
+    $('#blList', m).classList.remove('muted');
+    $('#blList', m).innerHTML = '<table class="data small" style="width:100%"><thead><tr><th style="width:32px"><input type="checkbox" id="blAll" title="เลือกทั้งหมดที่แสดง"></th><th>ชื่อ-สกุล</th><th>แผนกวิชา</th><th>สถานะ</th><th style="text-align:right">ชม.</th><th style="text-align:right">บาท</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (r) {
+        var st = STATUS[r.status] || STATUS.draft;
+        return '<tr><td><input type="checkbox" class="blC" value="' + esc(r.teacher_id) + '"></td><td>' + esc(r.name) + '</td><td class="small">' + esc(r.department_name || '') + '</td><td><span class="' + st[1] + '">' + st[0] + '</span></td><td style="text-align:right">' + (r.status === 'none' ? '' : esc(r.hours)) + '</td><td style="text-align:right">' + (r.status === 'none' ? '' : money(r.amount)) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="muted">ไม่มีครูตามเงื่อนไข</td></tr>') + '</tbody></table>';
+    var count = function () { $('#blN', m).textContent = 'เลือก ' + m.querySelectorAll('.blC:checked').length + ' จาก ' + list.length + ' คน'; };
+    $('#blAll', m).onchange = function () { var on = this.checked; m.querySelectorAll('.blC').forEach(function (c) { c.checked = on; }); count(); };
+    m.querySelectorAll('.blC').forEach(function (c) { c.onchange = count; });
+    count();
+  }
+  function run(action) {
+    var ids = Array.prototype.map.call(m.querySelectorAll('.blC:checked'), function (c) { return c.value; });
+    if (!ids.length) return toast('เลือกครูอย่างน้อย 1 คน', 1);
+    if (!confirm((action === 'lock' ? 'ล็อกใบเบิก ' : 'ปลดล็อกใบเบิก ') + ids.length + ' คน ในรอบ ' + roundName + ' ?')) return;
+    $('#blRes', m).innerHTML = 'กำลังดำเนินการ…';
+    api('otBulkLock', S.token, OT.round, ids, action).then(function (res) {
+      var ok = res.filter(function (x) { return x.ok; }), skip = res.filter(function (x) { return !x.ok; });
+      $('#blRes', m).innerHTML = '<div class="tag ok">' + (action === 'lock' ? 'ล็อกแล้ว ' : 'ปลดล็อกแล้ว ') + ok.length + ' คน</div>' +
+        (skip.length ? '<div style="margin-top:6px"><b>ข้าม ' + skip.length + ' คน:</b><ul style="margin:4px 0 0 18px;padding:0">' + skip.map(function (x) { return '<li>' + esc(x.name) + ' — ' + esc(x.msg) + '</li>'; }).join('') + '</ul></div>' : '');
+      load(); if (after) after();
+    });
+  }
+  $('#blD', m).onchange = function () { BL.dept = this.value; draw(); };
+  $('#blS', m).onchange = function () { BL.status = this.value; draw(); };
+  $('#blLock', m).onclick = function () { run('lock'); };
+  $('#blUnlock', m).onclick = function () { run('unlock'); };
+  $('#blClose', m).onclick = closeModal;
+  load();
+}
 
 function loadClaim() {
   var box = $('#oMain'); if (!box) return;
@@ -107,8 +157,8 @@ function weekEval(w) {
 }
 
 function otSignatureName(name) {
-  var text = String(name || '').trim(), match = text.match(/^(ว่าที่[ \t]*ร้อยโท)[ \t]*/);
-  return { prefix: match ? 'ว่าที่ร้อยโท' : '', name: match ? text.slice(match[0].length).trim() : text };
+  var text = String(name || '').trim(), match = text.match(/^ว่าที่[ \t]*(ร้อยตรี|ร้อยโท|ร้อยเอก)[ \t]*/);
+  return { prefix: match ? 'ว่าที่' + match[1] : '', name: match ? text.slice(match[0].length).trim() : text };
 }
 
 /** แบบฟอร์มใบเบิกสำหรับพิมพ์ (A4 แนวตั้ง) ใช้ผลคำนวณชุดเดียวกับหน้าจอเลือกชั่วโมง
@@ -128,8 +178,9 @@ function claimPrintHtml(d, sch, evaluated) {
   // ลงชื่อแบบ "ลงชื่อ" ชิดเส้นจุด ชื่อ/ตำแหน่งกึ่งกลางใต้เส้นจุด (เหมือนงบหน้า)
   var sign = function (name, role, tail) {
     var p = otSignatureName(name);
-    return '<div class="otf-sign"><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ' + (p.prefix ? ' ' + esc(p.prefix) : '') + '&nbsp;</span><span class="cv-sig-body">' + (name && window.Sig ? Sig.slot(name) : '') + line + (tail ? ' ' + tail : '') +
-      '<span class="cv-sig-under">(' + esc(p.name || line) + ')' + (role ? '<br>' + role : '') + '</span></span></span></div>';
+    return '<div class="otf-sign"><span class="cv-sig"><span class="cv-sig-label">ลงชื่อ' + (p.prefix ? ' ' + esc(p.prefix) : '') + '&nbsp;</span><span class="cv-sig-body">' + (name && window.Sig ? Sig.slot(name) : '') + line +
+      '<span class="cv-sig-under">(' + esc(p.name || line) + ')' + (role ? '<br>' + role : '') + '</span></span>' +
+      (tail ? '<span class="cv-sig-label">&nbsp;' + tail + '</span>' : '') + '</span></div>'; // คำต่อท้ายอยู่นอกเส้นจุด ชื่อจึงกึ่งกลางใต้เส้นจุดพอดี
   };
   // ฉบับร่างเหมือนเดิม: ยังไม่ล็อก แก้หลังบันทึก หรือยังผิดกติกา
   var errors = 0; evaluated.forEach(function (x) { errors += x.result.errors.length; });

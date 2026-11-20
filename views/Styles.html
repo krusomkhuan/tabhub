@@ -321,6 +321,16 @@
   .rp-memo .rp-table th, .rp-memo .rp-table td { padding: 2pt 3pt; }
   .rp-memo .rp-opinions td { font-size: 16pt; }
   .rp-memo .rp-opinions tr { break-inside: avoid; }
+  /* ขออนุญาตสอนชดเชย: ให้จบใน A4 หน้าเดียว ระยะห่างกระชับ และ --fit ย่อตัวอักษรตาราง/ช่องความเห็นเมื่อแถวมาก (ดู fitA4Pages) */
+  .rp-memo.rp-fit .rp-table, .rp-memo.rp-fit .rp-table th, .rp-memo.rp-fit .rp-table td, .rp-memo.rp-fit .rp-opinions td, .rp-memo.rp-fit .rp-sign-one { font-size: var(--fit, 16pt); }
+  .rp-memo.rp-fit .rp-table { margin-top: 4pt; }
+  .rp-memo.rp-fit .rp-table th, .rp-memo.rp-fit .rp-table td { padding: 1pt 3pt; line-height: 1.1; }
+  .rp-memo.rp-fit .rp-table tr { break-inside: avoid; }
+  .rp-memo.rp-fit .rp-sign-one { margin: 22pt 0 6pt auto; }
+  .rp-memo.rp-fit .rp-opinions td { padding: 3pt 8pt; line-height: 1.1; }
+  .rp-memo.rp-fit .rp-sig { margin-top: 12pt; }
+  .rp-memo.rp-fit .rp-gap { margin-top: 4pt; }
+  .rp-memo.rp-fit .rp-check { padding: 2pt 0 4pt 18px; }
   .rp-f { display: inline-block; min-width: 40px; padding: 0 8px; border-bottom: 1px dotted #000; text-align: center; }
   .rp-f.grow { flex: 1 1 auto; text-align: left; }
   .rp-to { margin: 12px 0 8px; }
@@ -337,6 +347,13 @@
   .rp-sig .cv-sig-under, .rp-sign-three .cv-sig-under, .rp-sign-four .cv-sig-under { margin: 0; white-space: normal; }
   /* บรรทัด "ลงชื่อ ....." เยื้องซ้ายจากกึ่งกลางช่อง 1em (ขอบซ้ายติดลบ 2em ทำให้บรรทัดที่จัดกึ่งกลางเลื่อนไปครึ่งหนึ่ง) */
   .rp-sig .cv-sig-label, .rp-sign-three .cv-sig-label, .rp-sign-four .cv-sig-label { margin-left: -2em; }
+  /* ผู้ขออนุญาตในบันทึกข้อความ: ช่องเต็มความกว้าง 100 มม. ชื่อ/ตำแหน่ง/ลายเซ็นกึ่งกลางช่อง เดิมช่องหดเท่าบรรทัด "ลงชื่อ ....." จึงตัดชื่อและลายเซ็นทางขวา */
+  .rp-memo .rp-sign-one { width: 100mm; }
+  .rp-memo .rp-sign-one > div { flex: 1 1 auto; min-width: 0; }
+  .rp-memo .rp-sign-one .cv-sig { display: block; text-align: center; }
+  .rp-memo .rp-sign-one .cv-sig-label, .rp-memo .rp-sign-one .cv-sig-body { display: inline; }
+  .rp-memo .rp-sign-one .cv-sig-under { margin: 0; white-space: normal; }
+  .rp-memo .rp-sign-one .cv-sig-label { margin-left: -2em; }
   .rp-check { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; padding: 4px 0 22px 18px; }
   .rp-title { margin: 0 0 8px; text-align: center; font-size: 19px; font-weight: 700; }
   .rp-dash { margin: 8px 0; border: 0; border-top: 1px dashed #000; opacity: 1; }
@@ -346,6 +363,7 @@
   .rp-empty { padding-left: 40px; color: #666; }
   .rp-pics { display: grid; gap: 10px; justify-items: center; margin: 6px 0 10px; }
   .rp-pics img { display: block; max-width: 100%; object-fit: contain; }
+  .rp-pics img.rp-portrait { object-fit: cover; } /* ภาพแนวตั้งกรอบเท่ากัน (ขนาดตั้งจาก evenPortraits ใน Extra.html) */
   .rp-pics-1 img { max-height: 520px; } .rp-pics-2 img { max-height: 310px; }
   .rp-pics-3, .rp-pics-4 { grid-template-columns: 1fr 1fr; } .rp-pics-3 img, .rp-pics-4 img { max-height: 280px; }
   .rp-room { margin: 12px 0 0; padding-left: 40px; }
@@ -383,6 +401,9 @@
   .sr-part-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
   .sr-photo-preview img { width: 100px; height: 76px; object-fit: contain; }
   .sr-table { font-size: 12px; }
+  /* รายงานผลการสอนชดเชย/สอนแทน: วันที่ รหัสวิชา ชั้น ห้อง เวลา จำนวนคาบ ไม่ตัดกลางคำ ชื่อวิชา/ชื่อครูตัดบรรทัดได้ (ชื่อครูตัดที่ช่องว่างระหว่างชื่อ-สกุลเท่านั้น) */
+  .sr-table td:nth-child(1), .sr-table td:nth-child(3), .sr-table td:nth-child(4), .sr-table td:nth-child(5), .sr-table td:nth-child(6), .sr-table td:nth-child(7), .sr-table td:nth-child(8) { white-space: nowrap; }
+  .sr-table td:nth-child(9) { word-break: keep-all; }
   .sr-activity .rp-pics img { max-height: 210px; }
   .sr-activity .rp-pics-3 img, .sr-activity .rp-pics-4 img { max-height: 150px; }
   .rp-sign-four { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 14px; margin-top: 34px; text-align: center; font-size: 14px; }

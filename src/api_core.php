@@ -34,7 +34,7 @@ const USER_ROLES = ['teacher' => 1, 'dept' => 2, 'dept_head' => 2, 'curriculum' 
  *  คำสั่งที่เปลี่ยนข้อมูลของระบบถูกกันไว้ทั้งหมด ยกเว้นเรื่องของตัวเอง (รหัสผ่าน โปรไฟล์ ลายเซ็น แจ้งปัญหา) */
 const EXEC_BLOCKED_APIS = [
   'saveRow', 'deleteRow', 'bulkImport', 'copyPlans', 'placeSession', 'removeSession', 'toggleLock', 'runAutoSchedule', 'clearSchedule',
-  'otSaveClaim', 'otUnlockClaim', 'otSaveSub', 'otSubReport', 'otCancelSub', 'subDocSave', 'subDocDelete', 'otSubmit', 'importFromTAB',
+  'otSaveClaim', 'otUnlockClaim', 'otBulkLock', 'otSaveSub', 'otSubReport', 'otCancelSub', 'subDocSave', 'subDocDelete', 'otSubmit', 'otCoverConfirm', 'importFromTAB',
   'teachReportImageAdd', 'teachReportImageDelete', 'teachReportSave', 'teachReportReview', 'teachReportDelete',
   'visitSave', 'visitDelete', 'visitImageAdd', 'visitImageDelete', 'visitDocSave', 'visitDocDelete',
   'windowCreateMissing', 'windowMove', 'windowSave', 'windowOpenNow', 'windowDelete',

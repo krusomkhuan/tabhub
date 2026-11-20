@@ -23,10 +23,12 @@ const MENU_ACCESS = [
   'teach-review' => ['dept', ['teachReportList', 'teachReportReview', 'teachReportSummary', 'teachReportImages']],
   'intern' => ['teacher', ['superviseList', 'visitList', 'visitSave', 'visitDelete', 'visitImageAdd', 'visitImages', 'visitImageDelete', 'visitTeacherList', 'visitDocList', 'visitDocGet', 'visitDocSave', 'visitDocDelete']],
   'intern-summary' => ['dept', ['superviseList']],
-  'ot-claims' => ['teacher', ['otAlerts', 'otTeacherData', 'otSaveClaim', 'otUnlockClaim']],
+  'ot-claims' => ['teacher', ['otAlerts', 'otTeacherData', 'otSaveClaim', 'otUnlockClaim', 'otBulkLock']],
   'ot-subs' => ['teacher', ['otSaveSub', 'otSubReport', 'otCancelSub', 'otListSubs', 'subDocList', 'subDocGet', 'subDocSave', 'subDocDelete']],
   'ot-summary' => ['dept', ['otDeptSummary', 'otSubmit']],
-  'ot-cover' => ['dept', ['otCoverSheet', 'otCoverSim', 'otCoverApproval']],
+  'ot-cover' => ['dept', ['otCoverSheet', 'otCoverSim', 'otCoverApproval', 'otCoverConfirm', 'otCoverStatus']],
+  // ติดตามการส่งงาน (อ่านอย่างเดียว): ผู้บริหาร งานพัฒนาหลักสูตรฯ ผู้ดูแลระบบ ดูทุกแผนก / วิชาการแผนก ดูเฉพาะแผนกตัวเอง
+  'followup' => ['dept', ['followupReport']],
   'ot-teachers' => ['curriculum', ['otSuggestSchemes']],
   't-OtSchemes' => ['curriculum', []],
   't-OtPerHead' => ['curriculum', []],
@@ -49,6 +51,7 @@ const MENU_ACCESS = [
   'users' => ['admin', []],
   'colors' => ['admin', []],
   'settings' => ['admin', []],
+  'teach-switch' => ['admin', []],
   'backup' => ['admin', []],
 ];
 
@@ -87,7 +90,14 @@ function perm_effective(array $user): array {
     if (in_array($m, $p['grant'], true) || (perm_is_default($m, $role) && !in_array($m, $p['deny'], true))) $out[] = $m;
   }
   if ($role === 'executive') $out = array_values(array_diff($out, EXEC_HIDDEN_MENUS));
+  // หัวหน้าแผนกวิชาที่ใช้บัญชีครู (ติ๊ก "หัวหน้าแผนก" ในข้อมูลครู) เห็นรายงานติดตามการส่งงานของแผนกตัวเอง
+  if ($role === 'teacher' && !in_array('followup', $out, true) && !in_array('followup', $p['deny'], true) && perm_is_dept_head($user)) $out[] = 'followup';
   return $out;
+}
+
+function perm_is_dept_head(array $user): bool {
+  $t = idx_table('Teachers')[(string)($user['teacher_id'] ?? '')] ?? null;
+  return $t && ((string)$t['is_dept_head'] === 'true' || js_true($t['head_dept_ids'] ?? ''));
 }
 
 /** แปลงเมนูที่ผู้ดูแลระบบติ๊กไว้เป็นส่วนต่างจากบทบาท */
@@ -133,6 +143,7 @@ function perm_data_view(array $me): array {
   $menus = $me['menus'] ?? [];
   if (USER_ROLES[$me['role']] >= USER_ROLES['curriculum']) return $me;
   if (array_intersect(['t-Teachers', 'ot-teachers'], $menus)) { $me['role'] = 'curriculum'; return $me; }
-  foreach ($menus as $m) if (MENU_ACCESS[$m][0] === 'dept') { $me['role'] = 'dept'; break; }
+  // เมนูติดตามการส่งงานอ่านอย่างเดียว ไม่ต้องยกสิทธิ์ดูข้อมูลครู
+  foreach ($menus as $m) if (MENU_ACCESS[$m][0] === 'dept' && $m !== 'followup') { $me['role'] = 'dept'; break; }
   return $me;
 }

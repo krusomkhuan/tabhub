@@ -206,6 +206,62 @@ function api_otUnlockClaim($token = '', $roundId = '', $teacherId = '') {
   });
 }
 
+/**
+ * ล็อก/ปลดล็อกใบเบิกหลายคนในครั้งเดียว (งานพัฒนาหลักสูตรฯ / ผู้ดูแลระบบ) โดยไม่ต้องเปิดใบเบิกทีละคน
+ *  ล็อก: ใช้ชั่วโมงที่ครูบันทึกไว้ ตรวจตามกติกาใหม่ก่อน ถ้าผิดกติกาหรือยังไม่บันทึกใบเบิก จะข้ามและแจ้งเหตุผล
+ *  ปลดล็อก: ข้ามแผนกที่บันทึกเสนอเบิกรอบนี้แล้ว (ต้องยกเลิกการเสนอเบิกก่อน)
+ *  คืน [{teacher_id, name, ok, msg}]
+ */
+function api_otBulkLock($token = '', $roundId = '', $teacherIds = [], $action = '') {
+  $me = auth_user($token, 'curriculum');
+  if (!in_array($action, ['lock', 'unlock'], true)) throw new Exception('คำสั่งไม่ถูกต้อง');
+  $round = idx_table('OtRounds')[str($roundId)] ?? null;
+  if (!$round) throw new Exception('ไม่พบรอบการเบิก');
+  $ids = array_values(array_unique(array_filter(array_map('str', (array)$teacherIds))));
+  if (!$ids) throw new Exception('เลือกครูอย่างน้อย 1 คน');
+  if (count($ids) > 500) throw new Exception('เลือกได้ครั้งละไม่เกิน 500 คน');
+  return with_lock(function () use ($me, $roundId, $ids, $action) {
+    $teachers = idx_table('Teachers');
+    $submitted = [];
+    foreach (readTable('OtSubmissions') as $s) if ((string)$s['round_id'] === str($roundId) && $s['status'] === 'submitted') $submitted[(string)$s['department_id']] = true;
+    $out = []; $done = 0;
+    foreach ($ids as $tid) {
+      $t = $teachers[$tid] ?? null;
+      $res = ['teacher_id' => $tid, 'name' => $t['name'] ?? $tid, 'ok' => false, 'msg' => ''];
+      if (!$t) { $res['msg'] = 'ไม่พบครู'; $out[] = $res; continue; }
+      $rows = readTable('OtClaims');
+      $i = null;
+      foreach ($rows as $k => $x) if ((string)$x['round_id'] === str($roundId) && (string)$x['teacher_id'] === $tid) { $i = $k; break; }
+      $status = $i === null ? 'none' : ((string)$rows[$i]['status'] ?: 'draft');
+      if ($action === 'unlock') {
+        if ($status !== 'locked') { $res['msg'] = $status === 'none' ? 'ยังไม่ได้บันทึกใบเบิก' : 'ยังไม่ได้ล็อกอยู่แล้ว'; $out[] = $res; continue; }
+        if (isset($submitted[(string)$t['department_id']])) { $res['msg'] = 'แผนกเสนอเบิกรอบนี้แล้ว — ยกเลิกการเสนอเบิกก่อน'; $out[] = $res; continue; }
+        $rows[$i]['status'] = 'draft';
+        writeTable('OtClaims', $rows);
+        $res['ok'] = true; $res['msg'] = 'ปลดล็อกแล้ว'; $done++;
+        $out[] = $res; continue;
+      }
+      if ($status === 'locked') { $res['msg'] = 'ล็อกอยู่แล้ว'; $out[] = $res; continue; }
+      if ($status === 'none' || !js_true($rows[$i]['scheme_id'] ?? '')) { $res['msg'] = 'ยังไม่ได้บันทึกใบเบิก — ครูต้องเลือกชั่วโมงก่อน'; $out[] = $res; continue; }
+      try {
+        $data = ot_teacher_data($me, $roundId, $tid);
+        $weeks = js_true($rows[$i]['weeks'] ?? '') ? (json_decode((string)$rows[$i]['weeks'], true) ?: []) : [];
+        $ev = ot_evaluate($data, $rows[$i]['scheme_id'], $weeks);
+      } catch (Exception $e) { $res['msg'] = $e->getMessage(); $out[] = $res; continue; }
+      if ($ev['errors']) { $res['msg'] = 'ผิดกติกา ' . count($ev['errors']) . ' รายการ เช่น ' . $ev['errors'][0]; $out[] = $res; continue; }
+      $rows[$i] = array_merge($rows[$i], [
+        'hours' => $ev['hours'], 'amount' => $ev['amount'], 'summary' => json_encode($ev, JSON_UNESCAPED_UNICODE),
+        'status' => 'locked', 'locked_by' => $me['name'], 'locked_at' => now_dt(),
+      ]);
+      writeTable('OtClaims', $rows);
+      $res['ok'] = true; $res['msg'] = 'ล็อกแล้ว · ' . $ev['hours'] . ' ชม. · ' . number_format($ev['amount'], 2) . ' บาท'; $done++;
+      $out[] = $res;
+    }
+    if ($done) log_action($me, $action === 'lock' ? 'ล็อกใบเบิกหลายคน' : 'ปลดล็อกใบเบิกหลายคน', str($roundId) . ' · ' . $done . ' คน');
+    return $out;
+  });
+}
+
 // ---------------- สอนแทน / สอนชดเชย (ระเบียบข้อ 8) ----------------
 /**
  * - วิชาฝึกงาน/ทวิภาคี ห้ามสอนชดเชย/สอนแทน (ข้อ 6)
